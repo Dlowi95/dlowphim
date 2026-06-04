@@ -11,11 +11,14 @@ function SearchContent() {
   
   const keyword = searchParams.get("keyword") || "";
   const type = searchParams.get("type") || "";
+  const genre = searchParams.get("genre") || "";
+  const country = searchParams.get("country") || "";
   const pageUrl = parseInt(searchParams.get("page") || "1", 10);
 
   const [movies, setMovies] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalPages, setTotalPages] = useState(1);
+  const [apiTitle, setApiTitle] = useState("");
 
   useEffect(() => {
     async function fetchSearchData() {
@@ -25,6 +28,10 @@ function SearchContent() {
         
         if (keyword) {
           url = `https://ophim1.com/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&page=${pageUrl}`;
+        } else if (genre) {
+          url = `https://ophim1.com/v1/api/the-loai/${genre}?page=${pageUrl}`;
+        } else if (country) {
+          url = `https://ophim1.com/v1/api/quoc-gia/${country}?page=${pageUrl}`;
         } else if (type) {
           url = `https://ophim1.com/v1/api/danh-sach/${type}?page=${pageUrl}`;
         } else {
@@ -38,6 +45,9 @@ function SearchContent() {
           const items = data.data?.items || data.items || [];
           setMovies(items);
 
+          const title = data.data?.titlePage || data.titlePage || "";
+          setApiTitle(title);
+
           const pagination = data.data?.params?.pagination;
           if (pagination) {
             const total = pagination.totalItems;
@@ -49,23 +59,27 @@ function SearchContent() {
         } else {
           setMovies([]);
           setTotalPages(1);
+          setApiTitle("");
         }
       } catch (error) {
         console.error("Lỗi gọi API tìm kiếm OPhim:", error);
         setMovies([]);
+        setApiTitle("");
       } finally {
         setLoading(false);
       }
     }
 
     fetchSearchData();
-  }, [keyword, type, pageUrl]);
+  }, [keyword, type, genre, country, pageUrl]);
 
   const handlePageChange = (newPage: number) => {
     if (newPage < 1 || newPage > totalPages) return;
     
     let targetUrl = `/search?page=${newPage}`;
     if (keyword) targetUrl += `&keyword=${encodeURIComponent(keyword)}`;
+    if (genre) targetUrl += `&genre=${genre}`;
+    if (country) targetUrl += `&country=${country}`;
     if (type) targetUrl += `&type=${type}`;
     
     router.push(targetUrl);
@@ -74,6 +88,13 @@ function SearchContent() {
 
   const getPageTitle = () => {
     if (keyword) return `Kết quả tìm kiếm cho: "${keyword}"`;
+    if (type === "top-imdb") return "Bảng Xếp Hạng Phim Top IMDb";
+    if (type === "phim-thuyet-minh") return "Danh Sách Phim Thuyết Minh";
+    if (type === "phim-sap-chieu") return "Danh Sách Phim Sắp Chiếu / Phim Hot";
+    if (type === "phim-4k") return "Danh Sách Phim 4K Siêu Nét";
+    if (apiTitle) return apiTitle;
+    if (genre) return `Thể Loại: ${genre}`;
+    if (country) return `Quốc Gia: ${country}`;
     if (type === "phim-le") return "Danh Sách Phim Lẻ Mới Nhất";
     if (type === "phim-bo") return "Danh Sách Phim Bộ Lồng Tiếng / Vietsub";
     if (type === "hoat-hinh") return "Kho Phim Hoạt Hình / Anime Đặc Sắc";

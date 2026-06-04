@@ -9,10 +9,18 @@ const config: Config = {
     "./node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        bungee: ["var(--font-bungee)", "sans-serif"],
+        cinzel: ["var(--font-cinzel)", "serif"],
+        creepster: ["var(--font-creepster)", "cursive"],
+        marker: ["var(--font-marker)", "cursive"],
+        pacifico: ["var(--font-pacifico)", "cursive"],
+      }
+    },
   },
   darkMode: "class",
-  plugins: [heroui()],
+  plugins: [heroui() as any],
 };
 
 export default config;
