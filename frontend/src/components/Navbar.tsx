@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Navbar, NavbarBrand, NavbarContent, NavbarItem, Input, Button } from "@heroui/react";
+import { Navbar, NavbarBrand, NavbarContent, NavbarItem, Input, Button, useDisclosure } from "@heroui/react";
 import { Search, User, Loader2, ChevronDown, Play } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import AuthModal from "./AuthModal";
 
 export default function NavbarComponent() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -19,6 +20,7 @@ export default function NavbarComponent() {
   
   const router = useRouter();
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const { isOpen, onOpen, onOpenChange } = useDisclosure();
 
   // 1. Lắng nghe cuộn chuột để bật/tắt trạng thái trong suốt
   useEffect(() => {
@@ -139,6 +141,7 @@ export default function NavbarComponent() {
   ];
 
   return (
+    <>
     <Navbar
       isBlurred={false}
       classNames={{
@@ -164,14 +167,14 @@ export default function NavbarComponent() {
         </NavbarBrand>
 
         {/* Khung chứa ô tìm kiếm */}
-        <div ref={dropdownRef} className="relative hidden md:block w-full max-w-[340px]">
+        <div ref={dropdownRef} className="relative hidden md:block w-full max-w-[340px] ">
           <form onSubmit={handleSearchSubmit} className="w-full">
             <Input
               classNames={{
                 base: "h-11 w-full",
                 mainWrapper: "h-full w-full",
-                input: "text-sm text-white placeholder:text-zinc-500 ml-2 bg-transparent w-full font-medium focus:outline-none",
-                inputWrapper: "h-full bg-zinc-900/40 border border-zinc-800/80 hover:border-zinc-700/80 focus-within:!border-pink-500 rounded-xl px-4 transition-all duration-200 shadow-none",
+                input: "text-sm text-white placeholder:text-white/70 ml-2 bg-transparent w-full font-medium focus:outline-none",
+                inputWrapper: "h-full bg-white/15 border focus-within:!border-pink-500 rounded-xl px-4 transition-all duration-200 shadow-none",
               }}
               placeholder="Tìm kiếm phim, diễn viên..."
               size="md"
@@ -179,7 +182,7 @@ export default function NavbarComponent() {
                 isSearching ? (
                   <Loader2 size={18} className="text-pink-500 animate-spin shrink-0" />
                 ) : (
-                  <Search size={18} className="text-zinc-400 shrink-0" />
+                  <Search size={18} className="text-white/70 shrink-0" />
                 )
               }
               type="search"
@@ -388,8 +391,9 @@ export default function NavbarComponent() {
         </NavbarItem>
         
         {/* NÚT THÀNH VIÊN */}
-        <NavbarItem className="pl-4">
+        <NavbarItem className="pl-2">
           <Button 
+            onPress={onOpen}
             color="default" 
             size="md"
             className="font-bold text-black bg-white hover:bg-zinc-100 rounded-full px-6 h-10 transition-all duration-200 shadow-md shadow-white/5"
@@ -400,5 +404,7 @@ export default function NavbarComponent() {
         </NavbarItem>
       </NavbarContent>
     </Navbar>
+    <AuthModal isOpen={isOpen} onOpenChange={onOpenChange} />
+    </>
   );
 }
