@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import Interests from "@/components/Interests";
 import MovieRow from "@/components/MovieRow";
 import MovieCard from "@/components/MovieCard";
+import { cleanMovieName } from "@/utils/movieUtils";
+import Top10Row from "@/components/Top10Row";
 
 const FALLBACK_CANDIDATES = [
   {
@@ -306,7 +308,7 @@ export default function HomePage() {
           {/* Ảnh nền Full-width trong suốt và sáng đẹp giống hệt mockup */}
           <div className="absolute inset-0 z-0 select-none bg-black">
             <img 
-              src={getImageUrl(heroDetail?.poster_url || activeMovie?.poster_url || activeMovie?.thumb_url)} 
+              src={getImageUrl(heroDetail?.poster_url || activeMovie?.poster_url || heroDetail?.thumb_url || activeMovie?.thumb_url)} 
               alt={activeMovie.name} 
               referrerPolicy="no-referrer"
               className="w-full h-full object-cover opacity-100 transition-all duration-700 ease-in-out scale-101"
@@ -329,18 +331,18 @@ export default function HomePage() {
                 <div className="relative h-20 md:h-28 flex items-center mb-1">
                   <img
                     src={logoUrl}
-                    alt={heroDetail?.name || activeMovie?.name}
+                    alt={cleanMovieName(heroDetail?.name || activeMovie?.name)}
                     referrerPolicy="no-referrer"
                     className="max-h-full max-w-[85%] md:max-w-[450px] object-contain select-none filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.85)]"
                   />
                 </div>
               ) : (
                 <h1 className={`${titleStyle.fontClass} ${titleStyle.textStyle} leading-tight drop-shadow-md pb-1`}>
-                  {heroDetail?.name || activeMovie?.name}
+                  {cleanMovieName(heroDetail?.name || activeMovie?.name)}
                 </h1>
               )}
               <h2 className="text-lg md:text-xl font-extrabold text-amber-400 tracking-wide select-text">
-                {heroDetail?.origin_name || activeMovie?.origin_name}
+                {cleanMovieName(heroDetail?.origin_name || activeMovie?.origin_name)}
               </h2>
             </div>
 
@@ -468,6 +470,9 @@ export default function HomePage() {
           <MovieRow title="Phim US-UK mới" accentText="US-UK" countrySlug="au-my" />
         </div>
       </div>
+
+      {/* 2.6. BẢNG XẾP HẠNG TOP 10 PHIM BỘ HÔM NAY (MỚI THEO COBEPHIM) */}
+      <Top10Row />
 
       {/* 3. MAIN CONTENT - GRID DANH SÁCH PHIM MỚI NHẤT */}
       <div className="container mx-auto px-6 mt-10 max-w-7xl space-y-6">

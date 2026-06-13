@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import Link from "next/link";
 import MovieCard from "@/components/MovieCard";
+import { cleanSlug } from "@/utils/movieUtils";
 
 interface Movie {
   _id: string;
@@ -65,6 +66,20 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
     return `https://img.ophim.live/uploads/movies/${fileName}`;
   };
 
+
+
+  const getUniqueMovies = (items: Movie[]) => {
+    const seen = new Set<string>();
+    return items.filter((item) => {
+      const baseSlug = cleanSlug(item.slug);
+      if (seen.has(baseSlug)) {
+        return false;
+      }
+      seen.add(baseSlug);
+      return true;
+    });
+  };
+
   // 1. Initial fetch
   useEffect(() => {
     async function fetchMovies() {
@@ -74,7 +89,7 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
         const data = await res.json();
         if (data.status === "success" || data.status === true) {
           const items = data.data?.items || data.items || [];
-          setMovies(items);
+          setMovies(getUniqueMovies(items));
           setHasMore(items.length > 0);
         }
       } catch (err) {
@@ -97,7 +112,7 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
       if (data.status === "success" || data.status === true) {
         const items = data.data?.items || data.items || [];
         if (items.length > 0) {
-          setMovies((prev) => [...prev, ...items]);
+          setMovies((prev) => getUniqueMovies([...prev, ...items]));
           setPage(nextPage);
         } else {
           setHasMore(false);

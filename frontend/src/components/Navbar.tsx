@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import AuthModal from "./AuthModal";
 import { useAuth } from "@/context/AuthContext";
+import { cleanMovieName, cleanSlug } from "@/utils/movieUtils";
 
 export default function NavbarComponent() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -55,8 +56,16 @@ export default function NavbarComponent() {
         const data = await res.json();
         if (data.status === "success" || data.status === true) {
           const items = data.data?.items || data.items || [];
+          // Deduplicate suggestions by cleanSlug
+          const seen = new Set<string>();
+          const uniqueItems = items.filter((item: any) => {
+            const baseSlug = cleanSlug(item.slug);
+            if (seen.has(baseSlug)) return false;
+            seen.add(baseSlug);
+            return true;
+          });
           // Chỉ lấy tối đa 4 phim hàng đầu để hiển thị dropdown gọn gàng giống Cobephim
-          setSuggestions(items.slice(0, 4));
+          setSuggestions(uniqueItems.slice(0, 4));
         }
       } catch (error) {
         console.error("Lỗi lấy gợi ý nhanh:", error);
@@ -231,10 +240,10 @@ export default function NavbarComponent() {
                           />
                           <div className="flex-1 min-w-0">
                             <h4 className="text-sm font-bold text-zinc-100 truncate group-hover:text-pink-500 transition-colors">
-                              {movie.name}
+                              {cleanMovieName(movie.name)}
                             </h4>
                             <p className="text-zinc-400 text-xs truncate mt-0.5">
-                              {movie.origin_name}
+                              {cleanMovieName(movie.origin_name)}
                             </p>
                             <p className="text-zinc-500 text-[10px] font-medium mt-1">
                               HD • {movie.year} • {movie.lang || "Vietsub"}
