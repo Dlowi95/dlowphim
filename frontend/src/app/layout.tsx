@@ -24,6 +24,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi" className="dark">
+      <head>
+        <link rel="preconnect" href="https://img.ophim.live" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://image.tmdb.org" crossOrigin="anonymous" />
+      </head>
       <body className={`${inter.className} ${bungee.variable} ${cinzel.variable} ${creepster.variable} ${marker.variable} ${pacifico.variable} antialiased bg-black text-white min-h-screen flex flex-col`}>
         <Providers>
           <NavbarComponent />

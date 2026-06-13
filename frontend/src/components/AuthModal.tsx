@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Modal, ModalContent, ModalBody, Input, Button } from "@heroui/react";
 import { X, Play } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { useGoogleLogin } from "@react-oauth/google";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -11,6 +13,79 @@ interface AuthModalProps {
 
 export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
   const [isLogin, setIsLogin] = useState(true);
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const { loginManual, registerManual, loginGoogle } = useAuth();
+
+  // Reset form states when modal is opened/closed
+  useEffect(() => {
+    if (!isOpen) {
+      setDisplayName("");
+      setEmail("");
+      setPassword("");
+      setConfirmPassword("");
+      setError(null);
+    }
+  }, [isOpen]);
+
+  const handleSubmit = async () => {
+    setError(null);
+
+    if (!email.trim() || !password.trim()) {
+      setError("Vui lòng nhập đầy đủ email và mật khẩu");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      if (isLogin) {
+        await loginManual(email, password);
+        onOpenChange(false);
+      } else {
+        if (!displayName.trim()) {
+          setError("Vui lòng nhập tên hiển thị");
+          setSubmitting(false);
+          return;
+        }
+        if (password !== confirmPassword) {
+          setError("Mật khẩu nhập lại không khớp");
+          setSubmitting(false);
+          return;
+        }
+        await registerManual(displayName, email, password);
+        // Đăng nhập tự động sau khi đăng ký thành công
+        await loginManual(email, password);
+        onOpenChange(false);
+      }
+    } catch (err: any) {
+      setError(err.message || "Đã xảy ra lỗi trong quá trình xác thực");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleGoogleLogin = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      setSubmitting(true);
+      setError(null);
+      try {
+        await loginGoogle(tokenResponse.access_token, true);
+        onOpenChange(false);
+      } catch (err: any) {
+        setError(err.message || "Đăng nhập bằng Google thất bại");
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    onError: () => {
+      setError("Kết nối tới tài khoản Google thất bại");
+    },
+  });
 
   return (
     <Modal 
@@ -52,17 +127,17 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
               </div>
             </div>
 
-            {/* CỘT PHẢI: FORM ĐĂNG NHẬP / ĐĂNG KÝ CHUẨN KHUNG COBEPHIM */}
+            {/* CỘT PHẢI: FORM ĐĂNG NHẬP / ĐĂNG KÝ */}
             <div className="flex-1 bg-[#161a33] p-10 flex flex-col justify-center relative">
               {/* Nút đóng modal góc phải */}
               <button 
                 onClick={onClose}
-                className="absolute top-4 right-4 text-zinc-500 hover:text-white transition-colors"
+                className="absolute top-4 right-4 text-zinc-500 hover:text-white transition-colors z-10"
               >
                 <X size={20} />
               </button>
 
-              <div className="space-y-6">
+              <div className="space-y-5">
                 <div>
                   <h3 className="text-2xl font-black tracking-tight select-none">
                     {isLogin ? "Đăng nhập" : "Đăng ký"}
@@ -70,7 +145,10 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
                   <p className="text-xs text-zinc-400 mt-1.5 font-medium select-none">
                     {isLogin ? "Nếu bạn chưa có tài khoản, " : "Nếu bạn đã có tài khoản, "}
                     <span 
-                      onClick={() => setIsLogin(!isLogin)} 
+                      onClick={() => {
+                        setIsLogin(!isLogin);
+                        setError(null);
+                      }} 
                       className="text-pink-500 font-bold cursor-pointer hover:underline"
                     >
                       {isLogin ? "đăng ký ngay" : "đăng nhập"}
@@ -78,13 +156,22 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
                   </p>
                 </div>
 
+                {/* Hiển thị lỗi nếu có */}
+                {error && (
+                  <div className="text-xs text-red-400 font-bold bg-red-500/10 border border-red-500/20 px-3 py-2 rounded-xl select-none">
+                    {error}
+                  </div>
+                )}
+
                 {/* Các ô Inputs điền dữ liệu */}
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {!isLogin && (
                     <Input
                       type="text"
                       placeholder="Tên hiển thị"
                       variant="bordered"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
                       classNames={{
                         inputWrapper: "border-zinc-800 hover:border-zinc-700/80 focus-within:!border-pink-500 bg-[#0e1022]/40 rounded-xl h-11 shadow-none",
                         input: "text-sm text-zinc-200 placeholder:text-zinc-500 ml-1"
@@ -95,6 +182,8 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
                     type="email"
                     placeholder="Email"
                     variant="bordered"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                     classNames={{
                       inputWrapper: "border-zinc-800 hover:border-zinc-700/80 focus-within:!border-pink-500 bg-[#0e1022]/40 rounded-xl h-11 shadow-none",
                       input: "text-sm text-zinc-200 placeholder:text-zinc-500 ml-1"
@@ -104,6 +193,8 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
                     type="password"
                     placeholder="Mật khẩu"
                     variant="bordered"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                     classNames={{
                       inputWrapper: "border-zinc-800 hover:border-zinc-700/80 focus-within:!border-pink-500 bg-[#0e1022]/40 rounded-xl h-11 shadow-none",
                       input: "text-sm text-zinc-200 placeholder:text-zinc-500 ml-1"
@@ -114,6 +205,8 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
                       type="password"
                       placeholder="Nhập lại mật khẩu"
                       variant="bordered"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
                       classNames={{
                         inputWrapper: "border-zinc-800 hover:border-zinc-700/80 focus-within:!border-pink-500 bg-[#0e1022]/40 rounded-xl h-11 shadow-none",
                         input: "text-sm text-zinc-200 placeholder:text-zinc-500 ml-1"
@@ -124,6 +217,8 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
 
                 {/* Nút Submit */}
                 <Button 
+                  isLoading={submitting}
+                  onClick={handleSubmit}
                   className="w-full bg-pink-500 hover:bg-pink-600 text-white font-extrabold rounded-xl h-11 text-sm shadow-lg shadow-pink-500/20 transition-all duration-200"
                 >
                   {isLogin ? "Đăng nhập" : "Đăng ký"}
@@ -141,6 +236,8 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
                 <div className="pt-2 border-t border-zinc-800/40">
                   <Button 
                     variant="flat"
+                    isLoading={submitting}
+                    onClick={() => handleGoogleLogin()}
                     className="w-full bg-white hover:bg-zinc-100 text-zinc-800 font-bold rounded-xl h-11 text-xs transition-all duration-200 flex items-center justify-center gap-2.5 shadow-md shadow-black/5"
                   >
                     <img 

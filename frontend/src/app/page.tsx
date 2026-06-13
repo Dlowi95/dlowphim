@@ -5,6 +5,38 @@ import { Button, Card, CardBody } from "@heroui/react";
 import { Play, Flame, Film, Loader2, Monitor, Heart, Info } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Interests from "@/components/Interests";
+import MovieRow from "@/components/MovieRow";
+import MovieCard from "@/components/MovieCard";
+
+const FALLBACK_CANDIDATES = [
+  {
+    _id: "6a0b02307544913d492aafe1",
+    name: "Tiêu Dao Tứ Công Tử",
+    slug: "tieu-dao-tu-cong-tu",
+    origin_name: "The Reborn Young Lord",
+    thumb_url: "tieu-dao-tu-cong-tu-thumb.jpg",
+    poster_url: "tieu-dao-tu-cong-tu-poster.jpg",
+    year: 2026
+  },
+  {
+    _id: "6a0b02307544913d492aafe2",
+    name: "Kiều Sở",
+    slug: "kieu-so",
+    origin_name: "Ashes to Crown",
+    thumb_url: "kieu-so-thumb.jpg",
+    poster_url: "kieu-so-poster.jpg",
+    year: 2026
+  },
+  {
+    _id: "6a0b02307544913d492aafe3",
+    name: "Trang Trại Dutton",
+    slug: "trang-trai-dutton",
+    origin_name: "Dutton Ranch",
+    thumb_url: "trang-trai-dutton-thumb.jpg",
+    poster_url: "trang-trai-dutton-poster.jpg",
+    year: 2026
+  }
+];
 
 const getMovieTitleStyle = (movie: any) => {
   if (!movie) return { fontClass: "", textStyle: "" };
@@ -81,14 +113,14 @@ const fetchTmdbLogo = async (tmdbType: string, tmdbId: string | number) => {
     
     // 1. Prioritize Vietnamese (vi)
     const viLogo = logos.find((l: any) => l.iso_639_1 === "vi");
-    if (viLogo) return `https://image.tmdb.org/t/p/original${viLogo.file_path}`;
+    if (viLogo) return `https://image.tmdb.org/t/p/w500${viLogo.file_path}`;
     
     // 2. Prioritize English (en)
     const enLogo = logos.find((l: any) => l.iso_639_1 === "en");
-    if (enLogo) return `https://image.tmdb.org/t/p/original${enLogo.file_path}`;
+    if (enLogo) return `https://image.tmdb.org/t/p/w500${enLogo.file_path}`;
     
     // 3. Fallback to first available logo
-    return `https://image.tmdb.org/t/p/original${logos[0].file_path}`;
+    return `https://image.tmdb.org/t/p/w500${logos[0].file_path}`;
   } catch (error) {
     console.error("Failed to fetch TMDB logo:", error);
     return null;
@@ -111,21 +143,35 @@ export default function HomePage() {
   // 1. Fetch danh sách phim mới cập nhật để lấy candidates và danh sách grid
   useEffect(() => {
     async function fetchOPhim() {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        console.warn("API OPhim timeout. Aborting request and using fallback data.");
+        controller.abort();
+      }, 6000); // 6 seconds timeout
+
       try {
         setLoading(true);
-        const res = await fetch("https://ophim1.com/danh-sach/phim-moi-cap-nhat?page=1");
+        const res = await fetch("https://ophim1.com/danh-sach/phim-moi-cap-nhat?page=1", {
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
         const data = await res.json();
         
-        if (data.status && data.items) {
+        if (data.status && data.items && data.items.length > 0) {
           // Lấy 5 phim làm ứng cử viên cho Slider Hero
           const candidates = data.items.slice(0, 5);
           setHeroCandidates(candidates);
           
           // Các phim còn lại dùng hiển thị ở Grid bên dưới (tránh lặp phim)
           setMovieList(data.items.slice(5, 13));
+        } else {
+          setHeroCandidates(FALLBACK_CANDIDATES);
+          setMovieList(FALLBACK_CANDIDATES);
         }
       } catch (error) {
         console.error("Lỗi khi kết nối API OPhim:", error);
+        setHeroCandidates(FALLBACK_CANDIDATES);
+        setMovieList(FALLBACK_CANDIDATES);
       } finally {
         setLoading(false);
       }
@@ -205,9 +251,40 @@ export default function HomePage() {
 
   if (loading) {
     return (
-      <div className="min-h-[80vh] flex flex-col items-center justify-center gap-3 bg-black text-white">
-        <Loader2 className="animate-spin text-pink-500" size={40} />
-        <p className="text-sm font-medium text-zinc-400">Đang đồng bộ máy chủ DlowPhim...</p>
+      <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#07070e] text-white select-none">
+        <style>{`
+          @keyframes loadingBar {
+            0% { left: -30%; }
+            100% { left: 100%; }
+          }
+        `}</style>
+        <div className="flex flex-col items-center gap-5 animate-pulse duration-2000">
+          {/* Logo lớn sang trọng ở trung tâm */}
+          <div className="flex items-center gap-3 md:gap-4.5">
+            <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center shadow-[0_0_50px_rgba(244,63,94,0.35)] shrink-0">
+              <Play className="text-white fill-white ml-1.5 md:ml-2" size={28} />
+            </div>
+            <span className="font-black text-4xl md:text-5xl tracking-widest select-none">
+              Dlow<span className="text-pink-500">Phim</span>
+            </span>
+          </div>
+
+          {/* Slogan việt hóa cao cấp giống cobephim */}
+          <p className="text-zinc-400 font-bold text-sm md:text-[15px] tracking-wide max-w-md text-center px-8 leading-relaxed mt-2 select-text">
+            Xem Phim Miễn Phí Cực Nhanh, Chất Lượng Cao Và Cập Nhật Liên Tục
+          </p>
+
+          {/* Hiệu ứng loading bar mảnh */}
+          <div className="w-48 md:w-56 h-[3px] bg-zinc-800 rounded-full overflow-hidden mt-4 relative">
+            <div className="absolute top-0 h-full bg-pink-500 w-[30%] rounded-full animate-[loadingBar_1.2s_infinite_linear]" />
+          </div>
+
+          {/* Spinner tròn nhẹ */}
+          <div className="flex items-center gap-2 text-zinc-500 mt-4">
+            <Loader2 className="animate-spin text-pink-500" size={16} />
+            <span className="text-xs font-semibold tracking-wider">Đang kết nối máy chủ...</span>
+          </div>
+        </div>
       </div>
     );
   }
@@ -229,10 +306,12 @@ export default function HomePage() {
           {/* Ảnh nền Full-width trong suốt và sáng đẹp giống hệt mockup */}
           <div className="absolute inset-0 z-0 select-none bg-black">
             <img 
-              src={getImageUrl(activeMovie.thumb_url || activeMovie.poster_url)} 
+              src={getImageUrl(heroDetail?.poster_url || activeMovie?.poster_url || activeMovie?.thumb_url)} 
               alt={activeMovie.name} 
               referrerPolicy="no-referrer"
               className="w-full h-full object-cover opacity-100 transition-all duration-700 ease-in-out scale-101"
+              fetchPriority="high"
+              decoding="async"
             />
             {/* Mask gradients nhẹ nhàng tạo độ hòa trộn đáy và cạnh trái */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent z-10" />
@@ -362,10 +441,12 @@ export default function HomePage() {
                   }`}
                 >
                   <img
-                    src={getImageUrl(movie.thumb_url || movie.poster_url)}
+                    src={getImageUrl(movie.poster_url || movie.thumb_url)}
                     alt={movie.name}
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover"
+                    loading="lazy"
+                    decoding="async"
                   />
                   <div className="absolute inset-0 bg-black/10 hover:bg-transparent transition-colors" />
                 </div>
@@ -379,6 +460,15 @@ export default function HomePage() {
       {/* 2. KHÚC ĐỆM BỔ SUNG: "BẠN ĐANG QUAN TÂM GÌ?" Y HỆT COBEPHIM */}
       <Interests />
 
+      {/* 2.5. HÀNH LANG PHIM THEO QUỐC GIA (MỚI THEO COBEPHIM) */}
+      <div className="container mx-auto px-6 mt-12 max-w-7xl">
+        <div className="p-6 rounded-[1.25rem] bg-gradient-to-b from-[#282b3a]/28 to-[#282b3a] border border-[#282b3a]/60 flex flex-col">
+          <MovieRow title="Phim Hàn Quốc mới" accentText="Hàn Quốc" countrySlug="han-quoc" />
+          <MovieRow title="Phim Việt Nam mới" accentText="Việt Nam" countrySlug="viet-nam" />
+          <MovieRow title="Phim US-UK mới" accentText="US-UK" countrySlug="au-my" />
+        </div>
+      </div>
+
       {/* 3. MAIN CONTENT - GRID DANH SÁCH PHIM MỚI NHẤT */}
       <div className="container mx-auto px-6 mt-10 max-w-7xl space-y-6">
         <div className="flex items-center gap-2 border-b border-zinc-900 pb-3">
@@ -387,45 +477,9 @@ export default function HomePage() {
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
-          {movieList.map((movie) => {
-            const fileName = movie.thumb_url ? movie.thumb_url.split("/").pop() : "";
-            const fullThumbUrl = `https://img.ophim.live/uploads/movies/${fileName}`;
-
-            return (
-              <Card 
-                key={movie._id} 
-                isPressable 
-                onClick={() => router.push(`/movie/${movie.slug}`)}
-                className="bg-zinc-900 border border-zinc-800/80 hover:border-pink-500/50 transition-all duration-300 rounded-xl group overflow-hidden"
-              >
-                <CardBody className="p-0 relative">
-                  <div className="overflow-hidden aspect-[2/3] w-full bg-zinc-800">
-                    <img
-                      src={fullThumbUrl}
-                      alt={movie.name}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      loading="lazy"
-                    />
-                  </div>
-                  
-                  <div className="absolute top-2 right-2 bg-black/75 backdrop-blur-md px-2 py-0.5 rounded-md text-[10px] font-bold text-pink-400 flex items-center gap-1 z-10 border border-zinc-800">
-                    <Monitor size={10} /> {movie.quality || "HD"} - {movie.lang || "Vietsub"}
-                  </div>
-
-                  <div className="p-3 space-y-1 text-left">
-                    <h3 className="font-bold text-sm text-zinc-100 truncate group-hover:text-pink-500 transition-colors">
-                      {movie.name}
-                    </h3>
-                    <div className="flex items-center justify-between text-[11px] text-zinc-500 font-medium">
-                      <span className="truncate max-w-[70%]">{movie.origin_name}</span>
-                      <span>{movie.year}</span>
-                    </div>
-                  </div>
-                </CardBody>
-              </Card>
-            );
-          })}
+          {movieList.map((movie) => (
+            <MovieCard key={movie._id} movie={movie} aspect="portrait" />
+          ))}
         </div>
       </div>
     </div>

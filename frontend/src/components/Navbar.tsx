@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Navbar, NavbarBrand, NavbarContent, NavbarItem, Input, Button, useDisclosure } from "@heroui/react";
-import { Search, User, Loader2, ChevronDown, Play } from "lucide-react";
+import { Navbar, NavbarBrand, NavbarContent, NavbarItem, Input, Button, useDisclosure, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Avatar } from "@heroui/react";
+import { Search, User, Loader2, ChevronDown, Play, Bell, ChevronUp, Wallet, Heart, Plus, History, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import AuthModal from "./AuthModal";
+import { useAuth } from "@/context/AuthContext";
 
 export default function NavbarComponent() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -21,6 +22,7 @@ export default function NavbarComponent() {
   const router = useRouter();
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
+  const { user, loading, logout } = useAuth();
 
   // 1. Lắng nghe cuộn chuột để bật/tắt trạng thái trong suốt
   useEffect(() => {
@@ -224,6 +226,8 @@ export default function NavbarComponent() {
                             alt={movie.name}
                             referrerPolicy="no-referrer"
                             className="w-10 h-14 object-cover rounded-md bg-zinc-800 border border-zinc-800"
+                            loading="lazy"
+                            decoding="async"
                           />
                           <div className="flex-1 min-w-0">
                             <h4 className="text-sm font-bold text-zinc-100 truncate group-hover:text-pink-500 transition-colors">
@@ -390,17 +394,103 @@ export default function NavbarComponent() {
           )}
         </NavbarItem>
         
-        {/* NÚT THÀNH VIÊN */}
+        {/* NÚT THÀNH VIÊN HOẶC PROFILE DROPDOWN */}
         <NavbarItem className="pl-2">
-          <Button 
-            onPress={onOpen}
-            color="default" 
-            size="md"
-            className="font-bold text-black bg-white hover:bg-zinc-100 rounded-full px-6 h-10 transition-all duration-200 shadow-md shadow-white/5"
-            startContent={<User size={16} className="text-black shrink-0" />}
-          >
-            Thành viên
-          </Button>
+          {loading ? (
+            <Button isDisabled className="bg-zinc-800 text-zinc-400 rounded-full h-10 px-6 font-bold">
+              <Loader2 className="animate-spin mr-1 text-zinc-500" size={16} />
+              Đang tải...
+            </Button>
+          ) : user ? (
+            <div className="flex items-center gap-4">
+              {/* Nút Chuông Thông Báo */}
+              <Button
+                isIconOnly
+                radius="full"
+                variant="light"
+                className="bg-[#1c203e]/60 hover:bg-[#23284e] border border-zinc-800/60 w-10 h-10 flex items-center justify-center transition-all duration-200"
+              >
+                <Bell size={18} className="text-white fill-white" />
+              </Button>
+
+              {/* Dropdown Avatar Premium */}
+              <Dropdown 
+                placement="bottom-end" 
+                classNames={{ 
+                  content: "bg-[#161a33] text-white border border-zinc-800 rounded-2xl p-2 w-[260px] shadow-[0_25px_60px_rgba(0,0,0,0.8)]" 
+                }}
+              >
+                <DropdownTrigger>
+                  <div className="flex items-center gap-1.5 cursor-pointer group hover:opacity-90 select-none">
+                    <Avatar
+                      src="/images/avatars/default.png"
+                      name={user.displayName}
+                      className="w-10 h-10 border border-zinc-700 shadow-md object-cover cursor-pointer hover:border-pink-500/50 transition-all duration-200"
+                    />
+                    <ChevronDown size={14} className="text-zinc-400 group-hover:text-white transition-colors" />
+                  </div>
+                </DropdownTrigger>
+                <DropdownMenu aria-label="User Actions" variant="flat" className="p-0">
+                  <DropdownItem key="profile" className="opacity-100 cursor-default select-none pointer-events-none hover:bg-transparent p-2 mb-1 border-b border-zinc-800/50 pb-3" textValue="profile">
+                    <div className="flex flex-col gap-0.5 w-full">
+                      <p className="font-bold text-[10px] text-zinc-500 uppercase tracking-wider">Đang đăng nhập</p>
+                      <span className="font-extrabold text-base text-white truncate max-w-[200px]">
+                        {user.displayName}
+                      </span>
+                      <span className="text-xs text-zinc-400 truncate max-w-[200px]">
+                        {user.email}
+                      </span>
+                    </div>
+                  </DropdownItem>
+
+                  <DropdownItem key="account" className="hover:bg-zinc-800/40 py-2.5 rounded-xl" textValue="account">
+                    <div className="flex items-center gap-3">
+                      <User size={16} className="text-zinc-400" />
+                      <span className="text-sm font-semibold text-zinc-300">Tài khoản</span>
+                    </div>
+                  </DropdownItem>
+
+                  <DropdownItem key="favorites" className="hover:bg-zinc-800/40 py-2.5 rounded-xl" textValue="favorites">
+                    <div className="flex items-center gap-3">
+                      <Heart size={16} className="text-zinc-400" />
+                      <span className="text-sm font-semibold text-zinc-300">Yêu thích</span>
+                    </div>
+                  </DropdownItem>
+
+                  <DropdownItem key="watchlist" className="hover:bg-zinc-800/40 py-2.5 rounded-xl" textValue="watchlist">
+                    <div className="flex items-center gap-3">
+                      <Plus size={16} className="text-zinc-400" />
+                      <span className="text-sm font-semibold text-zinc-300">Danh sách</span>
+                    </div>
+                  </DropdownItem>
+
+                  <DropdownItem key="history" className="hover:bg-zinc-800/40 py-2.5 rounded-xl" textValue="history">
+                    <div className="flex items-center gap-3">
+                      <History size={16} className="text-zinc-400" />
+                      <span className="text-sm font-semibold text-zinc-300">Xem tiếp</span>
+                    </div>
+                  </DropdownItem>
+
+                  <DropdownItem key="logout" className="hover:bg-red-500/10 text-red-500 py-2.5 rounded-xl border-t border-zinc-800/50 mt-1" onPress={logout} textValue="logout">
+                    <div className="flex items-center gap-3">
+                      <LogOut size={16} className="text-red-500" />
+                      <span className="text-sm font-bold">Thoát</span>
+                    </div>
+                  </DropdownItem>
+                </DropdownMenu>
+              </Dropdown>
+            </div>
+          ) : (
+            <Button 
+              onPress={onOpen}
+              color="default" 
+              size="md"
+              className="font-bold text-black bg-white hover:bg-zinc-100 rounded-full px-6 h-10 transition-all duration-200 shadow-md shadow-white/5"
+              startContent={<User size={16} className="text-black shrink-0" />}
+            >
+              Thành viên
+            </Button>
+          )}
         </NavbarItem>
       </NavbarContent>
     </Navbar>

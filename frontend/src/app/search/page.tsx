@@ -2,8 +2,8 @@
 
 import React, { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Card, CardBody } from "@heroui/react"; 
-import { Loader2, Monitor, ArrowLeft, ArrowRight } from "lucide-react"; 
+import { Loader2, ArrowLeft, ArrowRight } from "lucide-react"; 
+import MovieCard from "@/components/MovieCard";
 
 function SearchContent() {
   const searchParams = useSearchParams();
@@ -38,7 +38,14 @@ function SearchContent() {
           url = `https://ophim1.com/v1/api/danh-sach/phim-moi-cap-nhat?page=${pageUrl}`;
         }
 
-        const res = await fetch(url);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+          console.warn("Search API timeout. Aborting request.");
+          controller.abort();
+        }, 6000); // 6 seconds timeout
+
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
         const data = await res.json();
 
         if (data.status === "success" || data.status === true) {
@@ -133,48 +140,9 @@ function SearchContent() {
         ) : (
           /* Grid danh sách phim tìm kiếm */
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
-            {movies.map((movie) => {
-              
-              // 🌟 ĐỒNG BỘ TRANG CHỦ: Cắt lấy tên file ảnh gốc
-              const fileName = movie.thumb_url ? movie.thumb_url.split("/").pop() : "";
-              
-              // 🌟 Ép chạy thẳng bằng domain .live thần thánh đã kiểm chứng ăn khớp mạng nhà bồ
-              const fullThumbUrl = `https://img.ophim.live/uploads/movies/${fileName}`;
-
-              return (
-                <Card 
-                  key={movie._id} 
-                  isPressable 
-                  className="bg-zinc-900 border border-zinc-800/80 hover:border-pink-500/50 transition-all duration-300 rounded-xl group overflow-hidden"
-                >
-                  <CardBody className="p-0 relative">
-                    <div className="overflow-hidden aspect-[2/3] w-full bg-zinc-800">
-                      <img
-                        src={fullThumbUrl}
-                        alt={movie.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        loading="lazy"
-                        referrerPolicy="no-referrer" 
-                      />
-                    </div>
-                    
-                    <div className="absolute top-2 right-2 bg-black/75 backdrop-blur-md px-2 py-0.5 rounded-md text-[10px] font-bold text-pink-400 flex items-center gap-1 z-10 border border-zinc-800">
-                      <Monitor size={10} /> {movie.quality || "HD"} - {movie.lang || "Vietsub"}
-                    </div>
-
-                    <div className="p-3 space-y-1 text-left">
-                      <h3 className="font-bold text-sm text-zinc-100 truncate group-hover:text-pink-500 transition-colors">
-                        {movie.name}
-                      </h3>
-                      <div className="flex items-center justify-between text-[11px] text-zinc-500 font-medium">
-                        <span className="truncate max-w-[70%]">{movie.origin_name}</span>
-                        <span>{movie.year}</span>
-                      </div>
-                    </div>
-                  </CardBody>
-                </Card>
-              );
-            })}
+            {movies.map((movie) => (
+              <MovieCard key={movie._id} movie={movie} aspect="portrait" />
+            ))}
           </div>
         )}
 
