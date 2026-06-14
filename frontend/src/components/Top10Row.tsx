@@ -402,8 +402,8 @@ function Top10MovieCard({ movie, index, wasDraggingRef }: Top10MovieCardProps) {
       const scrollY = window.scrollY || window.pageYOffset;
       const scrollX = window.scrollX || window.pageXOffset;
 
-      const scaleFactor = 1.55;
-      const scaledWidth = Math.max(rect.width * scaleFactor, 340);
+      const scaleFactor = 1.25;
+      const scaledWidth = Math.min(Math.max(rect.width * scaleFactor, 300), 380);
       const leftOffset = rect.left + scrollX - (scaledWidth - rect.width) / 2;
       
       const windowWidth = typeof window !== "undefined" ? window.innerWidth : 1200;

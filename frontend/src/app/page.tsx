@@ -9,6 +9,8 @@ import MovieRow from "@/components/MovieRow";
 import MovieCard from "@/components/MovieCard";
 import { cleanMovieName } from "@/utils/movieUtils";
 import Top10Row from "@/components/Top10Row";
+import UpcomingRow from "@/components/UpcomingRow";
+import CinemaRow from "@/components/CinemaRow";
 
 const FALLBACK_CANDIDATES = [
   {
@@ -473,6 +475,12 @@ export default function HomePage() {
 
       {/* 2.6. BẢNG XẾP HẠNG TOP 10 PHIM BỘ HÔM NAY (MỚI THEO COBEPHIM) */}
       <Top10Row />
+
+      {/* 2.7. PHIM SẮP TỚI TRÊN RỔ (TRAILERS) */}
+      <UpcomingRow />
+
+      {/* 2.8. MÃN NHÃN VỚI PHIM CHIẾU RẠP */}
+      <CinemaRow />
 
       {/* 3. MAIN CONTENT - GRID DANH SÁCH PHIM MỚI NHẤT */}
       <div className="container mx-auto px-6 mt-10 max-w-7xl space-y-6">

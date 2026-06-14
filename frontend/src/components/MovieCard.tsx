@@ -70,9 +70,9 @@ export default function MovieCard({ movie, aspect = "landscape" }: MovieCardProp
       const scrollY = window.scrollY || window.pageYOffset;
       const scrollX = window.scrollX || window.pageXOffset;
 
-      // Scale calculations (scale up width by 1.55x for massive, premium popup)
-      const scaleFactor = 1.55;
-      const scaledWidth = Math.max(rect.width * scaleFactor, 340);
+      // Scale calculations (scale up width by 1.25x for a compact, neat popup)
+      const scaleFactor = 1.25;
+      const scaledWidth = Math.min(Math.max(rect.width * scaleFactor, 300), 380);
       const leftOffset = rect.left + scrollX - (scaledWidth - rect.width) / 2;
       
       // Ensure hover card doesn't overflow left boundary of the screen
