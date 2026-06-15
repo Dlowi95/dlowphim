@@ -6,3 +6,15 @@ body {
   background-color: #000000;
   color: #ffffff;
 }
+
+/* Global wide cinema layout adjustments */
+.max-w-7xl {
+  max-width: 1400px !important;
+}
+
+/* Reduce horizontal margin padding closer to screen edges */
+.container.px-6,
+.px-6.gap-8 {
+  padding-left: 1rem !important;
+  padding-right: 1rem !important;
+}

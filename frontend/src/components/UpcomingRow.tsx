@@ -251,6 +251,8 @@ export default function UpcomingRow() {
                   loading="lazy"
                   decoding="async"
                 />
+                {/* Halftone dot grid pattern overlay to make the image look crisp and textured */}
+                <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[size:4px_4px] opacity-100 z-10 pointer-events-none rounded-2xl" />
                 
                 {/* Badge Sắp chiếu bottom-left */}
                 <div className="absolute bottom-3 left-3 bg-white text-zinc-900 text-[10px] font-extrabold px-2 py-0.5 rounded uppercase tracking-wider shadow-md">

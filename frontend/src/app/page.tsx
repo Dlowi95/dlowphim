@@ -11,6 +11,7 @@ import { cleanMovieName } from "@/utils/movieUtils";
 import Top10Row from "@/components/Top10Row";
 import UpcomingRow from "@/components/UpcomingRow";
 import CinemaRow from "@/components/CinemaRow";
+import AnimeRow from "@/components/AnimeRow";
 
 const FALLBACK_CANDIDATES = [
   {
@@ -134,9 +135,9 @@ const fetchTmdbLogo = async (tmdbType: string, tmdbId: string | number) => {
 export default function HomePage() {
   const [heroCandidates, setHeroCandidates] = useState<any[]>([]);
   const [activeHeroIndex, setActiveHeroIndex] = useState(0);
-  const [heroDetail, setHeroDetail] = useState<any>(null);
-  const [loadingDetail, setLoadingDetail] = useState(false);
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [detailsCache, setDetailsCache] = useState<Record<string, any>>({});
+  const [logoCache, setLogoCache] = useState<Record<string, string | null>>({});
+  const [isTransitioning, setIsTransitioning] = useState(false);
   
   const [movieList, setMovieList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -184,45 +185,50 @@ export default function HomePage() {
     fetchOPhim();
   }, []);
 
-  // 2. Fetch thông tin chi tiết của phim Active trong Hero Slider
+  // 2. Pre-fetch thông tin chi tiết và logo của tất cả 5 phim ứng cử viên Hero Slider
   useEffect(() => {
     if (heroCandidates.length === 0) return;
-    const activeMovie = heroCandidates[activeHeroIndex];
-    if (!activeMovie) return;
 
-    // Reset details immediately to avoid title and details mismatch!
-    setHeroDetail(null);
-    setLogoUrl(null);
-
-    async function fetchHeroDetail() {
+    async function prefetchDetail(movie: any) {
       try {
-        setLoadingDetail(true);
-        const res = await fetch(`https://ophim1.com/v1/api/phim/${activeMovie.slug}`);
+        const res = await fetch(`https://ophim1.com/v1/api/phim/${movie.slug}`);
         const data = await res.json();
         if (data.status === "success" || data.status === true) {
           const detail = data.data?.item || data.movie || null;
-          setHeroDetail(detail);
-
-          // Fetch logo from TMDB if tmdb.id is available
-          const tmdbId = detail?.tmdb?.id;
-          const tmdbType = detail?.tmdb?.type;
-          if (tmdbId) {
-            fetchTmdbLogo(tmdbType, tmdbId).then((url) => {
-              setLogoUrl(url);
-            });
+          if (detail) {
+            setDetailsCache(prev => ({ ...prev, [movie.slug]: detail }));
+            
+            const tmdbId = detail?.tmdb?.id;
+            const tmdbType = detail?.tmdb?.type;
+            if (tmdbId) {
+              fetchTmdbLogo(tmdbType, tmdbId).then((logoUrl) => {
+                setLogoCache(prev => ({ ...prev, [movie.slug]: logoUrl }));
+              });
+            } else {
+              setLogoCache(prev => ({ ...prev, [movie.slug]: null }));
+            }
           }
         }
       } catch (error) {
-        console.error("Lỗi khi tải chi tiết phim Hero:", error);
-      } finally {
-        setLoadingDetail(false);
+        console.error("Lỗi khi prefetch chi tiết phim Hero:", movie.slug, error);
       }
     }
 
-    // Reset favorite state when movie changes
-    setIsFavorited(false);
-    fetchHeroDetail();
-  }, [activeHeroIndex, heroCandidates]);
+    heroCandidates.forEach((movie) => {
+      prefetchDetail(movie);
+    });
+  }, [heroCandidates]);
+
+  // Hàm click chọn thumbnail có hiệu ứng chuyển cảnh mượt mà
+  const handleThumbnailClick = (index: number) => {
+    if (index === activeHeroIndex || isTransitioning) return;
+    setIsTransitioning(true);
+    setTimeout(() => {
+      setActiveHeroIndex(index);
+      setIsFavorited(false);
+      setIsTransitioning(false);
+    }, 150); // 150ms để nội dung cũ mờ đi trước khi tráo đổi thông tin
+  };
 
   // Trình biến đổi ảnh gốc thành link ảnh cdn .live cực nét và ổn định
   const getImageUrl = (path: string) => {
@@ -252,6 +258,14 @@ export default function HomePage() {
     const base = (heroDetail.name.length % 3) * 0.4 + 8.2;
     return base.toFixed(1);
   };
+
+  const activeMovie = heroCandidates[activeHeroIndex];
+  const heroDetail = activeMovie ? detailsCache[activeMovie.slug] : null;
+  const logoUrl = activeMovie ? logoCache[activeMovie.slug] : null;
+  const loadingDetail = activeMovie && !heroDetail;
+  const titleStyle = getMovieTitleStyle(heroDetail || activeMovie);
+  const cleanedDesc = cleanContentHtml(heroDetail?.content || "");
+  const truncatedDesc = cleanedDesc.length > 210 ? cleanedDesc.slice(0, 210) + "..." : cleanedDesc;
 
   if (loading) {
     return (
@@ -295,10 +309,7 @@ export default function HomePage() {
 
 
 
-  const activeMovie = heroCandidates[activeHeroIndex];
-  const titleStyle = getMovieTitleStyle(heroDetail || activeMovie);
-  const cleanedDesc = cleanContentHtml(heroDetail?.content || "");
-  const truncatedDesc = cleanedDesc.length > 210 ? cleanedDesc.slice(0, 210) + "..." : cleanedDesc;
+
 
   return (
     <div className="min-h-screen bg-black text-white pb-16">
@@ -313,17 +324,23 @@ export default function HomePage() {
               src={getImageUrl(heroDetail?.poster_url || activeMovie?.poster_url || heroDetail?.thumb_url || activeMovie?.thumb_url)} 
               alt={activeMovie.name} 
               referrerPolicy="no-referrer"
-              className="w-full h-full object-cover opacity-100 transition-all duration-700 ease-in-out scale-101"
+              className={`w-full h-full object-cover transition-all duration-500 ease-in-out ${
+                isTransitioning ? "opacity-0 scale-102 blur-[4px]" : "opacity-100 scale-100 blur-0"
+              }`}
               fetchPriority="high"
               decoding="async"
             />
+            {/* Halftone dot grid pattern overlay to make the image look crisp and textured */}
+            <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[size:4px_4px] opacity-100 z-10 pointer-events-none" />
             {/* Mask gradients nhẹ nhàng tạo độ hòa trộn đáy và cạnh trái */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent z-10" />
             <div className="absolute inset-0 bg-gradient-to-r from-black/20 to-transparent z-10" />
           </div>
 
           {/* Nội dung thông tin phim Hero (Cụm bên trái) */}
-          <div className="container mx-auto px-6 mb-16 md:mb-20 z-10 max-w-7xl space-y-5">
+          <div className={`container mx-auto px-6 mb-16 md:mb-20 z-10 max-w-7xl space-y-5 transition-all duration-300 ease-out ${
+            isTransitioning ? "opacity-0 -translate-x-4 blur-[2px]" : "opacity-100 translate-x-0 blur-0"
+          }`}>
             <div className="inline-flex items-center gap-2 bg-pink-500/10 border border-pink-500/30 px-3 py-1 rounded-full text-[11px] text-pink-400 font-bold tracking-wider uppercase select-none">
               <Flame size={13} className="fill-pink-400 animate-pulse" /> PHIM MỚI CẬP BẾN RẠP
             </div>
@@ -437,7 +454,7 @@ export default function HomePage() {
               return (
                 <div
                   key={movie._id}
-                  onClick={() => setActiveHeroIndex(index)}
+                  onClick={() => handleThumbnailClick(index)}
                   className={`relative w-28 h-16 rounded-xl overflow-hidden cursor-pointer transition-all duration-300 ${
                     isActive 
                       ? "border-2 border-pink-500 ring-4 ring-pink-500/25 scale-105 opacity-100 shadow-md shadow-pink-500/10" 
@@ -481,6 +498,9 @@ export default function HomePage() {
 
       {/* 2.8. MÃN NHÃN VỚI PHIM CHIẾU RẠP */}
       <CinemaRow />
+
+      {/* 2.9. KHO TÀNG ANIME MỚI NHẤT */}
+      <AnimeRow />
 
       {/* 3. MAIN CONTENT - GRID DANH SÁCH PHIM MỚI NHẤT */}
       <div className="container mx-auto px-6 mt-10 max-w-7xl space-y-6">

@@ -41,6 +41,12 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
       return;
     }
 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      setError("Email không đúng định dạng (Ví dụ: user@example.com)");
+      return;
+    }
+
     setSubmitting(true);
     try {
       if (isLogin) {

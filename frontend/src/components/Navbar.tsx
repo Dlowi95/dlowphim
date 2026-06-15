@@ -431,10 +431,11 @@ export default function NavbarComponent() {
               >
                 <DropdownTrigger>
                   <div className="flex items-center gap-1.5 cursor-pointer group hover:opacity-90 select-none">
-                    <Avatar
-                      src="/images/avatars/default.png"
-                      name={user.displayName}
-                      className="w-10 h-10 border border-zinc-700 shadow-md object-cover cursor-pointer hover:border-pink-500/50 transition-all duration-200"
+                    <img
+                      src={user.avatar || "/images/avatars/default.png"}
+                      alt={user.displayName}
+                      className="w-10 h-10 rounded-full border border-zinc-700 shadow-md object-cover cursor-pointer hover:border-pink-500/50 transition-all duration-200"
+                      referrerPolicy="no-referrer"
                     />
                     <ChevronDown size={14} className="text-zinc-400 group-hover:text-white transition-colors" />
                   </div>

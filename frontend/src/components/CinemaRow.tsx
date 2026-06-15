@@ -358,6 +358,8 @@ function CinemaMovieCard({ movie, wasDraggingRef }: CinemaMovieCardProps) {
             loading="lazy"
             decoding="async"
           />
+          {/* Halftone dot grid pattern overlay to make the image look crisp and textured */}
+          <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[size:4px_4px] opacity-100 z-10 pointer-events-none rounded-2xl" />
 
           {/* 4K badge at top-right of landscape poster */}
           {movie.quality === "4K" && (

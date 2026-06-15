@@ -37,6 +37,12 @@ export class AuthService {
   async register(registerDto: any) {
     const { email, password, displayName } = registerDto;
 
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      throw new BadRequestException('Email không đúng định dạng');
+    }
+
     // Check if user exists
     const existingUser = await this.userModel.findOne({ email });
     if (existingUser) {
@@ -60,6 +66,12 @@ export class AuthService {
 
   async login(loginDto: any) {
     const { email, password } = loginDto;
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      throw new BadRequestException('Email không đúng định dạng');
+    }
 
     const user = await this.userModel.findOne({ email });
     if (!user) {
