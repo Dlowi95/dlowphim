@@ -509,7 +509,7 @@ export default function HomePage() {
           <h2 className="text-xl md:text-2xl font-bold tracking-tight uppercase">Phim Mới Cập Nhật</h2>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-4">
           {movieList.map((movie) => (
             <MovieCard key={movie._id} movie={movie} aspect="portrait" />
           ))}

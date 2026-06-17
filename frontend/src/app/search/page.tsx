@@ -2,8 +2,10 @@
 
 import React, { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Loader2, ArrowLeft, ArrowRight } from "lucide-react"; 
+import { Loader2 } from "lucide-react"; 
 import MovieCard from "@/components/MovieCard";
+import { cleanSlug } from "@/utils/movieUtils";
+import Pagination from "@/components/Pagination";
 
 function SearchContent() {
   const searchParams = useSearchParams();
@@ -50,7 +52,16 @@ function SearchContent() {
 
         if (data.status === "success" || data.status === true) {
           const items = data.data?.items || data.items || [];
-          setMovies(items);
+          
+          // Deduplicate based on base slug to avoid showing duplicate seasons/parts of the same series
+          const seen = new Set<string>();
+          const uniqueItems = items.filter((item: any) => {
+            const baseSlug = cleanSlug(item.slug);
+            if (seen.has(baseSlug)) return false;
+            seen.add(baseSlug);
+            return true;
+          });
+          setMovies(uniqueItems);
 
           const title = data.data?.titlePage || data.titlePage || "";
           setApiTitle(title);
@@ -139,7 +150,7 @@ function SearchContent() {
           </div>
         ) : (
           /* Grid danh sách phim tìm kiếm */
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-4">
             {movies.map((movie) => (
               <MovieCard key={movie._id} movie={movie} aspect="portrait" />
             ))}
@@ -147,29 +158,11 @@ function SearchContent() {
         )}
 
         {/* Thanh chuyển trang màu hồng */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-2 pt-8 border-t border-zinc-900">
-            <button
-              onClick={() => handlePageChange(pageUrl - 1)}
-              disabled={pageUrl === 1}
-              className="p-2.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400 hover:text-white hover:border-zinc-700 disabled:opacity-30 disabled:hover:text-zinc-400 disabled:hover:border-zinc-800 transition-all"
-            >
-              <ArrowLeft size={16} />
-            </button>
-
-            <div className="px-5 py-2 rounded-xl bg-pink-500 text-white font-extrabold text-sm shadow-lg shadow-pink-500/20 select-none">
-              Trang {pageUrl} / {totalPages}
-            </div>
-
-            <button
-              onClick={() => handlePageChange(pageUrl + 1)}
-              disabled={pageUrl === totalPages}
-              className="p-2.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400 hover:text-white hover:border-zinc-700 disabled:opacity-30 disabled:hover:text-zinc-400 disabled:hover:border-zinc-800 transition-all"
-            >
-              <ArrowRight size={16} />
-            </button>
-          </div>
-        )}
+        <Pagination
+          currentPage={pageUrl}
+          totalPages={totalPages}
+          onPageChange={handlePageChange}
+        />
 
       </div>
     </div>

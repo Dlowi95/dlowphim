@@ -39,6 +39,15 @@ export default function NavbarComponent() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  // 1.5. Lắng nghe sự kiện toàn cục để mở AuthModal từ các component khác
+  useEffect(() => {
+    const handleOpenAuth = () => {
+      onOpen();
+    };
+    window.addEventListener("dlowphim_open_auth", handleOpenAuth);
+    return () => window.removeEventListener("dlowphim_open_auth", handleOpenAuth);
+  }, [onOpen]);
+
   // 2. Cơ chế DEBOUNCE: Tự động gọi API lấy gợi ý khi người dùng dừng gõ 300ms
   useEffect(() => {
     if (!searchQuery.trim()) {

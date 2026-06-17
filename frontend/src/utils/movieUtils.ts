@@ -23,6 +23,13 @@ export function cleanSlug(slug: string): string {
     .replace(/-season-\d+/gi, "")
     .replace(/-ss\d+/gi, "")
     .replace(/-p\d+/gi, "")
+    .replace(/-evolution/gi, "")
+    .replace(/-genesis/gi, "")
+    .replace(/-movie/gi, "")
+    .replace(/-ova/gi, "")
+    .replace(/-special/gi, "")
+    // Remove trailing years (e.g. -2009, -2006)
+    .replace(/-\d{4}$/g, "")
     .trim();
 
   // Remove trailing dashes or colons if any
