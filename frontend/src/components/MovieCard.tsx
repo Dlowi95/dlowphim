@@ -118,7 +118,7 @@ export default function MovieCard({ movie, aspect = "landscape" }: MovieCardProp
       <div className="relative overflow-hidden">
         {/* Poster Image Frame */}
         <div 
-          className={`w-full overflow-hidden bg-zinc-900 border border-zinc-800/40 hover:border-pink-500/40 rounded-xl relative transition-all duration-300 ${
+          className={`w-full overflow-hidden bg-zinc-900 rounded-xl relative transition-all duration-300 ${
             aspect === "landscape" ? "aspect-[16/10]" : "aspect-[2/3]"
           }`}
           style={{
@@ -134,8 +134,7 @@ export default function MovieCard({ movie, aspect = "landscape" }: MovieCardProp
             loading="lazy"
             decoding="async"
           />
-          {/* Halftone dot grid pattern overlay to make the image look crisp and textured */}
-          <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[size:4px_4px] opacity-100 z-10 pointer-events-none rounded-xl" />
+
           
           {/* Badge phụ đề góc trái */}
           <div className="absolute bottom-2 left-2 flex items-center gap-1 z-10">

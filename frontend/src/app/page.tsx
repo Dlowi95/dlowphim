@@ -12,6 +12,7 @@ import Top10Row from "@/components/Top10Row";
 import UpcomingRow from "@/components/UpcomingRow";
 import CinemaRow from "@/components/CinemaRow";
 import AnimeRow from "@/components/AnimeRow";
+import HalftoneOverlay from "@/components/HalftoneOverlay";
 
 const FALLBACK_CANDIDATES = [
   {
@@ -331,7 +332,7 @@ export default function HomePage() {
               decoding="async"
             />
             {/* Halftone dot grid pattern overlay to make the image look crisp and textured */}
-            <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[size:4px_4px] opacity-100 z-10 pointer-events-none" />
+            <HalftoneOverlay />
             {/* Mask gradients nhẹ nhàng tạo độ hòa trộn đáy và cạnh trái */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent z-10" />
             <div className="absolute inset-0 bg-gradient-to-r from-black/20 to-transparent z-10" />
@@ -360,14 +361,14 @@ export default function HomePage() {
                   {cleanMovieName(heroDetail?.name || activeMovie?.name)}
                 </h1>
               )}
-              <h2 className="text-lg md:text-xl font-extrabold text-amber-400 tracking-wide select-text">
+              <h2 className="text-lg md:text-xl font-extrabold text-pink-500 tracking-wide select-text">
                 {cleanMovieName(heroDetail?.origin_name || activeMovie?.origin_name)}
               </h2>
             </div>
 
             {/* Hàng nhãn phân loại (IMDb, Tuổi, Năm, Tập, Thời lượng) */}
             <div className="flex flex-wrap items-center gap-2.5 text-xs text-zinc-300 font-bold select-none">
-              <span className="bg-pink-500 text-white border border-pink-500 font-black px-2 py-0.5 rounded text-[11px] flex items-center gap-0.5 shadow-sm shadow-pink-500/10">
+              <span className="bg-amber-400 text-black border border-amber-400 font-black px-2 py-0.5 rounded text-[11px] flex items-center gap-0.5 shadow-sm">
                 IMDb {getImdbScore()}
               </span>
               <span className="border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 rounded text-zinc-400">

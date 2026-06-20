@@ -18,3 +18,21 @@ body {
   padding-left: 1rem !important;
   padding-right: 1rem !important;
 }
+
+/* Color native video player controls in neon pink */
+video {
+  accent-color: #ec4899 !important;
+}
+
+video:focus {
+  outline: none !important;
+}
+
+/* Hide scrollbar utility */
+.scrollbar-none::-webkit-scrollbar {
+  display: none !important;
+}
+.scrollbar-none {
+  -ms-overflow-style: none !important;  /* IE and Edge */
+  scrollbar-width: none !important;  /* Firefox */
+}

@@ -7,9 +7,9 @@ export default function FooterComponent() {
       <div className="container mx-auto px-6 max-w-7xl flex flex-col md:flex-row items-center justify-between gap-4">
         {/* Bản quyền và Logo */}
         <div className="flex items-center gap-2">
-          <Film className="text-amber-500/60" size={18} />
+          <Film className="text-pink-500/60" size={18} />
           <p className="text-sm font-medium text-zinc-400">
-            © {new Date().getFullYear()} <span className="text-amber-500 font-semibold">DlowPhim</span>. Đồ án Full-stack tốt nghiệp.
+            © {new Date().getFullYear()} <span className="text-pink-500 font-semibold">DlowPhim</span>. Đồ án Full-stack tốt nghiệp.
           </p>
         </div>
 

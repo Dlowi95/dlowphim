@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Sparkles, Tv, HelpCircle, Send, Plus, MessageSquare, Image, Users, Flame, ExternalLink, Compass } from "lucide-react";
 import { cleanMovieName } from "@/utils/movieUtils";
 import MovieCard from "@/components/MovieCard";
+import HalftoneOverlay from "@/components/HalftoneOverlay";
 import { useAuth } from "@/context/AuthContext";
 
 interface Episode {
@@ -66,6 +67,7 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
   const [isFavorite, setIsFavorite] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<"episodes" | "gallery" | "actors" | "recommendations">("episodes");
+  const [selectedEpisodeBatch, setSelectedEpisodeBatch] = useState<number>(0);
 
   // States bình luận
   const [commentText, setCommentText] = useState("");
@@ -82,6 +84,7 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
       try {
         setLoading(true);
         setError(null);
+        setSelectedEpisodeBatch(0); // Reset episode batch on movie change
         
         const res = await fetch(`https://ophim1.com/v1/api/phim/${slug}`);
         if (!res.ok) throw new Error("Không thể kết nối máy chủ phim.");
@@ -123,14 +126,14 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
     async function fetchRelated() {
       try {
         setLoadingRelated(true);
-        const genreSlug = movie.category[0].slug;
+        const genreSlug = movie!.category[0].slug;
         const res = await fetch(`https://ophim1.com/v1/api/the-loai/${genreSlug}?page=1`);
         const data = await res.json();
         
         if (data.status === true || data.status === "success") {
           const items = data.data?.items || data.items || [];
           // Lọc bỏ phim hiện tại
-          const filtered = items.filter((item: any) => item.slug !== movie.slug).slice(0, 6);
+          const filtered = items.filter((item: any) => item.slug !== movie!.slug).slice(0, 6);
           setRelatedMovies(filtered);
         }
       } catch (err) {
@@ -365,6 +368,7 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover opacity-70 md:opacity-85"
           />
+          <HalftoneOverlay />
           {/* Bottom vignette gradient overlay */}
           <div className="absolute inset-0 bg-gradient-to-t from-[#07070a] via-[#07070a]/20 to-black/5 z-10" />
         </div>
@@ -479,23 +483,13 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
         <div className="-mt-[120px] md:-mt-[150px] lg:-mt-[180px] relative z-30 flex flex-col gap-5 text-left px-4 lg:px-0 lg:pr-12">
           
           {/* Poster chính thu nhỏ tỷ lệ */}
-          <div className="w-[110px] md:w-[130px] lg:w-[150px] mx-auto lg:mx-0 relative aspect-[2/3] rounded-2xl overflow-hidden border border-zinc-800 shadow-[0_15px_40px_rgba(0,0,0,0.85)] bg-zinc-950 group select-none">
+          <div className="w-[110px] md:w-[130px] lg:w-[150px] mx-auto lg:mx-0 relative aspect-[2/3] rounded-2xl overflow-hidden shadow-[0_15px_40px_rgba(0,0,0,0.85)] bg-zinc-950 select-none">
             <img
               src={getImageUrl(movie.thumb_url || movie.poster_url)}
               alt={cleanedName}
               referrerPolicy="no-referrer"
-              className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
+              className="w-full h-full object-cover"
             />
-            <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[size:4px_4px] opacity-100 pointer-events-none" />
-            
-            <div className="absolute top-2.5 left-2.5 flex flex-col gap-1">
-              <span className="bg-pink-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow uppercase tracking-wider">
-                {movie.quality || "HD"}
-              </span>
-              <span className="bg-zinc-950/80 backdrop-blur text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow border border-zinc-800 uppercase tracking-wider">
-                {movie.lang || "Vietsub"}
-              </span>
-            </div>
           </div>
 
           {/* TIÊU ĐỀ PHIM DƯỚI POSTER THU NHỎ SIZE */}
@@ -567,7 +561,7 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
             </p>
             <p className="font-semibold leading-relaxed">
               <span className="text-zinc-500 font-bold mr-1">Diễn viên:</span>
-              {movie.actor?.filter(a => a).slice(0, 5).join(", ") || "Đang cập nhật"}
+              {movie.actor?.filter(a => a && a.trim() && a !== "Đang cập nhật").slice(0, 5).join(", ") || "Đang cập nhật"}
             </p>
           </div>
 
@@ -604,7 +598,7 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
                     <Film size={16} className="text-pink-500" /> Trailer phim chính thức
                   </h3>
                   {movie.trailer_url ? (
-                    <div className="w-full aspect-video rounded-2xl overflow-hidden border border-zinc-850 shadow-2xl bg-black">
+                    <div className="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl bg-black">
                       <iframe
                         src={getYoutubeEmbedUrl(movie.trailer_url)}
                         frameBorder="0"
@@ -664,18 +658,46 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
 
                         {/* Danh sách tập */}
                         {epList.length > 0 && (
-                          <div className="space-y-1.5">
-                            <span className="block text-[9px] font-black text-zinc-500 uppercase tracking-widest">Chọn tập phim:</span>
+                          <div className="space-y-3">
+                            <span className="block text-[9px] font-black text-zinc-550 uppercase tracking-widest">Chọn tập phim:</span>
+                            
+                            {/* Phân nhóm tập phim nếu số lượng tập > 100 y hệt cobephim */}
+                            {epList.length > 100 && (
+                              <div className="flex flex-wrap gap-1.5 pb-2.5 border-b border-zinc-900/30">
+                                {Array.from({ length: Math.ceil(epList.length / 100) }).map((_, bIdx) => {
+                                  const start = bIdx * 100 + 1;
+                                  const end = Math.min((bIdx + 1) * 100, epList.length);
+                                  const isActive = selectedEpisodeBatch === bIdx;
+                                  return (
+                                    <button
+                                      key={`batch-${bIdx}`}
+                                      onClick={() => setSelectedEpisodeBatch(bIdx)}
+                                      className={`px-3 py-1.5 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer border-none ${
+                                        isActive
+                                          ? "bg-pink-500 text-white shadow-sm shadow-pink-500/15"
+                                          : "bg-[#1b1d2a] text-zinc-400 hover:text-white hover:bg-[#23263a]"
+                                      }`}
+                                    >
+                                      Tập {start} - {end}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+
                             <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2">
-                              {epList.map((ep, eIdx) => (
-                                <button
-                                  key={`ep-${eIdx}`}
-                                  onClick={() => handleWatchEpisode(ep.name)}
-                                  className="h-9 rounded-lg font-extrabold text-[11px] flex items-center justify-center border border-zinc-850 bg-zinc-950/40 text-zinc-400 hover:text-white hover:border-zinc-700 hover:bg-zinc-900 transition-all cursor-pointer"
-                                >
-                                  {ep.name.toLowerCase().includes("tập") ? ep.name : `Tập ${ep.name}`}
-                                </button>
-                              ))}
+                              {epList
+                                .slice(selectedEpisodeBatch * 100, (selectedEpisodeBatch + 1) * 100)
+                                .map((ep, eIdx) => (
+                                  <button
+                                    key={`ep-${eIdx}`}
+                                    onClick={() => handleWatchEpisode(ep.name)}
+                                    className="h-9 rounded-lg font-extrabold text-[11px] flex items-center justify-center bg-[#1b1d2a] text-zinc-300 hover:bg-pink-500 hover:text-white transition-all cursor-pointer border-none group"
+                                  >
+                                    <Play size={10} className="fill-zinc-300 stroke-none mr-1.5 shrink-0 group-hover:fill-white" />
+                                    {ep.name.toLowerCase().includes("tập") ? ep.name : `Tập ${ep.name}`}
+                                  </button>
+                                ))}
                             </div>
                           </div>
                         )}
@@ -716,12 +738,12 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
               <h3 className="text-base font-bold uppercase tracking-tight flex items-center gap-2">
                 <Users size={16} className="text-pink-500" /> Dàn diễn viên tham gia ({movie.actor?.length || 0})
               </h3>
-              {movie.actor && movie.actor.length > 0 ? (
+              {movie.actor && movie.actor.filter(a => a && a.trim() && a !== "Đang cập nhật").length > 0 ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-                  {movie.actor.map((actor, idx) => (
+                  {movie.actor.filter(a => a && a.trim() && a !== "Đang cập nhật").map((actor, idx) => (
                     <div key={`actor-list-${idx}`} className="p-3.5 rounded-xl bg-zinc-950/70 border border-zinc-900/60 flex flex-col items-center text-center gap-2.5 shadow-sm hover:border-zinc-800 transition-all hover:-translate-y-0.5 duration-200">
                       <div className={`w-12 h-12 rounded-full font-black text-sm flex items-center justify-center bg-gradient-to-tr ${getInitialsGradient(actor)} shadow`}>
-                        {actor[0].toUpperCase()}
+                        {actor && actor[0] ? actor[0].toUpperCase() : "?"}
                       </div>
                       <span className="text-[11px] font-extrabold text-zinc-200 leading-snug truncate w-full">{actor}</span>
                       <span className="text-[8px] text-zinc-650 font-black uppercase tracking-wider">Diễn viên</span>
@@ -782,7 +804,7 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
             {/* User row: Avatar, Bình luận với tên */}
             {user && (
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full overflow-hidden border border-zinc-850 shrink-0 bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center font-black text-white text-sm shadow-sm select-none">
+                <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center font-black text-white text-sm shadow-sm select-none">
                   {user.displayName ? user.displayName[0].toUpperCase() : "U"}
                 </div>
                 <div className="text-left flex flex-col select-none">
@@ -793,7 +815,7 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
             )}
 
             {/* Comment Textarea Box */}
-            <div className="rounded-xl border border-zinc-800 bg-[#161722] overflow-hidden flex flex-col">
+            <div className="rounded-xl bg-[#161722] overflow-hidden flex flex-col">
               <textarea
                 value={commentText}
                 onChange={(e) => {
@@ -829,10 +851,10 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
                   <button
                     onClick={handleSubmitComment}
                     disabled={!commentText.trim() || !user}
-                    className="flex items-center gap-1.5 text-[11px] font-black text-amber-400 hover:text-amber-300 transition-colors bg-transparent border-none p-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="flex items-center gap-1.5 text-[11px] font-black text-pink-500 hover:text-pink-400 transition-colors bg-transparent border-none p-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <span>Gửi</span>
-                    <Send size={12} className="fill-amber-400 stroke-none" />
+                    <Send size={12} className="fill-pink-500 stroke-none" />
                   </button>
                 </div>
               </div>
@@ -840,7 +862,7 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
 
             {/* Login Prompt for guest users */}
             {!user && (
-              <div className="p-3.5 rounded-xl border border-zinc-850 bg-zinc-950/40 text-[11px] text-zinc-500 leading-relaxed font-bold text-center">
+              <div className="p-3.5 rounded-xl bg-zinc-955/40 text-[11px] text-zinc-500 leading-relaxed font-bold text-center">
                 Vui lòng{" "}
                 <button
                   type="button"
@@ -867,7 +889,7 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
                           isAdmin 
                             ? "bg-gradient-to-tr from-pink-500 to-rose-500 text-white" 
                             : isVip 
-                              ? "bg-amber-400 text-black" 
+                              ? "bg-pink-500 text-white" 
                               : "bg-zinc-800 text-zinc-300"
                         }`}>
                           {comment.avatar}
@@ -882,7 +904,7 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
                               </span>
                             )}
                             {isVip && (
-                              <span className="bg-amber-400 text-black text-[7px] font-black px-1.5 py-0.2 rounded uppercase tracking-wider">
+                              <span className="bg-pink-500 text-white text-[7px] font-black px-1.5 py-0.2 rounded uppercase tracking-wider">
                                 VIP
                               </span>
                             )}
@@ -905,7 +927,7 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
                   })}
                 </div>
               ) : (
-                <div className="p-12 text-center flex flex-col items-center justify-center gap-3 bg-zinc-950/40 rounded-2xl border border-zinc-900/40 mt-4 select-none">
+                <div className="p-12 text-center flex flex-col items-center justify-center gap-3 bg-zinc-950/40 rounded-2xl mt-4 select-none">
                   <MessageSquare size={36} className="text-zinc-700 stroke-[1.5]" />
                   <span className="text-xs font-bold text-zinc-550">Chưa có bình luận nào</span>
                 </div>

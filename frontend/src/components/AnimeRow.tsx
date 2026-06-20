@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Play, Heart, Info, ChevronRight } from "lucide-react";
 import { cleanMovieName, cleanSlug } from "@/utils/movieUtils";
+import HalftoneOverlay from "@/components/HalftoneOverlay";
 
 interface Movie {
   _id: string;
@@ -478,7 +479,7 @@ export default function AnimeRow() {
               className="w-full h-full object-cover"
             />
             {/* Halftone dot grid pattern overlay to make the image look crisp and textured */}
-            <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[size:4px_4px] opacity-100 z-10 pointer-events-none" />
+            <HalftoneOverlay />
           </div>
 
           {/* Smooth mask on parent: starts at left-0 to cover any sub-pixel gap at the image left edge */}
@@ -492,7 +493,7 @@ export default function AnimeRow() {
             <h4 className="text-xl md:text-3xl font-black text-zinc-100 tracking-tight leading-tight line-clamp-2">
               {cleanedName}
             </h4>
-            <p className="text-[11px] md:text-[13px] text-amber-400 font-bold mt-1.5 line-clamp-1">
+            <p className="text-[11px] md:text-[13px] text-pink-500 font-bold mt-1.5 line-clamp-1">
               {cleanedOriginName}
             </p>
 

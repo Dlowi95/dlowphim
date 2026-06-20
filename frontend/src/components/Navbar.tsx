@@ -194,7 +194,7 @@ export default function NavbarComponent() {
                 base: "h-11 w-full",
                 mainWrapper: "h-full w-full",
                 input: "text-sm text-white placeholder:text-white/70 ml-2 bg-transparent w-full font-medium focus:outline-none",
-                inputWrapper: "h-full bg-white/15 border focus-within:!border-pink-500 rounded-xl px-4 transition-all duration-200 shadow-none",
+                inputWrapper: "h-full bg-white/15 border border-transparent focus-within:!border-pink-500 rounded-xl px-4 transition-all duration-200 shadow-none",
               }}
               placeholder="Tìm kiếm phim, diễn viên..."
               size="md"
@@ -217,7 +217,7 @@ export default function NavbarComponent() {
 
           {/* DROPDOWN GỢI Ý NHANH THEO HÌNH ẢNH */}
           {showDropdown && searchQuery.trim() && (
-            <div className="absolute top-full left-0 mt-2 w-full min-w-[340px] bg-[#0b0b0d] border border-zinc-700 rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col">
+            <div className="absolute top-full left-0 mt-2 w-full min-w-[340px] bg-[#0b0b0d] rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col">
               
               {/* PHẦN 1: DANH SÁCH PHIM */}
               <div className="p-4 pb-2">

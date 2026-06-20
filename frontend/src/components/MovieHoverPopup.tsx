@@ -164,8 +164,7 @@ export default function MovieHoverPopup({
             className="w-full h-full object-cover"
             decoding="async"
           />
-          {/* Halftone dot grid pattern overlay to make the image look crisp and textured */}
-          <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[size:4px_4px] opacity-100 z-10 pointer-events-none rounded-t-2xl" />
+
           {/* Subtle bottom backdrop shadow overlay */}
           <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#12131b] to-transparent z-1" />
           
