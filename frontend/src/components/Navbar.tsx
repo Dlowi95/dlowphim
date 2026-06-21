@@ -462,28 +462,48 @@ export default function NavbarComponent() {
                     </div>
                   </DropdownItem>
 
-                  <DropdownItem key="account" className="hover:bg-zinc-800/40 py-2.5 rounded-xl" textValue="account">
+                  <DropdownItem 
+                    key="account" 
+                    className="hover:bg-zinc-800/40 py-2.5 rounded-xl" 
+                    textValue="account"
+                    onPress={() => router.push("/user/account")}
+                  >
                     <div className="flex items-center gap-3">
                       <User size={16} className="text-zinc-400" />
                       <span className="text-sm font-semibold text-zinc-300">Tài khoản</span>
                     </div>
                   </DropdownItem>
 
-                  <DropdownItem key="favorites" className="hover:bg-zinc-800/40 py-2.5 rounded-xl" textValue="favorites">
+                  <DropdownItem 
+                    key="favorites" 
+                    className="hover:bg-zinc-800/40 py-2.5 rounded-xl" 
+                    textValue="favorites"
+                    onPress={() => router.push("/user/favorite")}
+                  >
                     <div className="flex items-center gap-3">
                       <Heart size={16} className="text-zinc-400" />
                       <span className="text-sm font-semibold text-zinc-300">Yêu thích</span>
                     </div>
                   </DropdownItem>
 
-                  <DropdownItem key="watchlist" className="hover:bg-zinc-800/40 py-2.5 rounded-xl" textValue="watchlist">
+                  <DropdownItem 
+                    key="watchlist" 
+                    className="hover:bg-zinc-800/40 py-2.5 rounded-xl" 
+                    textValue="watchlist"
+                    onPress={() => router.push("/user/watchlist")}
+                  >
                     <div className="flex items-center gap-3">
                       <Plus size={16} className="text-zinc-400" />
                       <span className="text-sm font-semibold text-zinc-300">Danh sách</span>
                     </div>
                   </DropdownItem>
 
-                  <DropdownItem key="history" className="hover:bg-zinc-800/40 py-2.5 rounded-xl" textValue="history">
+                  <DropdownItem 
+                    key="history" 
+                    className="hover:bg-zinc-800/40 py-2.5 rounded-xl" 
+                    textValue="history"
+                    onPress={() => router.push("/user/history")}
+                  >
                     <div className="flex items-center gap-3">
                       <History size={16} className="text-zinc-400" />
                       <span className="text-sm font-semibold text-zinc-300">Xem tiếp</span>

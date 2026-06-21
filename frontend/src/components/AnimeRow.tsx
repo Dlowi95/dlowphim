@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { Play, Heart, Info, ChevronRight } from "lucide-react";
 import { cleanMovieName, cleanSlug } from "@/utils/movieUtils";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
+import { useAuth } from "@/context/AuthContext";
+import Cookies from "js-cookie";
 
 interface Movie {
   _id: string;
@@ -233,9 +235,11 @@ export default function AnimeRow() {
   
   const [loadingList, setLoadingList] = useState(true);
   const [loadingDetails, setLoadingDetails] = useState(false);
-  const [isFavorite, setIsFavorite] = useState(false);
 
   const router = useRouter();
+  const { user, toggleFavorite: toggleFavoriteCtx } = useAuth();
+
+  const isFavorite = user?.favorites?.includes(activeMovie?.slug || "") || false;
 
   // Drag-to-scroll state refs for thumbnails row
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -300,14 +304,6 @@ export default function AnimeRow() {
   useEffect(() => {
     if (!activeMovie) return;
 
-    // Load favorite status
-    try {
-      const favs = JSON.parse(localStorage.getItem("dlowphim_favorites") || "[]");
-      setIsFavorite(favs.includes(activeMovie.slug));
-    } catch (e) {
-      // LocalStorage is unavailable in SSR
-    }
-
     if (detailsCache[activeMovie.slug]) {
       setDetails(detailsCache[activeMovie.slug]);
       return;
@@ -347,23 +343,10 @@ export default function AnimeRow() {
   }, [activeMovie]);
 
   // Favorite toggle handler
-  const toggleFavorite = (e: React.MouseEvent) => {
+  const toggleFavorite = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!activeMovie) return;
-    try {
-      const favs = JSON.parse(localStorage.getItem("dlowphim_favorites") || "[]");
-      let newFavs;
-      if (favs.includes(activeMovie.slug)) {
-        newFavs = favs.filter((s: string) => s !== activeMovie.slug);
-        setIsFavorite(false);
-      } else {
-        newFavs = [...favs, activeMovie.slug];
-        setIsFavorite(true);
-      }
-      localStorage.setItem("dlowphim_favorites", JSON.stringify(newFavs));
-    } catch (e) {
-      console.error(e);
-    }
+    await toggleFavoriteCtx(activeMovie.slug);
   };
 
   // Drag-to-scroll Handlers for thumbnails row

@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import { Play, Heart, Info } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cleanMovieName } from "@/utils/movieUtils";
+import { useAuth } from "@/context/AuthContext";
+import Cookies from "js-cookie";
 
 interface Movie {
   _id: string;
@@ -38,21 +40,16 @@ export default function MovieHoverPopup({
   const [mounted, setMounted] = useState(false);
   const [details, setDetails] = useState<any | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
-  const [isFavorite, setIsFavorite] = useState(false);
   const router = useRouter();
+  const { user, toggleFavorite: toggleFavoriteCtx } = useAuth();
+
+  const isFavorite = user?.favorites?.includes(movie.slug) || false;
 
   const cleanedName = cleanMovieName(movie.name);
   const cleanedOriginName = cleanMovieName(movie.origin_name);
 
   useEffect(() => {
     setMounted(true);
-    // Load favorite status
-    try {
-      const favs = JSON.parse(localStorage.getItem("dlowphim_favorites") || "[]");
-      setIsFavorite(favs.includes(movie.slug));
-    } catch (e) {
-      // LocalStorage is unavailable during SSR
-    }
 
     const controller = new AbortController();
 
@@ -112,22 +109,9 @@ export default function MovieHoverPopup({
     return "P";
   };
 
-  const toggleFavorite = (e: React.MouseEvent) => {
+  const toggleFavorite = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    try {
-      const favs = JSON.parse(localStorage.getItem("dlowphim_favorites") || "[]");
-      let newFavs;
-      if (favs.includes(movie.slug)) {
-        newFavs = favs.filter((s: string) => s !== movie.slug);
-        setIsFavorite(false);
-      } else {
-        newFavs = [...favs, movie.slug];
-        setIsFavorite(true);
-      }
-      localStorage.setItem("dlowphim_favorites", JSON.stringify(newFavs));
-    } catch (e) {
-      console.error(e);
-    }
+    await toggleFavoriteCtx(movie.slug);
   };
 
   if (!mounted) return null;

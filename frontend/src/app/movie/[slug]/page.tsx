@@ -7,6 +7,7 @@ import { cleanMovieName } from "@/utils/movieUtils";
 import MovieCard from "@/components/MovieCard";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 import { useAuth } from "@/context/AuthContext";
+import Cookies from "js-cookie";
 
 interface Episode {
   name: string;
@@ -57,14 +58,14 @@ interface Comment {
 export default function MovieDetailPage({ params }: { params: { slug: string } }) {
   const { slug } = params;
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, toggleFavorite: toggleFavoriteCtx } = useAuth();
 
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // States tương tác
-  const [isFavorite, setIsFavorite] = useState(false);
+  const isFavorite = user?.favorites?.includes(movie?.slug || "") || false;
   const [shareCopied, setShareCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<"episodes" | "gallery" | "actors" | "recommendations">("episodes");
   const [selectedEpisodeBatch, setSelectedEpisodeBatch] = useState<number>(0);
@@ -95,13 +96,7 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
           if (item) {
             setMovie(item);
             
-            // Kiểm tra trạng thái yêu thích từ LocalStorage
-            try {
-              const favs = JSON.parse(localStorage.getItem("dlowphim_favorites") || "[]");
-              setIsFavorite(favs.includes(item.slug));
-            } catch (e) {
-              console.error(e);
-            }
+
           } else {
             throw new Error("Không tìm thấy thông tin phim.");
           }
@@ -241,22 +236,9 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
   };
 
   // Toggle Yêu thích
-  const handleToggleFavorite = () => {
+  const handleToggleFavorite = async () => {
     if (!movie) return;
-    try {
-      const favs = JSON.parse(localStorage.getItem("dlowphim_favorites") || "[]");
-      let newFavs;
-      if (isFavorite) {
-        newFavs = favs.filter((s: string) => s !== movie.slug);
-        setIsFavorite(false);
-      } else {
-        newFavs = [...favs, movie.slug];
-        setIsFavorite(true);
-      }
-      localStorage.setItem("dlowphim_favorites", JSON.stringify(newFavs));
-    } catch (e) {
-      console.error(e);
-    }
+    await toggleFavoriteCtx(movie.slug);
   };
 
   // Chia sẻ liên kết phim

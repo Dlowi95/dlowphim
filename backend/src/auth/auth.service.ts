@@ -30,6 +30,8 @@ export class AuthService {
         email: user.email,
         displayName: user.displayName,
         avatar: user.avatar,
+        favorites: user.favorites || [],
+        watchHistory: user.watchHistory || [],
       },
     };
   }
@@ -179,6 +181,120 @@ export class AuthService {
       email: user.email,
       displayName: user.displayName,
       avatar: user.avatar,
+      favorites: user.favorites || [],
+      watchHistory: user.watchHistory || [],
     };
+  }
+
+  async toggleFavorite(userId: string, movieSlug: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('Không tìm thấy người dùng');
+    }
+
+    if (!user.favorites) {
+      user.favorites = [];
+    }
+
+    const index = user.favorites.indexOf(movieSlug);
+    if (index > -1) {
+      user.favorites.splice(index, 1);
+    } else {
+      user.favorites.push(movieSlug);
+    }
+
+    await user.save();
+    return { favorites: user.favorites };
+  }
+
+  async syncFavorites(userId: string, localFavorites: string[]) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('Không tìm thấy người dùng');
+    }
+
+    if (!user.favorites) {
+      user.favorites = [];
+    }
+
+    const merged = Array.from(new Set([...user.favorites, ...localFavorites]));
+    user.favorites = merged;
+
+    await user.save();
+    return { favorites: user.favorites };
+  }
+
+  async updateHistory(userId: string, historyItem: any) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('Không tìm thấy người dùng');
+    }
+
+    if (!user.watchHistory) {
+      user.watchHistory = [];
+    }
+
+    user.watchHistory = user.watchHistory.filter(
+      (item) => item.movieSlug !== historyItem.movieSlug,
+    );
+
+    user.watchHistory.unshift({
+      movieSlug: historyItem.movieSlug,
+      movieName: historyItem.movieName,
+      episodeName: historyItem.episodeName,
+      currentTime: historyItem.currentTime,
+      duration: historyItem.duration,
+      updatedAt: new Date(),
+    });
+
+    if (user.watchHistory.length > 50) {
+      user.watchHistory = user.watchHistory.slice(0, 50);
+    }
+
+    user.markModified('watchHistory');
+    await user.save();
+
+    return { watchHistory: user.watchHistory };
+  }
+
+  async syncHistory(userId: string, localHistory: any[]) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('Không tìm thấy người dùng');
+    }
+
+    if (!user.watchHistory) {
+      user.watchHistory = [];
+    }
+
+    const historyMap = new Map<string, any>();
+    
+    user.watchHistory.forEach(item => {
+      historyMap.set(item.movieSlug, item);
+    });
+
+    localHistory.forEach(item => {
+      const existing = historyMap.get(item.movieSlug);
+      if (!existing || new Date(item.updatedAt || new Date()) > new Date(existing.updatedAt)) {
+        historyMap.set(item.movieSlug, {
+          movieSlug: item.movieSlug,
+          movieName: item.movieName,
+          episodeName: item.episodeName,
+          currentTime: item.currentTime,
+          duration: item.duration,
+          updatedAt: item.updatedAt ? new Date(item.updatedAt) : new Date(),
+        });
+      }
+    });
+
+    const merged = Array.from(historyMap.values()).sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+
+    user.watchHistory = merged.slice(0, 50);
+    user.markModified('watchHistory');
+    await user.save();
+
+    return { watchHistory: user.watchHistory };
   }
 }

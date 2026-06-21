@@ -20,7 +20,7 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const { loginManual, registerManual, loginGoogle } = useAuth();
+  const { loginManual, registerManual, loginGoogle, showToast } = useAuth();
 
   // Reset form states when modal is opened/closed
   useEffect(() => {
@@ -51,6 +51,7 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
     try {
       if (isLogin) {
         await loginManual(email, password);
+        showToast("Đăng nhập thành công", "success");
         onOpenChange(false);
       } else {
         if (!displayName.trim()) {
@@ -66,6 +67,7 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
         await registerManual(displayName, email, password);
         // Đăng nhập tự động sau khi đăng ký thành công
         await loginManual(email, password);
+        showToast("Đăng ký tài khoản thành công", "success");
         onOpenChange(false);
       }
     } catch (err: any) {
@@ -81,6 +83,7 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
       setError(null);
       try {
         await loginGoogle(tokenResponse.access_token, true);
+        showToast("Đăng nhập bằng Google thành công", "success");
         onOpenChange(false);
       } catch (err: any) {
         setError(err.message || "Đăng nhập bằng Google thất bại");

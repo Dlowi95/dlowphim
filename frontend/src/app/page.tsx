@@ -13,6 +13,8 @@ import UpcomingRow from "@/components/UpcomingRow";
 import CinemaRow from "@/components/CinemaRow";
 import AnimeRow from "@/components/AnimeRow";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
+import { useAuth } from "@/context/AuthContext";
+import Cookies from "js-cookie";
 
 const FALLBACK_CANDIDATES = [
   {
@@ -142,9 +144,11 @@ export default function HomePage() {
   
   const [movieList, setMovieList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isFavorited, setIsFavorited] = useState(false);
   
   const router = useRouter();
+  const { user, toggleFavorite } = useAuth();
+
+  const isFavorited = user?.favorites?.includes(heroCandidates[activeHeroIndex]?.slug || "") || false;
 
   // 1. Fetch danh sách phim mới cập nhật để lấy candidates và danh sách grid
   useEffect(() => {
@@ -226,10 +230,11 @@ export default function HomePage() {
     setIsTransitioning(true);
     setTimeout(() => {
       setActiveHeroIndex(index);
-      setIsFavorited(false);
       setIsTransitioning(false);
     }, 150); // 150ms để nội dung cũ mờ đi trước khi tráo đổi thông tin
   };
+
+
 
   // Trình biến đổi ảnh gốc thành link ảnh cdn .live cực nét và ổn định
   const getImageUrl = (path: string) => {
@@ -258,6 +263,12 @@ export default function HomePage() {
     if (!heroDetail?.name) return "8.8";
     const base = (heroDetail.name.length % 3) * 0.4 + 8.2;
     return base.toFixed(1);
+  };
+
+  const handleHeroFavoriteToggle = async () => {
+    const movieObj = heroCandidates[activeHeroIndex];
+    if (!movieObj) return;
+    await toggleFavorite(movieObj.slug);
   };
 
   const activeMovie = heroCandidates[activeHeroIndex];
@@ -428,7 +439,7 @@ export default function HomePage() {
 
               {/* Nút Yêu thích trái tim */}
               <button
-                onClick={() => setIsFavorited(!isFavorited)}
+                onClick={handleHeroFavoriteToggle}
                 className={`w-12 h-12 rounded-full border flex items-center justify-center backdrop-blur-md transition-all duration-300 active:scale-95 ${
                   isFavorited 
                     ? "bg-rose-500/20 border-rose-500 text-rose-500 shadow-md shadow-rose-500/25 scale-105" 

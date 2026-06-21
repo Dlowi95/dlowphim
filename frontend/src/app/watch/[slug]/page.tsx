@@ -6,6 +6,7 @@ import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Send, Sparkles, Tv
 import { cleanMovieName } from "@/utils/movieUtils";
 import MovieCard from "@/components/MovieCard";
 import { useAuth } from "@/context/AuthContext";
+import Cookies from "js-cookie";
 
 interface Episode {
   name: string;
@@ -65,13 +66,13 @@ function WatchContent({ slug }: { slug: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const { user } = useAuth();
+  const { user, toggleFavorite: toggleFavoriteCtx } = useAuth();
 
   // States phát phim
   const [activeServerIndex, setActiveServerIndex] = useState(0);
   const [activeEpisodeIndex, setActiveEpisodeIndex] = useState(0);
   const [cinemaMode, setCinemaMode] = useState(false);
-  const [isFavorite, setIsFavorite] = useState(false);
+  const isFavorite = user?.favorites?.includes(movie?.slug || "") || false;
   const [shareCopied, setShareCopied] = useState(false);
   const [playerType, setPlayerType] = useState<"embed" | "hls">("embed");
   const [selectedEpisodeBatch, setSelectedEpisodeBatch] = useState(0);
@@ -80,6 +81,7 @@ function WatchContent({ slug }: { slug: string }) {
   const [isHlsPlaying, setIsHlsPlaying] = useState(false);
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const hasSkippedIntro = React.useRef(false);
+  const lastHistorySavedTime = React.useRef<number>(0);
 
   // States bình luận
   const [commentText, setCommentText] = useState("");
@@ -114,13 +116,7 @@ function WatchContent({ slug }: { slug: string }) {
           if (item) {
             setMovie(item);
             
-            // Kiểm tra trạng thái yêu thích từ LocalStorage
-            try {
-              const favs = JSON.parse(localStorage.getItem("dlowphim_favorites") || "[]");
-              setIsFavorite(favs.includes(item.slug));
-            } catch (e) {
-              console.error(e);
-            }
+
           } else {
             throw new Error("Không tìm thấy thông tin phim.");
           }
@@ -307,22 +303,9 @@ function WatchContent({ slug }: { slug: string }) {
   };
 
   // Toggle Yêu thích
-  const handleToggleFavorite = () => {
+  const handleToggleFavorite = async () => {
     if (!movie) return;
-    try {
-      const favs = JSON.parse(localStorage.getItem("dlowphim_favorites") || "[]");
-      let newFavs;
-      if (isFavorite) {
-        newFavs = favs.filter((s: string) => s !== movie.slug);
-        setIsFavorite(false);
-      } else {
-        newFavs = [...favs, movie.slug];
-        setIsFavorite(true);
-      }
-      localStorage.setItem("dlowphim_favorites", JSON.stringify(newFavs));
-    } catch (e) {
-      console.error(e);
-    }
+    await toggleFavoriteCtx(movie.slug);
   };
 
   // Cuộn mượt lên vị trí trình phát
@@ -412,11 +395,65 @@ function WatchContent({ slug }: { slug: string }) {
     }
   };
 
+  const saveWatchHistory = async (currentTime: number, duration: number) => {
+    if (!movie || !activeEpisode) return;
+
+    const historyItem = {
+      movieSlug: movie.slug,
+      movieName: cleanMovieName(movie.name),
+      episodeName: activeEpisode.name,
+      currentTime: Math.floor(currentTime),
+      duration: Math.floor(duration),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // 1. Save to local storage first
+    try {
+      const localHist = JSON.parse(localStorage.getItem("dlowphim_history") || "[]");
+      const filtered = localHist.filter((item: any) => item.movieSlug !== movie.slug);
+      filtered.unshift(historyItem);
+      localStorage.setItem("dlowphim_history", JSON.stringify(filtered.slice(0, 50)));
+    } catch (e) {
+      console.error(e);
+    }
+
+    // 2. Save to database if user is logged in
+    if (user) {
+      try {
+        const token = Cookies.get("token");
+        const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+        await fetch(`${API_URL}/auth/history/update`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(historyItem),
+        });
+      } catch (err) {
+        console.error("Lỗi đồng bộ lịch sử xem:", err);
+      }
+    }
+  };
+
+  const handleHlsPause = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    setIsHlsPlaying(false);
+    const video = e.currentTarget;
+    saveWatchHistory(video.currentTime, video.duration);
+  };
+
   const handleHlsTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = e.currentTarget;
     if (skipIntro && !hasSkippedIntro.current && video.currentTime < 90) {
       video.currentTime = 90;
       hasSkippedIntro.current = true;
+    }
+
+    // Save progress to watch history
+    const now = Date.now();
+    if (now - lastHistorySavedTime.current > 7000) { // save progress every 7 seconds
+      saveWatchHistory(video.currentTime, video.duration);
+      lastHistorySavedTime.current = now;
     }
   };
 
@@ -432,6 +469,21 @@ function WatchContent({ slug }: { slug: string }) {
           scrollToPlayer();
         }
       }
+    }
+  };
+
+  const handleHlsLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget;
+    try {
+      const localHist = JSON.parse(localStorage.getItem("dlowphim_history") || "[]");
+      const savedItem = localHist.find((item: any) => item.movieSlug === slug);
+      if (savedItem && savedItem.currentTime > 5 && savedItem.currentTime < video.duration - 10) {
+        video.currentTime = savedItem.currentTime;
+        hasSkippedIntro.current = true; // Mark as skipped to prevent auto-skipping again on resume
+        console.log(`Resuming playback from saved position: ${savedItem.currentTime}s`);
+      }
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -569,9 +621,10 @@ function WatchContent({ slug }: { slug: string }) {
                       ref={videoRef}
                       controls
                       onPlay={handleHlsPlay}
-                      onPause={() => setIsHlsPlaying(false)}
+                      onPause={handleHlsPause}
                       onEnded={handleHlsVideoEnded}
                       onTimeUpdate={handleHlsTimeUpdate}
+                      onLoadedMetadata={handleHlsLoadedMetadata}
                       className="w-full h-full bg-black animate-fadeIn"
                       title="DlowPhim HLS Video Player"
                     />

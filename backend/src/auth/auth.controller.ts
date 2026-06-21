@@ -28,4 +28,32 @@ export class AuthController {
     const userId = req['user']?.sub;
     return this.authService.getMe(userId);
   }
+
+  @Post('favorites/toggle')
+  @UseGuards(AuthGuard)
+  async toggleFavorite(@Req() req: express.Request, @Body('movieSlug') movieSlug: string) {
+    const userId = req['user']?.sub;
+    return this.authService.toggleFavorite(userId, movieSlug);
+  }
+
+  @Post('favorites/sync')
+  @UseGuards(AuthGuard)
+  async syncFavorites(@Req() req: express.Request, @Body('localFavorites') localFavorites: string[]) {
+    const userId = req['user']?.sub;
+    return this.authService.syncFavorites(userId, localFavorites || []);
+  }
+
+  @Post('history/update')
+  @UseGuards(AuthGuard)
+  async updateHistory(@Req() req: express.Request, @Body() historyItem: any) {
+    const userId = req['user']?.sub;
+    return this.authService.updateHistory(userId, historyItem);
+  }
+
+  @Post('history/sync')
+  @UseGuards(AuthGuard)
+  async syncHistory(@Req() req: express.Request, @Body('localHistory') localHistory: any[]) {
+    const userId = req['user']?.sub;
+    return this.authService.syncHistory(userId, localHistory || []);
+  }
 }
