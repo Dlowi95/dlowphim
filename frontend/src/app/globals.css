@@ -7,6 +7,34 @@ body {
   color: #ffffff;
 }
 
+/* Custom premium scrollbars globally */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #09090e;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1d1e2c;
+  border-radius: 9999px;
+  border: 2px solid #09090e;
+  transition: all 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #ec4899; /* Neon Pink */
+}
+
+/* For Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1d1e2c #09090e;
+}
+
+
 /* Global wide cinema layout adjustments */
 .max-w-7xl {
   max-width: 1400px !important;
@@ -64,4 +92,86 @@ video:focus {
 
 .animate-toast-progress {
   animation: dlow-toast-progress 5s linear forwards;
+}
+
+/* Custom settings animations */
+@keyframes dlow-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fadeIn {
+  animation: dlow-fade-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes dlow-spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: dlow-spin-slow 12s linear infinite;
+}
+
+/* Custom styling for input range sliders (Timeline & Volume) */
+input[type="range"].timeline-slider,
+input[type="range"].volume-slider {
+  -webkit-appearance: none;
+  background: rgba(255, 255, 255, 0.2);
+  height: 4px;
+  border-radius: 9999px;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+input[type="range"].timeline-slider:hover {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+input[type="range"].timeline-slider::-webkit-slider-thumb,
+input[type="range"].volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  background: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.6);
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+input[type="range"].timeline-slider::-webkit-slider-thumb:hover,
+input[type="range"].volume-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.4);
+  background: #ec4899; /* Neon Pink */
+  box-shadow: 0 0 12px rgba(236, 72, 153, 0.7);
+}
+
+/* Firefox sliders */
+input[type="range"].timeline-slider::-moz-range-thumb,
+input[type="range"].volume-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 0;
+  border-radius: 9999px;
+  background: #ffffff;
+  cursor: pointer;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+input[type="range"].timeline-slider::-moz-range-thumb:hover,
+input[type="range"].volume-slider::-moz-range-thumb:hover {
+  transform: scale(1.4);
+  background: #ec4899;
 }

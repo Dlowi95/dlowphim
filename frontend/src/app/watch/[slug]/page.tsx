@@ -61,6 +61,7 @@ function WatchContent({ slug }: { slug: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryEp = searchParams.get("ep") || "";
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -82,6 +83,7 @@ function WatchContent({ slug }: { slug: string }) {
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const hasSkippedIntro = React.useRef(false);
   const lastHistorySavedTime = React.useRef<number>(0);
+  const [kkServers, setKkServers] = useState<Server[]>([]);
 
   // States bình luận
   const [commentText, setCommentText] = useState("");
@@ -135,10 +137,73 @@ function WatchContent({ slug }: { slug: string }) {
     fetchMovieDetail();
   }, [slug]);
 
+  // Fetch thêm nguồn từ KKPhim song song
+  useEffect(() => {
+    if (!slug) return;
+    async function fetchKKPhimDetail() {
+      try {
+        const res = await fetch(`https://phimapi.com/phim/${slug}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === true || data.status === "success") {
+            const episodes = data.episodes || [];
+            const servers: Server[] = episodes.map((srv: any) => ({
+              server_name: srv.server_name || "KKPhim",
+              server_data: (srv.server_data || []).map((ep: any) => ({
+                name: ep.name,
+                slug: ep.slug,
+                filename: ep.filename || "",
+                link_embed: ep.link_embed,
+                link_m3u8: ep.link_m3u8,
+              })),
+            }));
+            setKkServers(servers);
+          }
+        }
+      } catch (err) {
+        console.error("Lỗi lấy chi tiết phim từ KKPhim:", err);
+      }
+    }
+    setKkServers([]);
+    fetchKKPhimDetail();
+  }, [slug]);
+
   const cleanedName = movie ? cleanMovieName(movie.name) : "";
-  const servers = movie?.episodes || [];
+
+  // Merge servers từ OPhim và KKPhim
+  const combinedServers: Server[] = [
+    ...(movie?.episodes || []).map((srv) => ({
+      server_name: srv.server_name.toLowerCase().includes("ophim") ? srv.server_name : `OPhim - ${srv.server_name}`,
+      server_data: srv.server_data,
+    })),
+    ...kkServers.map((srv) => ({
+      server_name: srv.server_name.toLowerCase().includes("kkphim") ? srv.server_name : `KKPhim - ${srv.server_name}`,
+      server_data: srv.server_data,
+    })),
+  ];
+
+  const servers = combinedServers;
   const currentServer = servers[activeServerIndex];
   const episodesData = currentServer?.server_data || [];
+
+  // Helper to generate list of friendly labels for all combined servers
+  const getFriendlyLabels = (serversList: Server[]) => {
+    const counts: Record<string, number> = {};
+    return serversList.map((srv) => {
+      const nameLower = (srv.server_name || "").toLowerCase();
+      let typeLabel = "Vietsub";
+      if (nameLower.includes("thuyết minh") || nameLower.includes("thuyet minh")) {
+        typeLabel = "Thuyết minh";
+      } else if (nameLower.includes("lồng tiếng") || nameLower.includes("long tieng")) {
+        typeLabel = "Lồng tiếng";
+      }
+      
+      counts[typeLabel] = (counts[typeLabel] || 0) + 1;
+      return `${typeLabel} #${counts[typeLabel]}`;
+    });
+  };
+
+  const friendlyLabels = getFriendlyLabels(servers);
 
   // Natural sorting helper for episodes
   const getEpisodeNumber = (name: string): number => {
@@ -158,59 +223,35 @@ function WatchContent({ slug }: { slug: string }) {
   const activeEpisode = episodesData[activeEpisodeIndex];
   const activeEmbed = activeEpisode?.link_embed || null;
 
-  // 1.7. Đồng bộ bình luận theo phim qua LocalStorage (hoặc nạp bình luận mẫu riêng cho phim)
+  // 1.7. Đồng bộ bình luận theo phim qua Backend
   useEffect(() => {
     if (!movie) return;
-    const nameClean = cleanMovieName(movie.name);
-    const localComments = localStorage.getItem(`dlowphim_comments_${slug}`);
-    if (localComments) {
-      setComments(JSON.parse(localComments));
-    } else {
-      const defaultComments: Comment[] = [
-        {
-          id: "c-1",
-          avatar: "A",
-          name: "Ani",
-          role: "member",
-          content: "trời ơi phim hay muốn chửi thề, mới xem đến tập 2 mà peak vc",
-          time: "8 ngày trước",
-          likes: 0,
-          episodeLabel: "P.1 - Tập 2",
-          avatarUrl: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=120"
-        },
-        {
-          id: "c-2",
-          avatar: "H",
-          name: "Huỳnh Ngọc My",
-          role: "member",
-          content: "vừa coi phim vừa đọc truyện má khóc sưng con mắt",
-          time: "10 ngày trước",
-          likes: 4,
-          userVote: "up",
-          episodeLabel: "P.1 - Tập 14",
-          avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=120"
-        },
-        {
-          id: "c-3",
-          avatar: "Q",
-          name: "Quỳnh Châu Nguyễn",
-          role: "member",
-          content: "tập 13 shop oi",
-          time: "11 ngày trước",
-          likes: 0,
-          episodeLabel: "P.1 - Tập 1",
-          avatarUrl: "vietnam-flag"
+    
+    async function fetchComments() {
+      try {
+        const token = Cookies.get("token");
+        const headers: HeadersInit = {};
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
         }
-      ];
-      setComments(defaultComments);
-      localStorage.setItem(`dlowphim_comments_${slug}`, JSON.stringify(defaultComments));
+        
+        const res = await fetch(`${API_URL}/comments/${slug}`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          setComments(data);
+        }
+      } catch (err) {
+        console.error("Lỗi lấy bình luận:", err);
+      }
     }
+    
+    fetchComments();
   }, [movie, slug]);
 
   // 2. Đồng bộ tập phim đang hoạt động dựa trên query queryEp
   useEffect(() => {
-    if (!movie || !movie.episodes || movie.episodes.length === 0) return;
-    const currentServer = movie.episodes[activeServerIndex];
+    if (servers.length === 0) return;
+    const currentServer = servers[activeServerIndex];
     if (!currentServer || !currentServer.server_data || currentServer.server_data.length === 0) return;
 
     if (!queryEp) {
@@ -229,7 +270,7 @@ function WatchContent({ slug }: { slug: string }) {
     } else {
       setActiveEpisodeIndex(0);
     }
-  }, [movie, queryEp, activeServerIndex]);
+  }, [movie, queryEp, activeServerIndex, kkServers]);
 
   // 2.2. Đồng bộ batch hiển thị tập phim
   useEffect(() => {
@@ -324,7 +365,7 @@ function WatchContent({ slug }: { slug: string }) {
   };
 
   // Gửi bình luận
-  const handleSubmitComment = (e: React.FormEvent) => {
+  const handleSubmitComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!commentText.trim() || !user) return;
 
@@ -336,53 +377,69 @@ function WatchContent({ slug }: { slug: string }) {
       epLabel = `P.1 - Tập ${activeEpisode.name}`;
     }
 
-    const newComment: Comment = {
-      id: `c-custom-${Date.now()}`,
-      avatar: userInitial,
-      name: displayName,
-      role: "member",
-      content: commentText.trim(),
-      time: "Vừa xong",
-      likes: 0,
-      isSpoiler: isSpoiler,
-      episodeLabel: epLabel || undefined,
-      avatarUrl: user.avatar || undefined,
-    };
+    try {
+      const token = Cookies.get("token");
+      const res = await fetch(`${API_URL}/comments/${slug}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          content: commentText.trim(),
+          isSpoiler: isSpoiler,
+          episodeLabel: epLabel || undefined,
+        }),
+      });
 
-    const updatedComments = [newComment, ...comments];
-    setComments(updatedComments);
-    localStorage.setItem(`dlowphim_comments_${slug}`, JSON.stringify(updatedComments));
-    setCommentText("");
-    setIsSpoiler(false);
+      if (res.ok) {
+        const newComment = await res.json();
+        setComments((prev) => [newComment, ...prev]);
+        setCommentText("");
+        setIsSpoiler(false);
+      }
+    } catch (err) {
+      console.error("Lỗi gửi bình luận:", err);
+    }
   };
 
-  // Upvote/Downvote bình luận kiểu Cobephim
-  const handleVote = (commentId: string, type: "up" | "down") => {
-    const updated = comments.map(c => {
-      if (c.id === commentId) {
-        let newLikes = c.likes;
-        let newVote: "up" | "down" | null = type;
+  // Upvote/Downvote bình luận qua Backend
+  const handleVote = async (commentId: string, type: "up" | "down") => {
+    if (!user) {
+      window.dispatchEvent(new Event("dlowphim_open_auth"));
+      return;
+    }
 
-        if (c.userVote === type) {
-          // Bấm lại cùng nút -> Huỷ vote
-          newVote = null;
-          if (type === "up") newLikes = Math.max(0, newLikes - 1);
-        } else {
-          // Đổi vote hoặc vote lần đầu
-          if (c.userVote === "up") newLikes = Math.max(0, newLikes - 1);
-          if (type === "up") newLikes += 1;
-        }
+    try {
+      const token = Cookies.get("token");
+      const res = await fetch(`${API_URL}/comments/${commentId}/vote`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ type }),
+      });
 
-        return {
-          ...c,
-          userVote: newVote,
-          likes: newLikes
-        };
+      if (res.ok) {
+        const data = await res.json();
+        setComments((prev) =>
+          prev.map((c) => {
+            if (c.id === commentId) {
+              return {
+                ...c,
+                likes: data.likes,
+                liked: data.liked,
+                userVote: data.userVote,
+              };
+            }
+            return c;
+          })
+        );
       }
-      return c;
-    });
-    setComments(updated);
-    localStorage.setItem(`dlowphim_comments_${slug}`, JSON.stringify(updated));
+    } catch (err) {
+      console.error("Lỗi vote bình luận:", err);
+    }
   };
 
   // HLS Player event handlers for autoplayNext and skipIntro
@@ -709,7 +766,7 @@ function WatchContent({ slug }: { slug: string }) {
                       >
                         {servers.map((s, idx) => (
                           <option key={`drawer-server-opt-${idx}`} value={idx}>
-                            {s.server_name || `Server #${idx + 1}`}
+                            {friendlyLabels[idx] || s.server_name || `Server #${idx + 1}`}
                           </option>
                         ))}
                       </select>
@@ -943,7 +1000,7 @@ function WatchContent({ slug }: { slug: string }) {
               {/* Row 1: Chọn Nguồn Phát */}
               {servers.length > 0 && (
                 <div className="space-y-3">
-                  <span className="block text-xs font-black text-zinc-450 uppercase tracking-wider">
+                  <span className="block text-xs font-black text-zinc-455 uppercase tracking-wider">
                     Chọn Nguồn Phát:
                   </span>
                   
@@ -951,6 +1008,7 @@ function WatchContent({ slug }: { slug: string }) {
                     {servers.map((server, sIdx) => {
                       const hasHls = server.server_data.some((ep) => ep.link_m3u8);
                       const isServerActive = sIdx === activeServerIndex;
+                      const serverLabel = friendlyLabels[sIdx] || server.server_name;
                       
                       return (
                         <React.Fragment key={`combined-source-${sIdx}`}>
@@ -967,7 +1025,7 @@ function WatchContent({ slug }: { slug: string }) {
                                 : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-zinc-800 hover:text-white"
                             }`}
                           >
-                            Nguồn VIP #1 ({server.server_name || `Server #${sIdx + 1}`})
+                            {serverLabel} (Embed)
                           </button>
                           
                           {/* HLS (m3u8) Source Button */}
@@ -984,7 +1042,7 @@ function WatchContent({ slug }: { slug: string }) {
                                   : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-zinc-800 hover:text-white"
                               }`}
                             >
-                              Nguồn HLS #2 ({server.server_name || `Server #${sIdx + 1}`})
+                              {serverLabel} (HLS)
                             </button>
                           )}
                         </React.Fragment>
@@ -1188,7 +1246,7 @@ function WatchContent({ slug }: { slug: string }) {
                               <span className="font-extrabold text-xs text-zinc-200 mr-1.5">{comment.name}</span>
                               
                               {/* Gold/Amber Infinity symbol */}
-                              <span className="text-amber-500 font-extrabold text-sm mr-2.5 select-none flex items-center" title="Premium User">
+                              <span className="text-pink-500 drop-shadow-[0_0_6px_rgba(236,72,153,0.85)] font-extrabold text-sm mr-2.5 select-none flex items-center" title="DlowPhim Member">
                                 ∞
                               </span>
 
@@ -1199,11 +1257,6 @@ function WatchContent({ slug }: { slug: string }) {
                               {isAdmin && (
                                 <span className="bg-pink-500 text-white text-[8px] font-black px-1.5 py-0.2 rounded uppercase tracking-wider mr-2">
                                   Quản trị
-                                </span>
-                              )}
-                              {isVip && (
-                                <span className="bg-pink-500 text-white text-[8px] font-black px-1.5 py-0.2 rounded uppercase tracking-wider mr-2">
-                                  VIP
                                 </span>
                               )}
                               {hasSpoiler && (

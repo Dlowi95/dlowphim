@@ -55,10 +55,11 @@ interface Comment {
   liked?: boolean;
 }
 
-export default function MovieDetailPage({ params }: { params: { slug: string } }) {
-  const { slug } = params;
+export default function MovieDetail({ params }: { params: { slug: string } }) {
+  const slug = params.slug;
   const router = useRouter();
   const { user, toggleFavorite: toggleFavoriteCtx } = useAuth();
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -142,54 +143,29 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
   }, [movie]);
 
   // 3. Đồng bộ bình luận theo phim qua LocalStorage (hoặc nạp bình luận mẫu riêng cho phim)
+  // Đồng bộ bình luận theo phim qua Backend
   useEffect(() => {
     if (!movie) return;
-    const nameClean = cleanMovieName(movie.name);
-    const localComments = localStorage.getItem(`dlowphim_comments_${slug}`);
-    if (localComments) {
-      setComments(JSON.parse(localComments));
-    } else {
-      const defaultComments: Comment[] = [
-        {
-          id: "c-1",
-          avatar: "H",
-          name: "Hoàng Long",
-          role: "vip",
-          content: `Phim ${nameClean} xem mượt cực kỳ, âm thanh sống động ghê. Thích giao diện rạp chiếu phim (Cinema Mode) quá đi mất!`,
-          time: "2 giờ trước",
-          likes: 42,
-        },
-        {
-          id: "c-2",
-          avatar: "A",
-          name: "Ánh Dương",
-          role: "member",
-          content: `Tốc độ tải phim ${nameClean} nhanh kinh khủng. Mình dùng mạng 4G xem HD vẫn không hề giật lag tí nào luôn. Đỉnh!`,
-          time: "5 giờ trước",
-          likes: 18,
-        },
-        {
-          id: "c-3",
-          avatar: "D",
-          name: "Duy Mạnh",
-          role: "member",
-          content: `Vừa mới chiếu rạp mà trên này đã có bản nét Vietsub của ${nameClean} rồi, DlowPhim cập nhật nhanh thật sự.`,
-          time: "1 ngày trước",
-          likes: 27,
-        },
-        {
-          id: "c-4",
-          avatar: "A",
-          name: "Admin Dlow",
-          role: "admin",
-          content: `Chào các bồ! Chúc các bồ xem phim ${nameClean} vui vẻ nhé. Sắp tới tụi mình sẽ nâng cấp tính năng phòng chiếu chung nữa nha!`,
-          time: "2 ngày trước",
-          likes: 109,
+    
+    async function fetchComments() {
+      try {
+        const token = Cookies.get("token");
+        const headers: HeadersInit = {};
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
         }
-      ];
-      setComments(defaultComments);
-      localStorage.setItem(`dlowphim_comments_${slug}`, JSON.stringify(defaultComments));
+        
+        const res = await fetch(`${API_URL}/comments/${slug}`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          setComments(data);
+        }
+      } catch (err) {
+        console.error("Lỗi lấy bình luận:", err);
+      }
     }
+    
+    fetchComments();
   }, [movie, slug]);
 
   // Sinh điểm IMDb giả lập
@@ -265,42 +241,73 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
     router.push(`/watch/${movie.slug}?ep=${encodeURIComponent(episodeName)}`);
   };
 
-  // Gửi bình luận
-  const handleSubmitComment = (e: React.FormEvent) => {
+  // Gửi bình luận lên Backend
+  const handleSubmitComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!commentText.trim() || !user) return;
 
-    const newComment: Comment = {
-      id: `c-custom-${Date.now()}`,
-      avatar: user.displayName ? user.displayName[0].toUpperCase() : "K",
-      name: user.displayName || "Thành viên",
-      role: "member",
-      content: commentText.trim(),
-      time: "Vừa xong",
-      likes: 0,
-    };
+    try {
+      const token = Cookies.get("token");
+      const res = await fetch(`${API_URL}/comments/${slug}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          content: commentText.trim(),
+          isSpoiler: isSpoiler,
+        }),
+      });
 
-    const updatedComments = [newComment, ...comments];
-    setComments(updatedComments);
-    localStorage.setItem(`dlowphim_comments_${slug}`, JSON.stringify(updatedComments));
-    setCommentText("");
-    setIsSpoiler(false);
+      if (res.ok) {
+        const newComment = await res.json();
+        setComments((prev) => [newComment, ...prev]);
+        setCommentText("");
+        setIsSpoiler(false);
+      }
+    } catch (err) {
+      console.error("Lỗi gửi bình luận:", err);
+    }
   };
 
-  // Thích bình luận
-  const handleLikeComment = (commentId: string) => {
-    const updated = comments.map(c => {
-      if (c.id === commentId) {
-        return {
-          ...c,
-          liked: !c.liked,
-          likes: c.liked ? c.likes - 1 : c.likes + 1
-        };
+  // Thích bình luận qua Backend
+  const handleLikeComment = async (commentId: string) => {
+    if (!user) {
+      window.dispatchEvent(new Event("dlowphim_open_auth"));
+      return;
+    }
+
+    try {
+      const token = Cookies.get("token");
+      const res = await fetch(`${API_URL}/comments/${commentId}/vote`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ type: "up" }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setComments((prev) =>
+          prev.map((c) => {
+            if (c.id === commentId) {
+              return {
+                ...c,
+                likes: data.likes,
+                liked: data.liked,
+                userVote: data.userVote,
+              };
+            }
+            return c;
+          })
+        );
       }
-      return c;
-    });
-    setComments(updated);
-    localStorage.setItem(`dlowphim_comments_${slug}`, JSON.stringify(updated));
+    } catch (err) {
+      console.error("Lỗi thích bình luận:", err);
+    }
   };
 
   if (loading) {
@@ -389,7 +396,7 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
                   onClick={handleToggleFavorite}
                   className="flex flex-col items-center gap-1 text-[10px] md:text-[11px] font-bold text-zinc-400 hover:text-white transition-colors cursor-pointer select-none"
                 >
-                  <Heart size={18} className={isFavorite ? "fill-rose-500 text-rose-500" : ""} />
+                  <Heart size={18} className={isFavorite ? "fill-pink-500 text-pink-500 drop-shadow-[0_0_8px_rgba(236,72,153,0.9)]" : ""} />
                   <span>Yêu thích</span>
                 </button>
 
@@ -880,14 +887,12 @@ export default function MovieDetailPage({ params }: { params: { slug: string } }
                         <div className="flex-1 space-y-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-extrabold text-xs text-zinc-200">{comment.name}</span>
+                            <span className="text-pink-500 drop-shadow-[0_0_6px_rgba(236,72,153,0.85)] font-extrabold text-sm select-none flex items-center" title="DlowPhim Member">
+                              ∞
+                            </span>
                             {isAdmin && (
                               <span className="bg-pink-500 text-white text-[7px] font-black px-1.5 py-0.2 rounded uppercase tracking-wider">
                                 Quản trị
-                              </span>
-                            )}
-                            {isVip && (
-                              <span className="bg-pink-500 text-white text-[7px] font-black px-1.5 py-0.2 rounded uppercase tracking-wider">
-                                VIP
                               </span>
                             )}
                             <span className="text-[9px] text-zinc-550 font-semibold">{comment.time}</span>

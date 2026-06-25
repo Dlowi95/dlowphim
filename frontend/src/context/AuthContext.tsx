@@ -23,6 +23,7 @@ interface AuthContextType {
   showAuthToast: () => void;
   showToast: (message: string, type: "success" | "error" | "warning") => void;
   toggleFavorite: (slug: string) => Promise<boolean>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -276,6 +277,13 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     return false;
   };
 
+  const refreshUser = async () => {
+    const token = Cookies.get("token");
+    if (token) {
+      await verifySession(token);
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -288,6 +296,7 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
         showAuthToast,
         showToast,
         toggleFavorite,
+        refreshUser,
       }}
     >
       {children}
