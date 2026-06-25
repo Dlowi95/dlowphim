@@ -200,7 +200,7 @@ export default function UpcomingRow() {
         <div className="relative group/tooltip">
           <Link
             href="/search?type=phim-sap-chieu"
-            className="w-8 h-8 rounded-full border border-zinc-850 bg-zinc-900/60 hover:border-pink-500 hover:text-pink-500 flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer"
+            className="w-8 h-8 rounded-full border border-zinc-800 bg-zinc-900/60 hover:border-pink-500 hover:text-pink-500 flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer"
           >
             <ChevronRight size={16} className="ml-0.5" />
           </Link>

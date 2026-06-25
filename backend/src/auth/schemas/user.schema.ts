@@ -46,6 +46,9 @@ export class User {
 
   @Prop({ type: [Object], default: [] })
   watchHistory: HistoryItem[];
+
+  @Prop({ default: 'member' })
+  role: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

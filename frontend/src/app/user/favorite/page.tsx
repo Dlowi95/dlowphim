@@ -192,7 +192,7 @@ export default function UserFavoritePage() {
                       <span className="bg-pink-500 px-1.5 py-0.5 rounded text-[9px] font-black text-white uppercase shadow-sm">
                         {movie.quality}
                       </span>
-                      <span className="bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded text-[9px] font-black text-white border border-zinc-850">
+                      <span className="bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded text-[9px] font-black text-white border border-zinc-800">
                         {movie.lang === "Vietsub" ? "P.Đề" : movie.lang}
                       </span>
                     </div>
@@ -217,7 +217,7 @@ export default function UserFavoritePage() {
                 <button
                   onClick={handlePrevPage}
                   disabled={currentPage === 1}
-                  className={`w-10 h-10 rounded-full border border-zinc-850 bg-zinc-900/60 text-zinc-400 flex items-center justify-center transition-all ${
+                  className={`w-10 h-10 rounded-full border border-zinc-800 bg-zinc-900/60 text-zinc-400 flex items-center justify-center transition-all ${
                     currentPage === 1
                       ? "opacity-40 cursor-not-allowed"
                       : "hover:border-zinc-700 hover:text-white hover:bg-zinc-800 cursor-pointer active:scale-95"
@@ -228,7 +228,7 @@ export default function UserFavoritePage() {
 
                 <div className="flex items-center gap-2 text-zinc-400 font-bold text-xs">
                   <span>Trang</span>
-                  <span className="bg-[#12131b] border border-zinc-850 text-white font-extrabold w-10 h-8 flex items-center justify-center rounded-lg">{currentPage}</span>
+                  <span className="bg-[#12131b] border border-zinc-800 text-white font-extrabold w-10 h-8 flex items-center justify-center rounded-lg">{currentPage}</span>
                   <span>/</span>
                   <span>{totalPages}</span>
                 </div>
@@ -236,7 +236,7 @@ export default function UserFavoritePage() {
                 <button
                   onClick={handleNextPage}
                   disabled={currentPage === totalPages}
-                  className={`w-10 h-10 rounded-full border border-zinc-850 bg-zinc-900/60 text-zinc-400 flex items-center justify-center transition-all ${
+                  className={`w-10 h-10 rounded-full border border-zinc-800 bg-zinc-900/60 text-zinc-400 flex items-center justify-center transition-all ${
                     currentPage === totalPages
                       ? "opacity-40 cursor-not-allowed"
                       : "hover:border-zinc-700 hover:text-white hover:bg-zinc-800 cursor-pointer active:scale-95"

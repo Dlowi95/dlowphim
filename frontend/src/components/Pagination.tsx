@@ -91,7 +91,7 @@ export default function Pagination({ currentPage, totalPages, onPageChange }: Pa
               className={`w-10 h-10 rounded-xl flex items-center justify-center font-extrabold text-sm transition-all duration-200 cursor-pointer ${
                 isActive
                   ? "bg-pink-500 text-white shadow-lg shadow-pink-500/20"
-                  : "border border-zinc-850 bg-zinc-950 text-zinc-400 hover:text-white hover:border-zinc-700 hover:bg-zinc-900"
+                  : "border border-zinc-800 bg-zinc-950 text-zinc-400 hover:text-white hover:border-zinc-700 hover:bg-zinc-900"
               }`}
             >
               {pageNum}

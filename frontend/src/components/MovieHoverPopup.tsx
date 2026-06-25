@@ -192,7 +192,7 @@ export default function MovieHoverPopup({
               className={`w-11 h-11 rounded-xl border flex items-center justify-center transition-all duration-200 active:scale-90 cursor-pointer ${
                 isFavorite 
                   ? "bg-rose-500/10 border-rose-500/30 text-rose-500 shadow-md shadow-rose-500/5" 
-                  : "bg-zinc-850/80 border-zinc-700/50 hover:border-zinc-600 text-zinc-300 hover:text-white"
+                  : "bg-zinc-800/80 border-zinc-700/50 hover:border-zinc-600 text-zinc-300 hover:text-white"
               }`}
             >
               <Heart size={16} className={isFavorite ? "fill-rose-500" : ""} />
@@ -203,7 +203,7 @@ export default function MovieHoverPopup({
                 e.stopPropagation();
                 router.push(`/movie/${movie.slug}`);
               }}
-              className="w-11 h-11 rounded-xl bg-zinc-850/80 border border-zinc-700/50 hover:border-zinc-600 text-zinc-300 hover:text-white flex items-center justify-center transition-all duration-200 active:scale-90 cursor-pointer"
+              className="w-11 h-11 rounded-xl bg-zinc-800/80 border border-zinc-700/50 hover:border-zinc-600 text-zinc-300 hover:text-white flex items-center justify-center transition-all duration-200 active:scale-90 cursor-pointer"
             >
               <Info size={16} />
             </button>

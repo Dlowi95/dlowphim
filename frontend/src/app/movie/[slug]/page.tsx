@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Sparkles, Tv, HelpCircle, Send, Plus, MessageSquare, Image, Users, Flame, ExternalLink, Compass } from "lucide-react";
+import CommentRatingSection from "@/components/CommentRatingSection";
 import { cleanMovieName } from "@/utils/movieUtils";
 import MovieCard from "@/components/MovieCard";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
@@ -44,22 +45,12 @@ interface MovieDetail {
   trailer_url?: string;
 }
 
-interface Comment {
-  id: string;
-  avatar: string;
-  name: string;
-  role: "member" | "vip" | "admin";
-  content: string;
-  time: string;
-  likes: number;
-  liked?: boolean;
-}
+
 
 export default function MovieDetail({ params }: { params: { slug: string } }) {
   const slug = params.slug;
   const router = useRouter();
   const { user, toggleFavorite: toggleFavoriteCtx } = useAuth();
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -72,9 +63,6 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
   const [selectedEpisodeBatch, setSelectedEpisodeBatch] = useState<number>(0);
 
   // States bình luận
-  const [commentText, setCommentText] = useState("");
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [isSpoiler, setIsSpoiler] = useState(false);
 
   // Phim liên quan
   const [relatedMovies, setRelatedMovies] = useState<any[]>([]);
@@ -142,31 +130,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
     fetchRelated();
   }, [movie]);
 
-  // 3. Đồng bộ bình luận theo phim qua LocalStorage (hoặc nạp bình luận mẫu riêng cho phim)
-  // Đồng bộ bình luận theo phim qua Backend
-  useEffect(() => {
-    if (!movie) return;
-    
-    async function fetchComments() {
-      try {
-        const token = Cookies.get("token");
-        const headers: HeadersInit = {};
-        if (token) {
-          headers["Authorization"] = `Bearer ${token}`;
-        }
-        
-        const res = await fetch(`${API_URL}/comments/${slug}`, { headers });
-        if (res.ok) {
-          const data = await res.json();
-          setComments(data);
-        }
-      } catch (err) {
-        console.error("Lỗi lấy bình luận:", err);
-      }
-    }
-    
-    fetchComments();
-  }, [movie, slug]);
+
 
   // Sinh điểm IMDb giả lập
   const getImdbScore = () => {
@@ -241,74 +205,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
     router.push(`/watch/${movie.slug}?ep=${encodeURIComponent(episodeName)}`);
   };
 
-  // Gửi bình luận lên Backend
-  const handleSubmitComment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!commentText.trim() || !user) return;
 
-    try {
-      const token = Cookies.get("token");
-      const res = await fetch(`${API_URL}/comments/${slug}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          content: commentText.trim(),
-          isSpoiler: isSpoiler,
-        }),
-      });
-
-      if (res.ok) {
-        const newComment = await res.json();
-        setComments((prev) => [newComment, ...prev]);
-        setCommentText("");
-        setIsSpoiler(false);
-      }
-    } catch (err) {
-      console.error("Lỗi gửi bình luận:", err);
-    }
-  };
-
-  // Thích bình luận qua Backend
-  const handleLikeComment = async (commentId: string) => {
-    if (!user) {
-      window.dispatchEvent(new Event("dlowphim_open_auth"));
-      return;
-    }
-
-    try {
-      const token = Cookies.get("token");
-      const res = await fetch(`${API_URL}/comments/${commentId}/vote`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ type: "up" }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setComments((prev) =>
-          prev.map((c) => {
-            if (c.id === commentId) {
-              return {
-                ...c,
-                likes: data.likes,
-                liked: data.liked,
-                userVote: data.userVote,
-              };
-            }
-            return c;
-          })
-        );
-      }
-    } catch (err) {
-      console.error("Lỗi thích bình luận:", err);
-    }
-  };
 
   if (loading) {
     return (
@@ -496,14 +393,14 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
             <span className="bg-amber-400 text-black border border-amber-400 font-black px-2 py-0.5 rounded flex items-center gap-0.5 shadow-sm">
               IMDb {getImdbScore()}
             </span>
-            <span className="border border-zinc-850 bg-zinc-950/60 px-2 py-0.5 rounded">
+            <span className="border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 rounded">
               T16
             </span>
-            <span className="border border-zinc-850 bg-zinc-950/60 px-2 py-0.5 rounded">
+            <span className="border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 rounded">
               {movie.year}
             </span>
             {movie.time && (
-              <span className="border border-zinc-850 bg-zinc-950/60 px-2 py-0.5 rounded">
+              <span className="border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 rounded">
                 {movie.time}
               </span>
             )}
@@ -516,7 +413,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                 <button
                   key={cat.slug}
                   onClick={() => router.push(`/search?genre=${cat.slug}`)}
-                  className="bg-zinc-900/40 border border-zinc-850 hover:border-pink-500 hover:text-pink-400 text-zinc-400 text-[10px] font-bold px-2.5 py-0.5 rounded-full transition-all duration-200 cursor-pointer"
+                  className="bg-zinc-900/40 border border-zinc-800 hover:border-pink-500 hover:text-pink-400 text-zinc-400 text-[10px] font-bold px-2.5 py-0.5 rounded-full transition-all duration-200 cursor-pointer"
                 >
                   {cat.name}
                 </button>
@@ -597,7 +494,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                       />
                     </div>
                   ) : (
-                    <div className="p-8 rounded-xl border border-zinc-850 bg-zinc-950/40 text-center flex flex-col items-center justify-center gap-2.5">
+                    <div className="p-8 rounded-xl border border-zinc-800 bg-zinc-950/40 text-center flex flex-col items-center justify-center gap-2.5">
                       <HelpCircle size={36} className="text-zinc-650 animate-pulse" />
                       <h4 className="font-extrabold text-xs text-zinc-300">Trailer đang được cập nhật</h4>
                       <p className="text-[11px] text-zinc-500 max-w-sm">
@@ -623,14 +520,14 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                   {movie.episodes?.map((server, sIdx) => {
                     const epList = server.server_data || [];
                     return (
-                      <div key={`server-${sIdx}`} className="p-4 rounded-xl bg-zinc-950/70 border border-zinc-900/60 space-y-4 shadow-sm">
-                        <div className="flex items-center justify-between gap-4 flex-wrap border-b border-zinc-900/40 pb-2.5">
+                      <div key={`server-${sIdx}`} className="p-4 rounded-xl bg-[#0d0e13]/40 space-y-4 shadow-sm border border-transparent">
+                        <div className={`flex items-center justify-between gap-4 flex-wrap pb-2.5 ${epList.length > 1 ? "border-b border-zinc-900/40" : ""}`}>
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-12 rounded-lg overflow-hidden shrink-0 border border-zinc-850 shadow-md">
+                            <div className="w-8 h-12 rounded-lg overflow-hidden shrink-0 shadow-md">
                               <img src={getImageUrl(movie.thumb_url || movie.poster_url)} className="w-full h-full object-cover" />
                             </div>
                             <div className="text-left">
-                              <span className="text-[9px] text-zinc-550 font-extrabold uppercase bg-zinc-900 border border-zinc-850 px-2 py-0.5 rounded">
+                              <span className="text-[9px] text-zinc-550 font-extrabold uppercase bg-zinc-900 px-2 py-0.5 rounded border border-transparent">
                                 {server.server_name || `Server #${sIdx + 1}`}
                               </span>
                               <h4 className="font-extrabold text-xs text-white mt-1">{cleanedName}</h4>
@@ -646,7 +543,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                         </div>
 
                         {/* Danh sách tập */}
-                        {epList.length > 0 && (
+                        {epList.length > 1 && (
                           <div className="space-y-3">
                             <span className="block text-[9px] font-black text-zinc-550 uppercase tracking-widest">Chọn tập phim:</span>
                             
@@ -705,13 +602,13 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                 <Image size={16} className="text-pink-500" /> Thư viện ảnh phim
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="relative aspect-[16/10] bg-zinc-900 border border-zinc-850 rounded-2xl overflow-hidden shadow group">
+                <div className="relative aspect-[16/10] bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow group">
                   <img src={getImageUrl(movie.poster_url || movie.thumb_url)} className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-500" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent flex items-end p-4">
                     <span className="text-[11px] font-bold text-zinc-300">Phông nền phim Cinematic</span>
                   </div>
                 </div>
-                <div className="relative aspect-[16/10] bg-zinc-900 border border-zinc-850 rounded-2xl overflow-hidden shadow group">
+                <div className="relative aspect-[16/10] bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow group">
                   <img src={getImageUrl(movie.thumb_url || movie.poster_url)} className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-500" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent flex items-end p-4">
                     <span className="text-[11px] font-bold text-zinc-300">Hình ảnh Thumbnail chính thức</span>
@@ -767,162 +664,8 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
             </div>
           )}
 
-          {/* 4. KHU VỰC BÌNH LUẬN - KHÔI PHỤC DÃN RỘNG TOÀN BỘ CỘT PHẢI Y HỆT COBEPHIM */}
-          <div id="movie-comments" className="border-t border-zinc-900/80 pt-6 space-y-5 w-full">
-            
-            {/* Header: Bình luận (N) & Switcher */}
-            <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
-              <div className="flex items-center gap-2">
-                <MessageSquare size={18} className="text-zinc-100" />
-                <h3 className="text-base md:text-lg font-bold text-white select-none">
-                  Bình luận ({comments.length})
-                </h3>
-              </div>
-              
-              {/* Tab Switcher: Bình luận / Đánh giá */}
-              <div className="flex bg-zinc-900/60 p-0.5 rounded-lg border border-zinc-800/80 text-[10px] font-extrabold select-none">
-                <button type="button" className="px-3 py-1.5 bg-white text-zinc-950 rounded-md font-black shadow-sm cursor-pointer">
-                  Bình luận
-                </button>
-                <button type="button" className="px-3 py-1.5 text-zinc-400 hover:text-white rounded-md cursor-pointer transition-colors">
-                  Đánh giá
-                </button>
-              </div>
-            </div>
-
-            {/* User row: Avatar, Bình luận với tên */}
-            {user && (
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center font-black text-white text-sm shadow-sm select-none">
-                  {user.displayName ? user.displayName[0].toUpperCase() : "U"}
-                </div>
-                <div className="text-left flex flex-col select-none">
-                  <span className="text-[10px] text-zinc-500 font-semibold leading-none">Bình luận với tên</span>
-                  <span className="text-xs font-black text-zinc-250 mt-1">{user.displayName || "Thành viên"}</span>
-                </div>
-              </div>
-            )}
-
-            {/* Comment Textarea Box */}
-            <div className="rounded-xl bg-[#161722] overflow-hidden flex flex-col">
-              <textarea
-                value={commentText}
-                onChange={(e) => {
-                  if (e.target.value.length <= 1000) {
-                    setCommentText(e.target.value);
-                  }
-                }}
-                placeholder="Viết bình luận"
-                disabled={!user}
-                className="w-full bg-transparent border-none text-zinc-200 placeholder-zinc-550 text-xs px-4 py-3 focus:outline-none focus:ring-0 min-h-[90px] resize-none font-semibold"
-              />
-              
-              {/* Box Footer bar */}
-              <div className="flex items-center justify-between px-4 py-2.5 border-t border-zinc-900/60 bg-[#12131b]">
-                {/* Spoilers toggle */}
-                <div className="flex items-center gap-2 select-none">
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      className="sr-only peer" 
-                      checked={isSpoiler} 
-                      onChange={(e) => setIsSpoiler(e.target.checked)}
-                      disabled={!user}
-                    />
-                    <div className="w-8 h-4 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-500 after:border-zinc-400 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-pink-500 peer-checked:after:bg-white" />
-                    <span className="ml-2 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Tiết lộ?</span>
-                  </label>
-                </div>
-                
-                {/* Counter and Send button */}
-                <div className="flex items-center gap-3.5 select-none">
-                  <span className="text-[10px] font-black text-zinc-650">{commentText.length} / 1000</span>
-                  <button
-                    onClick={handleSubmitComment}
-                    disabled={!commentText.trim() || !user}
-                    className="flex items-center gap-1.5 text-[11px] font-black text-pink-500 hover:text-pink-400 transition-colors bg-transparent border-none p-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <span>Gửi</span>
-                    <Send size={12} className="fill-pink-500 stroke-none" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Login Prompt for guest users */}
-            {!user && (
-              <div className="p-3.5 rounded-xl bg-zinc-955/40 text-[11px] text-zinc-500 leading-relaxed font-bold text-center">
-                Vui lòng{" "}
-                <button
-                  type="button"
-                  onClick={() => window.dispatchEvent(new Event("dlowphim_open_auth"))}
-                  className="text-pink-500 font-extrabold hover:underline cursor-pointer bg-transparent border-none inline p-0"
-                >
-                  đăng nhập
-                </button>{" "}
-                để tham gia bình luận.
-              </div>
-            )}
-
-            {/* List of comments or Placeholder when empty */}
-            <div className="pt-2 text-left">
-              {comments.length > 0 ? (
-                <div className="space-y-4 divide-y divide-zinc-900/60 pr-1 max-h-[350px] overflow-y-auto no-scrollbar">
-                  {comments.map((comment, index) => {
-                    const isVip = comment.role === "vip";
-                    const isAdmin = comment.role === "admin";
-                    
-                    return (
-                      <div key={comment.id} className={`flex gap-3 pt-3.5 ${index === 0 ? "pt-0" : ""}`}>
-                        <div className={`w-8 h-8 rounded-full font-black text-xs flex items-center justify-center shrink-0 shadow-sm ${
-                          isAdmin 
-                            ? "bg-gradient-to-tr from-pink-500 to-rose-500 text-white" 
-                            : isVip 
-                              ? "bg-pink-500 text-white" 
-                              : "bg-zinc-800 text-zinc-300"
-                        }`}>
-                          {comment.avatar}
-                        </div>
-
-                        <div className="flex-1 space-y-1">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-extrabold text-xs text-zinc-200">{comment.name}</span>
-                            <span className="text-pink-500 drop-shadow-[0_0_6px_rgba(236,72,153,0.85)] font-extrabold text-sm select-none flex items-center" title="DlowPhim Member">
-                              ∞
-                            </span>
-                            {isAdmin && (
-                              <span className="bg-pink-500 text-white text-[7px] font-black px-1.5 py-0.2 rounded uppercase tracking-wider">
-                                Quản trị
-                              </span>
-                            )}
-                            <span className="text-[9px] text-zinc-550 font-semibold">{comment.time}</span>
-                          </div>
-                          
-                          <p className="text-zinc-300 text-xs leading-relaxed font-semibold">
-                            {comment.content}
-                          </p>
-                          
-                          <button
-                            onClick={() => handleLikeComment(comment.id)}
-                            className="flex items-center gap-1 text-[9px] font-black transition-colors select-none pt-0.5 cursor-pointer text-zinc-550 hover:text-zinc-300"
-                          >
-                            THÍCH ({comment.likes})
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="p-12 text-center flex flex-col items-center justify-center gap-3 bg-zinc-950/40 rounded-2xl mt-4 select-none">
-                  <MessageSquare size={36} className="text-zinc-700 stroke-[1.5]" />
-                  <span className="text-xs font-bold text-zinc-550">Chưa có bình luận nào</span>
-                </div>
-              )}
-            </div>
-
-          </div>
-
+          {/* 4. BÌNH LUẬN & ĐÁNH GIÁ - Component dùng chung */}
+          <CommentRatingSection slug={slug} />
         </div>
       </div>
     </div>

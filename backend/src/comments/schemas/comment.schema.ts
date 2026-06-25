@@ -34,6 +34,9 @@ export class Comment {
 
   @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: [] })
   downvotes: Types.ObjectId[];
+
+  @Prop({ type: Types.ObjectId, ref: 'Comment', default: null, index: true })
+  parentId?: Types.ObjectId | null;
 }
 
 export const CommentSchema = SchemaFactory.createForClass(Comment);

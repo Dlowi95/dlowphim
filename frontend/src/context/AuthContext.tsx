@@ -11,6 +11,7 @@ interface User {
   avatar?: string;
   favorites?: string[];
   watchHistory?: any[];
+  role?: string;
 }
 
 interface AuthContextType {

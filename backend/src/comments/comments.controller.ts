@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Req, Headers } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, Req, Headers, Delete } from '@nestjs/common';
 import { CommentsService } from './comments.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { JwtService } from '@nestjs/jwt';
@@ -33,7 +33,7 @@ export class CommentsController {
   async createComment(
     @Param('movieSlug') movieSlug: string,
     @Req() req: any,
-    @Body() createDto: { content: string; isSpoiler?: boolean; episodeLabel?: string },
+    @Body() createDto: { content: string; isSpoiler?: boolean; episodeLabel?: string; parentId?: string },
   ) {
     const userId = req.user.sub;
     return this.commentsService.createComment(userId, movieSlug, createDto);
@@ -48,5 +48,26 @@ export class CommentsController {
   ) {
     const userId = req.user.sub;
     return this.commentsService.toggleVote(commentId, userId, voteType);
+  }
+
+  @Delete(':id')
+  @UseGuards(AuthGuard)
+  async deleteComment(
+    @Param('id') commentId: string,
+    @Req() req: any,
+  ) {
+    const userId = req.user.sub;
+    return this.commentsService.deleteComment(commentId, userId);
+  }
+
+  @Post(':id/report')
+  @UseGuards(AuthGuard)
+  async reportComment(
+    @Param('id') commentId: string,
+    @Req() req: any,
+    @Body('reason') reason?: string,
+  ) {
+    const userId = req.user.sub;
+    return this.commentsService.reportComment(commentId, userId, reason);
   }
 }

@@ -1,21 +1,18 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Comment, CommentDocument } from './schemas/comment.schema';
 import { User, UserDocument } from '../auth/schemas/user.schema';
+import { Report, ReportDocument } from './schemas/report.schema';
 
-function getFriendlyTime(date: Date): string {
-  const now = new Date();
-  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-  if (seconds < 60) return 'Vừa xong';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} phút trước`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} giờ trước`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days} ngày trước`;
-  const months = Math.floor(days / 30);
-  return `${months} tháng trước`;
+function getFormattedDate(date: Date): string {
+  const d = new Date(date);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${day}/${month}/${year} ${hours}:${minutes}`;
 }
 
 @Injectable()
@@ -23,6 +20,7 @@ export class CommentsService {
   constructor(
     @InjectModel(Comment.name) private commentModel: Model<CommentDocument>,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
+    @InjectModel(Report.name) private reportModel: Model<ReportDocument>,
   ) {}
 
   async getComments(movieSlug: string, currentUserId?: string) {
@@ -48,17 +46,19 @@ export class CommentsService {
 
       return {
         id: c._id.toString(),
+        userId: c.userId.toString(),
         name: c.displayName,
         avatar: c.displayName ? c.displayName[0].toUpperCase() : 'U',
         avatarUrl: c.avatar || undefined,
         role: c.role || 'member',
         content: c.content,
-        time: getFriendlyTime((c as any).createdAt || new Date()),
+        time: getFormattedDate((c as any).createdAt || new Date()),
         likes: upvotesCount - downvotesCount,
         liked: userVote === 'up',
         userVote,
         isSpoiler: c.isSpoiler,
         episodeLabel: c.episodeLabel,
+        parentId: c.parentId ? c.parentId.toString() : null,
       };
     });
   }
@@ -66,7 +66,7 @@ export class CommentsService {
   async createComment(
     userId: string,
     movieSlug: string,
-    createDto: { content: string; isSpoiler?: boolean; episodeLabel?: string },
+    createDto: { content: string; isSpoiler?: boolean; episodeLabel?: string; parentId?: string },
   ) {
     const user = await this.userModel.findById(userId).exec();
     if (!user) {
@@ -82,6 +82,7 @@ export class CommentsService {
       content: createDto.content,
       isSpoiler: !!createDto.isSpoiler,
       episodeLabel: createDto.episodeLabel,
+      parentId: createDto.parentId ? new Types.ObjectId(createDto.parentId) : null,
       upvotes: [],
       downvotes: [],
     });
@@ -89,17 +90,19 @@ export class CommentsService {
     const saved = await newComment.save();
     return {
       id: saved._id.toString(),
+      userId: saved.userId.toString(),
       name: saved.displayName,
       avatar: saved.displayName ? saved.displayName[0].toUpperCase() : 'U',
       avatarUrl: saved.avatar || undefined,
       role: saved.role,
       content: saved.content,
-      time: 'Vừa xong',
+      time: getFormattedDate((saved as any).createdAt || new Date()),
       likes: 0,
       liked: false,
       userVote: null,
       isSpoiler: saved.isSpoiler,
       episodeLabel: saved.episodeLabel,
+      parentId: saved.parentId ? saved.parentId.toString() : null,
     };
   }
 
@@ -151,5 +154,59 @@ export class CommentsService {
       liked: userVote === 'up',
       userVote,
     };
+  }
+
+  async deleteComment(commentId: string, userId: string) {
+    const comment = await this.commentModel.findById(commentId).exec();
+    if (!comment) {
+      throw new NotFoundException('Không tìm thấy bình luận');
+    }
+
+    // Lấy thông tin user hiện tại để kiểm tra role
+    const user = await this.userModel.findById(userId).exec();
+    const userRole = user?.role || 'member';
+
+    // Kiểm tra quyền xóa: người tạo hoặc admin
+    if (comment.userId.toString() !== userId && userRole !== 'admin') {
+      throw new ForbiddenException('Bạn không có quyền xóa bình luận này');
+    }
+
+    // Xóa cascade: Nếu là bình luận gốc, xóa tất cả các câu trả lời con
+    if (!comment.parentId) {
+      await this.commentModel.deleteMany({ parentId: new Types.ObjectId(commentId) }).exec();
+    }
+
+    // Xóa các báo cáo liên quan đến bình luận này
+    await this.reportModel.deleteMany({ commentId: new Types.ObjectId(commentId) }).exec();
+
+    // Thực hiện xóa chính bình luận
+    await this.commentModel.findByIdAndDelete(commentId).exec();
+    return { success: true, message: 'Xóa bình luận thành công' };
+  }
+
+  async reportComment(commentId: string, reporterId: string, reason?: string) {
+    const comment = await this.commentModel.findById(commentId).exec();
+    if (!comment) {
+      throw new NotFoundException('Không tìm thấy bình luận để báo cáo');
+    }
+
+    // Kiểm tra xem đã báo cáo chưa để tránh spam duplicate
+    const existing = await this.reportModel.findOne({
+      commentId: new Types.ObjectId(commentId),
+      reporterId: new Types.ObjectId(reporterId),
+    }).exec();
+
+    if (existing) {
+      return { success: true, message: 'Bạn đã báo cáo bình luận này trước đó' };
+    }
+
+    const report = new this.reportModel({
+      commentId: new Types.ObjectId(commentId),
+      reporterId: new Types.ObjectId(reporterId),
+      reason: reason || 'Nội dung không phù hợp / Spam',
+    });
+
+    await report.save();
+    return { success: true, message: 'Gửi báo cáo vi phạm thành công' };
   }
 }

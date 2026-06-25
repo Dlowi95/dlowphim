@@ -200,7 +200,7 @@ export default function CinemaRow() {
         <div className="relative group/tooltip">
           <Link
             href="/search?genre=phim-chieu-rap"
-            className="w-8 h-8 rounded-full border border-zinc-850 bg-zinc-900/60 hover:border-pink-500 hover:text-pink-500 flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer"
+            className="w-8 h-8 rounded-full border border-zinc-800 bg-zinc-900/60 hover:border-pink-500 hover:text-pink-500 flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer"
           >
             <ChevronRight size={16} className="ml-0.5" />
           </Link>
@@ -372,7 +372,7 @@ function CinemaMovieCard({ movie, wasDraggingRef }: CinemaMovieCardProps) {
         <div className="flex gap-3 px-1.5 pt-3 items-start w-full relative">
           {/* Small vertical poster overlapping bottom-left of landscape banner */}
           <div 
-            className="relative w-14 md:w-16 aspect-[2/3] shrink-0 -mt-8 md:-mt-10 z-20 bg-zinc-900 border-2 border-zinc-850 rounded-lg overflow-hidden shadow-lg transition-transform duration-300"
+            className="relative w-14 md:w-16 aspect-[2/3] shrink-0 -mt-8 md:-mt-10 z-20 bg-zinc-900 border-2 border-zinc-800 rounded-lg overflow-hidden shadow-lg transition-transform duration-300"
             style={{
               WebkitMaskImage: "-webkit-radial-gradient(white, black)",
               maskImage: "radial-gradient(white, black)"

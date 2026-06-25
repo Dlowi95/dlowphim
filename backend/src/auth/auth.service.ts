@@ -32,6 +32,7 @@ export class AuthService {
         avatar: user.avatar,
         favorites: user.favorites || [],
         watchHistory: user.watchHistory || [],
+        role: user.role || 'member',
       },
     };
   }
@@ -183,6 +184,7 @@ export class AuthService {
       avatar: user.avatar,
       favorites: user.favorites || [],
       watchHistory: user.watchHistory || [],
+      role: user.role || 'member',
     };
   }
 

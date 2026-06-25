@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Send, Sparkles, Tv, HelpCircle, Plus, Users, Flag, X, ArrowUp, ArrowDown, CornerDownLeft, MoreHorizontal } from "lucide-react";
+import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Send, Sparkles, Tv, HelpCircle, Plus, Users, Flag, X } from "lucide-react";
+import CommentRatingSection from "@/components/CommentRatingSection";
 import { cleanMovieName } from "@/utils/movieUtils";
 import MovieCard from "@/components/MovieCard";
 import { useAuth } from "@/context/AuthContext";
@@ -42,19 +43,11 @@ interface MovieDetail {
   episodes: Server[];
 }
 
-interface Comment {
-  id: string;
-  avatar: string;
-  name: string;
-  role: "member" | "vip" | "admin";
-  content: string;
-  time: string;
-  likes: number;
-  liked?: boolean;
-  userVote?: 'up' | 'down' | null;
-  isSpoiler?: boolean;
-  episodeLabel?: string;
-  avatarUrl?: string;
+
+interface RatingData {
+  average: number;
+  count: number;
+  userRating: number | null;
 }
 
 function WatchContent({ slug }: { slug: string }) {
@@ -85,12 +78,12 @@ function WatchContent({ slug }: { slug: string }) {
   const lastHistorySavedTime = React.useRef<number>(0);
   const [kkServers, setKkServers] = useState<Server[]>([]);
 
-  // States bình luận
-  const [commentText, setCommentText] = useState("");
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [isSpoiler, setIsSpoiler] = useState(false);
-  const [revealedSpoilers, setRevealedSpoilers] = useState<Record<string, boolean>>({});
   const [showEpisodeDrawer, setShowEpisodeDrawer] = useState(false);
+
+  // States đánh giá
+  const [ratingData, setRatingData] = useState<RatingData>({ average: 0, count: 0, userRating: null });
+  const [hoverStar, setHoverStar] = useState(0);
+  const [submittingRating, setSubmittingRating] = useState(false);
 
   // Phim liên quan
   const [relatedMovies, setRelatedMovies] = useState<any[]>([]);
@@ -223,30 +216,29 @@ function WatchContent({ slug }: { slug: string }) {
   const activeEpisode = episodesData[activeEpisodeIndex];
   const activeEmbed = activeEpisode?.link_embed || null;
 
-  // 1.7. Đồng bộ bình luận theo phim qua Backend
+  // 1.7. Đồng bộ đánh giá theo phim qua Backend
   useEffect(() => {
     if (!movie) return;
     
-    async function fetchComments() {
+    async function fetchRating() {
       try {
         const token = Cookies.get("token");
         const headers: HeadersInit = {};
-        if (token) {
-          headers["Authorization"] = `Bearer ${token}`;
-        }
-        
-        const res = await fetch(`${API_URL}/comments/${slug}`, { headers });
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+
+        const res = await fetch(`${API_URL}/ratings/${slug}`, { headers });
         if (res.ok) {
           const data = await res.json();
-          setComments(data);
+          setRatingData(data);
         }
       } catch (err) {
-        console.error("Lỗi lấy bình luận:", err);
+        console.error("Lỗi lấy đánh giá:", err);
       }
     }
     
-    fetchComments();
-  }, [movie, slug]);
+    fetchRating();
+  }, [movie, slug, API_URL]);
+
 
   // 2. Đồng bộ tập phim đang hoạt động dựa trên query queryEp
   useEffect(() => {
@@ -364,81 +356,31 @@ function WatchContent({ slug }: { slug: string }) {
     setTimeout(() => setShareCopied(false), 2000);
   };
 
-  // Gửi bình luận
-  const handleSubmitComment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!commentText.trim() || !user) return;
-
-    const userInitial = user.displayName ? user.displayName[0].toUpperCase() : (user.email ? user.email[0].toUpperCase() : "U");
-    const displayName = user.displayName || user.email?.split("@")[0] || "Thành viên";
-
-    let epLabel = "";
-    if (activeEpisode && episodesData.length > 1) {
-      epLabel = `P.1 - Tập ${activeEpisode.name}`;
-    }
-
-    try {
-      const token = Cookies.get("token");
-      const res = await fetch(`${API_URL}/comments/${slug}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          content: commentText.trim(),
-          isSpoiler: isSpoiler,
-          episodeLabel: epLabel || undefined,
-        }),
-      });
-
-      if (res.ok) {
-        const newComment = await res.json();
-        setComments((prev) => [newComment, ...prev]);
-        setCommentText("");
-        setIsSpoiler(false);
-      }
-    } catch (err) {
-      console.error("Lỗi gửi bình luận:", err);
-    }
-  };
-
-  // Upvote/Downvote bình luận qua Backend
-  const handleVote = async (commentId: string, type: "up" | "down") => {
+  // Gửi đánh giá sao qua Backend
+  const handleSubmitRating = async (score: number) => {
     if (!user) {
       window.dispatchEvent(new Event("dlowphim_open_auth"));
       return;
     }
-
+    setSubmittingRating(true);
     try {
       const token = Cookies.get("token");
-      const res = await fetch(`${API_URL}/comments/${commentId}/vote`, {
+      const res = await fetch(`${API_URL}/ratings/${slug}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ type }),
+        body: JSON.stringify({ score }),
       });
-
       if (res.ok) {
         const data = await res.json();
-        setComments((prev) =>
-          prev.map((c) => {
-            if (c.id === commentId) {
-              return {
-                ...c,
-                likes: data.likes,
-                liked: data.liked,
-                userVote: data.userVote,
-              };
-            }
-            return c;
-          })
-        );
+        setRatingData(data);
       }
     } catch (err) {
-      console.error("Lỗi vote bình luận:", err);
+      console.error("Lỗi gửi đánh giá:", err);
+    } finally {
+      setSubmittingRating(false);
     }
   };
 
@@ -565,7 +507,7 @@ function WatchContent({ slug }: { slug: string }) {
         <h2 className="text-xl md:text-2xl font-black text-zinc-300">Không tìm thấy thông tin phim!</h2>
         <button
           onClick={() => router.push("/")}
-          className="flex items-center gap-2 border border-zinc-850 bg-zinc-955 hover:bg-zinc-900 text-white text-sm font-extrabold px-6 py-2.5 rounded-xl transition-all"
+          className="flex items-center gap-2 border border-zinc-800 bg-zinc-900 hover:bg-[#1b1d2a] text-white text-sm font-extrabold px-6 py-2.5 rounded-xl transition-all"
         >
           <ArrowLeft size={16} /> Quay về Trang chủ
         </button>
@@ -665,7 +607,7 @@ function WatchContent({ slug }: { slug: string }) {
                     title="DlowPhim Video Player"
                   />
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-zinc-955">
+                  <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-zinc-900">
                     <Tv size={44} className="text-zinc-650 animate-pulse" />
                     <p className="text-zinc-500 text-xs font-bold">Chưa chọn tập phim hoặc nguồn phát!</p>
                   </div>
@@ -704,7 +646,7 @@ function WatchContent({ slug }: { slug: string }) {
                     </div>
                   </>
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-zinc-955">
+                  <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-zinc-900">
                     <Tv size={44} className="text-zinc-650 animate-pulse" />
                     <p className="text-zinc-500 text-xs font-bold">Nguồn HLS không khả dụng cho tập này!</p>
                   </div>
@@ -921,7 +863,7 @@ function WatchContent({ slug }: { slug: string }) {
           <div className="lg:col-span-2 space-y-6">
             
             {/* Thẻ thông tin nhanh của phim */}
-            <div className="flex flex-col sm:flex-row gap-5 bg-zinc-955/20 p-5 rounded-2xl">
+            <div className="flex flex-col sm:flex-row gap-5 bg-[#0d0e13]/30 p-5 rounded-2xl">
               {/* Poster */}
               <div className="w-24 sm:w-28 aspect-[2/3] shrink-0 rounded-xl overflow-hidden shadow-md bg-zinc-900">
                 <img 
@@ -995,7 +937,7 @@ function WatchContent({ slug }: { slug: string }) {
             </div>
 
             {/* Unified Sources & Episodes Selection Panel */}
-            <div className="bg-zinc-955/20 p-5 rounded-2xl border border-zinc-900/60 space-y-5">
+            <div className="bg-[#0d0e13]/30 p-5 rounded-2xl border border-zinc-900/60 space-y-5">
               
               {/* Row 1: Chọn Nguồn Phát */}
               {servers.length > 0 && (
@@ -1053,7 +995,7 @@ function WatchContent({ slug }: { slug: string }) {
               )}
 
               {/* Row 2: Danh sách các tập phim (Bản phát sóng) */}
-              {servers.length > 0 && (
+              {servers.length > 0 && episodesData.length > 1 && (
                 <div className="space-y-3 pt-4 border-t border-zinc-900/60">
                   <span className="block text-xs font-black text-zinc-455 uppercase tracking-wider">
                     {episodesData.length <= 1 ? "Bản phát sóng:" : "Danh sách tập phim:"}
@@ -1114,263 +1056,84 @@ function WatchContent({ slug }: { slug: string }) {
 
             </div>
 
-            {/* 4. KHU VỰC BÌNH LUẬN KIỂU COBEPHIM */}
-            <div id="movie-comments" className="pt-6 border-t border-zinc-900/60 space-y-6">
-              <h3 className="text-base md:text-lg font-bold uppercase tracking-tight flex items-center gap-2 select-none">
-                <span>Thảo Luận ({comments.length})</span>
-              </h3>
-
-              {/* Dòng thông tin người dùng và Avatar */}
-              <div className="flex items-center gap-3">
-                {user ? (
-                  <>
-                    <div className="w-10 h-10 rounded-full font-black text-sm flex items-center justify-center shrink-0 shadow bg-gradient-to-tr from-pink-500 to-rose-500 text-white select-none">
-                      {user.displayName ? user.displayName[0].toUpperCase() : (user.email ? user.email[0].toUpperCase() : "U")}
-                    </div>
-                    <div className="flex flex-col text-left">
-                      <span className="text-[10px] text-zinc-500 font-semibold select-none leading-none">Bình luận với tên</span>
-                      <span className="text-xs font-bold text-zinc-100 mt-1 select-none leading-none">
-                        {user.displayName || user.email?.split("@")[0] || "Thành viên"}
-                      </span>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="w-10 h-10 rounded-full font-black text-base flex items-center justify-center shrink-0 bg-zinc-850 text-zinc-500 select-none">
-                      ?
-                    </div>
-                    <div className="flex flex-col text-left">
-                      <span className="text-[10px] text-zinc-500 font-semibold select-none leading-none">Bạn chưa đăng nhập</span>
-                      <button
-                        type="button"
-                        onClick={() => window.dispatchEvent(new Event("dlowphim_open_auth"))}
-                        className="text-xs font-black text-pink-500 hover:text-pink-400 mt-1 transition-colors bg-transparent border-none p-0 cursor-pointer text-left leading-none"
-                      >
-                        Đăng nhập ngay
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* Hộp soạn thảo văn bản */}
-              {user ? (
-                <form onSubmit={handleSubmitComment} className="space-y-4">
-                  <div className="bg-[#13141d] border border-transparent focus-within:!border-pink-500 rounded-xl p-3.5 transition-all relative">
-                    <div className="relative">
-                      <textarea
-                        value={commentText}
-                        onChange={(e) => setCommentText(e.target.value.slice(0, 1000))}
-                        placeholder="Viết bình luận"
-                        className="w-full min-h-[90px] bg-transparent text-sm text-zinc-200 placeholder-zinc-550 focus:outline-none resize-none pr-16 font-medium leading-relaxed"
-                      />
-                      <span className="absolute top-0 right-0 text-[10px] font-bold text-zinc-650 select-none">
-                        {commentText.length} / 1000
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-3 border-t border-zinc-900/50">
-                      {/* Nút gạt Tiết lộ? */}
-                      <div 
-                        onClick={() => setIsSpoiler(!isSpoiler)}
-                        className="flex items-center gap-2 select-none cursor-pointer"
-                      >
-                        <div className={`w-8 h-4.5 rounded-full p-0.5 transition-colors duration-200 flex items-center ${isSpoiler ? "bg-pink-500" : "bg-zinc-850"}`}>
-                          <div className={`w-3.5 h-3.5 rounded-full bg-white transition-transform duration-200 ${isSpoiler ? "translate-x-3.5" : "translate-x-0"}`} />
-                        </div>
-                        <span className="text-[11px] font-extrabold text-zinc-400">Tiết lộ?</span>
-                      </div>
-
-                      {/* Nút gửi */}
-                      <button
-                        type="submit"
-                        className="flex items-center gap-1.5 bg-transparent border-none text-zinc-100 hover:text-yellow-400 font-extrabold text-xs cursor-pointer select-none transition-colors"
-                      >
-                        <span>Gửi</span>
-                        <Send size={13} className="text-yellow-400 fill-yellow-400/10 rotate-45 -translate-y-0.5" />
-                      </button>
-                    </div>
-                  </div>
-                </form>
-              ) : (
-                <div 
-                  onClick={() => window.dispatchEvent(new Event("dlowphim_open_auth"))}
-                  className="bg-[#13141d]/45 rounded-xl p-6 text-center text-xs text-zinc-500 cursor-pointer hover:bg-[#13141d]/60 transition-all font-semibold"
-                >
-                  Vui lòng <span className="text-pink-500 font-bold hover:underline">đăng nhập</span> để tham gia thảo luận cùng mọi người.
-                </div>
-              )}
-
-              {/* Danh sách bình luận */}
-              <div className="space-y-4 pt-2">
-                {comments.length === 0 ? (
-                  <p className="text-xs text-zinc-500 font-semibold italic text-center py-4">Chưa có bình luận nào. Hãy là người đầu tiên chia sẻ cảm nghĩ!</p>
-                ) : (
-                  <div className="space-y-5 divide-y divide-zinc-900/60">
-                    {comments.map((comment, index) => {
-                      const isVip = comment.role === "vip";
-                      const isAdmin = comment.role === "admin";
-                      const hasSpoiler = comment.isSpoiler;
-                      const isRevealed = revealedSpoilers[comment.id];
-
-                      return (
-                        <div key={comment.id} className={`flex gap-3.5 pt-4 ${index === 0 ? "pt-0" : ""}`}>
-                          {/* Avatar */}
-                          {comment.avatarUrl === "vietnam-flag" ? (
-                            <div className="w-9 h-9 rounded-full bg-red-600 flex items-center justify-center shrink-0 border border-red-500 select-none">
-                              <Star size={14} className="fill-yellow-400 text-yellow-400 stroke-none" />
-                            </div>
-                          ) : comment.avatarUrl ? (
-                            <img 
-                              src={comment.avatarUrl} 
-                              alt={comment.name}
-                              className="w-9 h-9 rounded-full object-cover shrink-0 shadow-sm border border-zinc-800"
-                              referrerPolicy="no-referrer"
-                            />
-                          ) : (
-                            <div className={`w-9 h-9 rounded-full font-black text-sm flex items-center justify-center shrink-0 shadow-sm ${
-                              isAdmin 
-                                ? "bg-gradient-to-tr from-pink-500 to-rose-500 text-white" 
-                                : isVip 
-                                  ? "bg-pink-500 text-white" 
-                                  : "bg-zinc-800 text-zinc-300"
-                            }`}>
-                              {comment.avatar}
-                            </div>
-                          )}
-
-                          {/* Content */}
-                          <div className="flex-1 space-y-1">
-                            <div className="flex flex-wrap items-center select-none gap-y-1">
-                              {/* Author Name */}
-                              <span className="font-extrabold text-xs text-zinc-200 mr-1.5">{comment.name}</span>
-                              
-                              {/* Gold/Amber Infinity symbol */}
-                              <span className="text-pink-500 drop-shadow-[0_0_6px_rgba(236,72,153,0.85)] font-extrabold text-sm mr-2.5 select-none flex items-center" title="DlowPhim Member">
-                                ∞
-                              </span>
-
-                              {/* Relative time */}
-                              <span className="text-[10px] text-zinc-500 font-semibold mr-3">{comment.time}</span>
-
-                              {/* Badges for roles */}
-                              {isAdmin && (
-                                <span className="bg-pink-500 text-white text-[8px] font-black px-1.5 py-0.2 rounded uppercase tracking-wider mr-2">
-                                  Quản trị
-                                </span>
-                              )}
-                              {hasSpoiler && (
-                                <span className="bg-amber-500/10 text-amber-500 text-[8px] font-black px-1.5 py-0.2 rounded uppercase tracking-wider mr-2">
-                                  Spoilers
-                                </span>
-                              )}
-
-                              {/* Episode badge (if present) */}
-                              {comment.episodeLabel && (
-                                <span className="bg-[#1c2035]/40 text-zinc-400 border border-zinc-750/50 text-[9px] font-semibold px-1.5 py-0.2 rounded uppercase leading-none">
-                                  {comment.episodeLabel}
-                                </span>
-                              )}
-                            </div>
-
-                            {hasSpoiler && !isRevealed ? (
-                              <div 
-                                onClick={() => setRevealedSpoilers(prev => ({ ...prev, [comment.id]: true }))}
-                                className="bg-[#1b1d2a]/55 hover:bg-[#1b1d2a]/75 border border-zinc-850/45 rounded-lg px-3 py-2 text-[11px] text-zinc-400 font-semibold cursor-pointer transition-colors mt-1 select-none flex items-center gap-1.5 animate-fadeIn"
-                              >
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
-                                <span>Bình luận này có chứa tình tiết spoil phim. Bấm vào để xem.</span>
-                              </div>
-                            ) : (
-                              <p className={`text-zinc-300 text-xs md:text-sm leading-relaxed font-medium transition-all ${hasSpoiler ? "bg-amber-500/5 p-2 rounded-lg border border-amber-500/10 animate-fadeIn" : ""}`}>
-                                {comment.content}
-                              </p>
-                            )}
-
-                            {/* Footer actions row */}
-                            <div className="flex items-center gap-4 pt-1.5 select-none text-zinc-500 font-bold text-[10px]">
-                              {/* Upvote Button */}
-                              <div className="flex items-center">
-                                <button
-                                  onClick={() => handleVote(comment.id, 'up')}
-                                  className={`w-6 h-6 rounded-full flex items-center justify-center transition-all border-none cursor-pointer ${
-                                    comment.userVote === 'up'
-                                      ? "bg-emerald-500/10 text-emerald-500"
-                                      : "bg-[#1b1d2a]/60 text-zinc-500 hover:text-white"
-                                  }`}
-                                  title="Thích"
-                                >
-                                  <ArrowUp size={11} className={comment.userVote === 'up' ? "stroke-[2.5]" : ""} />
-                                </button>
-                                {comment.likes > 0 && (
-                                  <span className={`text-[10px] font-extrabold ml-1.5 ${comment.userVote === 'up' ? "text-emerald-500" : "text-zinc-400"}`}>
-                                    {comment.likes}
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Downvote Button */}
-                              <button
-                                onClick={() => handleVote(comment.id, 'down')}
-                                className={`w-6 h-6 rounded-full flex items-center justify-center transition-all border-none cursor-pointer ${
-                                  comment.userVote === 'down'
-                                    ? "bg-[#ef4444]/10 text-red-500"
-                                    : "bg-[#1b1d2a]/60 text-zinc-500 hover:text-white"
-                                }`}
-                                title="Không thích"
-                              >
-                                <ArrowDown size={11} className={comment.userVote === 'down' ? "stroke-[2.5]" : ""} />
-                              </button>
-
-                              {/* Reply Button */}
-                              <button
-                                className="flex items-center gap-1 hover:text-zinc-300 transition-colors cursor-pointer bg-transparent border-none text-[10px] font-bold text-zinc-500"
-                              >
-                                <CornerDownLeft size={11} />
-                                <span>Trả lời</span>
-                              </button>
-
-                              {/* More Button */}
-                              <button
-                                className="flex items-center gap-1 hover:text-zinc-300 transition-colors cursor-pointer bg-transparent border-none text-[10px] font-bold text-zinc-500"
-                              >
-                                <MoreHorizontal size={11} />
-                                <span>Thêm</span>
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
+            {/* 4. KHU VỰC BÌNH LUẬN */}
+            <CommentRatingSection
+              slug={slug}
+              title="Bình luận"
+              episodeLabel={activeEpisode && episodesData.length > 1 ? `P.1 - Tập ${activeEpisode.name}` : undefined}
+              showTabs={false}
+            />
           </div>
 
           {/* CỘT PHẢI: INTERACTION, DISCORD BANNER, DIỄN VIÊN */}
           <div className="space-y-6">
             
-            {/* Bộ tương tác nhanh */}
-            <div className="flex items-center justify-between gap-4 bg-zinc-955/20 p-4 rounded-xl">
-              <div className="flex gap-4">
-                <button className="flex flex-col items-center gap-1 bg-transparent border-none text-zinc-400 hover:text-white cursor-pointer select-none">
-                  <Star size={16} />
-                  <span className="text-[10px] font-black uppercase">Đánh giá</span>
-                </button>
-                <button 
-                  onClick={() => {
-                    document.getElementById("movie-comments")?.scrollIntoView({ behavior: "smooth" });
-                  }}
-                  className="flex flex-col items-center gap-1 bg-transparent border-none text-zinc-400 hover:text-white cursor-pointer select-none"
-                >
-                  <Users size={16} />
-                  <span className="text-[10px] font-black uppercase">Bình luận</span>
-                </button>
+            {/* Bộ tương tác nhanh + Rating */}
+            <div className="bg-[#0d0e13]/30 p-4 rounded-xl space-y-4">
+              {/* Action row */}
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => {
+                      document.getElementById("movie-comments")?.scrollIntoView({ behavior: "smooth" });
+                    }}
+                    className="flex flex-col items-center gap-1 bg-transparent border-none text-zinc-400 hover:text-white cursor-pointer select-none"
+                  >
+                    <Users size={16} />
+                    <span className="text-[10px] font-black uppercase">Bình luận</span>
+                  </button>
+                </div>
+                <div className="flex items-center gap-1.5 bg-[#1b1d2a] px-3.5 py-1.5 rounded-lg text-xs font-black text-white select-none">
+                  <Star size={14} className="fill-pink-500 stroke-none" />
+                  <span>{ratingData.average > 0 ? `${ratingData.average}/10` : 'Chưa có'}</span>
+                  {ratingData.count > 0 && <span className="text-zinc-400 font-semibold text-[10px]">({ratingData.count})</span>}
+                </div>
               </div>
-              <div className="bg-[#1b1d2a] px-3.5 py-1.5 rounded-lg flex items-center gap-1 text-xs font-black text-white select-none">
-                <Star size={14} className="fill-pink-500 stroke-none" />
-                <span>0 Đánh giá</span>
+
+              {/* Star rating widget */}
+              <div className="space-y-2 border-t border-zinc-900/60 pt-3">
+                <p className="text-[10px] font-black text-zinc-500 uppercase tracking-wider">
+                  {user ? (ratingData.userRating ? `Điểm của bạn: ${ratingData.userRating}/10` : 'Chấm điểm bộ phim:') : 'Đăng nhập để đánh giá'}
+                </p>
+                {user ? (
+                  <div
+                    className="flex flex-wrap gap-1"
+                    onMouseLeave={() => setHoverStar(0)}
+                  >
+                    {Array.from({ length: 10 }).map((_, i) => {
+                      const val = i + 1;
+                      const isHighlighted = hoverStar > 0 ? val <= hoverStar : val <= (ratingData.userRating || 0);
+                      return (
+                        <button
+                          key={val}
+                          disabled={submittingRating}
+                          onMouseEnter={() => setHoverStar(val)}
+                          onClick={() => handleSubmitRating(val)}
+                          className={`w-8 h-8 rounded-lg font-black text-xs transition-all border-none cursor-pointer select-none ${
+                            isHighlighted
+                              ? 'bg-pink-500 text-white shadow-md shadow-pink-500/20'
+                              : 'bg-[#1b1d2a] text-zinc-500 hover:bg-pink-500/20 hover:text-pink-400'
+                          } ${submittingRating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                          {val}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => window.dispatchEvent(new Event("dlowphim_open_auth"))}
+                    className="w-full flex items-center justify-center gap-1.5 bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 font-extrabold text-[10px] py-2 rounded-xl transition-all cursor-pointer border border-pink-500/20"
+                  >
+                    <Star size={12} className="fill-pink-500" />
+                    Đăng nhập để đánh giá
+                  </button>
+                )}
+                {hoverStar > 0 && (
+                  <p className="text-[10px] font-bold text-pink-400">
+                    {hoverStar === 10 ? '🔥 Xuất sắc!' : hoverStar >= 8 ? '⭐ Rất hay!' : hoverStar >= 6 ? '👍 Khá hay' : hoverStar >= 4 ? '😐 Tạm được' : '👎 Không hay'} — {hoverStar}/10
+                  </p>
+                )}
               </div>
             </div>
 
