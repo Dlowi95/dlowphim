@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Req, Headers } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, UseGuards, Req, Headers } from '@nestjs/common';
 import { RatingsService } from './ratings.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { JwtService } from '@nestjs/jwt';
 
 @Controller('ratings')
@@ -9,6 +10,18 @@ export class RatingsController {
     private readonly ratingsService: RatingsService,
     private readonly jwtService: JwtService,
   ) {}
+
+  @Get('admin/stats')
+  @UseGuards(AuthGuard, RolesGuard)
+  async getAdminStats() {
+    return this.ratingsService.getAdminRatingsStats();
+  }
+
+  @Delete('admin/movie/:movieSlug')
+  @UseGuards(AuthGuard, RolesGuard)
+  async deleteMovieRatings(@Param('movieSlug') movieSlug: string) {
+    return this.ratingsService.deleteMovieRatings(movieSlug);
+  }
 
   @Get(':movieSlug')
   async getRating(

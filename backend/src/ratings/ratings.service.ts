@@ -50,4 +50,33 @@ export class RatingsService {
 
     return this.getMovieRating(movieSlug, userId);
   }
+
+  // ─── ADMIN ENDPOINTS ───
+  async getAdminRatingsStats() {
+    return this.ratingModel.aggregate([
+      {
+        $group: {
+          _id: '$movieSlug',
+          averageScore: { $avg: '$score' },
+          totalRatings: { $sum: 1 },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          movieSlug: '$_id',
+          averageScore: { $round: ['$averageScore', 1] },
+          totalRatings: 1,
+        },
+      },
+      {
+        $sort: { totalRatings: -1, averageScore: -1 },
+      },
+    ]).exec();
+  }
+
+  async deleteMovieRatings(movieSlug: string) {
+    const result = await this.ratingModel.deleteMany({ movieSlug }).exec();
+    return { success: true, deletedCount: result.deletedCount };
+  }
 }

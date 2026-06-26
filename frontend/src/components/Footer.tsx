@@ -1,7 +1,15 @@
+"use client";
+
 import React from "react";
 import { Film } from "lucide-react";
+import { usePathname } from "next/navigation";
 
 export default function FooterComponent() {
+  const pathname = usePathname();
+  if (pathname?.startsWith("/sys-dlowadmin")) {
+    return null;
+  }
+
   return (
     <footer className="w-full bg-zinc-950 border-t border-zinc-900 text-zinc-500 py-8 mt-12">
       <div className="container mx-auto px-6 max-w-7xl flex flex-col md:flex-row items-center justify-between gap-4">

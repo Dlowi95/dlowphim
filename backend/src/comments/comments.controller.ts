@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Param, UseGuards, Req, Headers, Delete } from '@nestjs/common';
 import { CommentsService } from './comments.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { JwtService } from '@nestjs/jwt';
 
 @Controller('comments')
@@ -69,5 +70,23 @@ export class CommentsController {
   ) {
     const userId = req.user.sub;
     return this.commentsService.reportComment(commentId, userId, reason);
+  }
+
+  @Get('admin/reports')
+  @UseGuards(AuthGuard, RolesGuard)
+  async getReportedComments() {
+    return this.commentsService.getReportedComments();
+  }
+
+  @Delete('admin/reports/:id/dismiss')
+  @UseGuards(AuthGuard, RolesGuard)
+  async dismissReport(@Param('id') reportId: string) {
+    return this.commentsService.dismissReport(reportId);
+  }
+
+  @Get('admin/stats')
+  @UseGuards(AuthGuard, RolesGuard)
+  async getAdminStats() {
+    return this.commentsService.getAdminStats();
   }
 }

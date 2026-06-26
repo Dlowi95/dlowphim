@@ -209,4 +209,125 @@ export class CommentsService {
     await report.save();
     return { success: true, message: 'Gửi báo cáo vi phạm thành công' };
   }
+
+  async getReportedComments() {
+    const reports = await this.reportModel
+      .find()
+      .populate('commentId')
+      .populate('reporterId', 'displayName email avatar')
+      .sort({ createdAt: -1 })
+      .exec();
+
+    const results: any[] = [];
+    for (const r of reports) {
+      if (!r.commentId) continue;
+      
+      const c = r.commentId as any;
+      const author = await this.userModel.findById(c.userId).select('displayName email avatar').exec();
+
+      results.push({
+        id: r._id.toString(),
+        reason: r.reason,
+        createdAt: (r as any).createdAt,
+        comment: {
+          id: c._id.toString(),
+          content: c.content,
+          movieSlug: c.movieSlug,
+          time: getFormattedDate(c.createdAt || new Date()),
+          author: {
+            id: c.userId.toString(),
+            name: author?.displayName || 'Thành viên',
+            email: author?.email || '',
+            avatar: author?.avatar || '',
+          }
+        },
+        reporter: {
+          id: (r.reporterId as any)?._id?.toString() || '',
+          name: (r.reporterId as any)?.displayName || 'Thành viên',
+          email: (r.reporterId as any)?.email || '',
+          avatar: (r.reporterId as any)?.avatar || '',
+        }
+      });
+    }
+    return results;
+  }
+
+  async dismissReport(reportId: string) {
+    const report = await this.reportModel.findByIdAndDelete(reportId).exec();
+    if (!report) {
+      throw new NotFoundException('Không tìm thấy báo cáo vi phạm');
+    }
+    return { success: true, message: 'Đã bỏ qua báo cáo vi phạm thành công' };
+  }
+
+  async getAdminStats() {
+    const totalUsers = await this.userModel.countDocuments({}).exec();
+    const totalComments = await this.commentModel.countDocuments({}).exec();
+    const activeReports = await this.reportModel.countDocuments({}).exec();
+
+    const users = await this.userModel.find({}, 'watchHistory').exec();
+    let totalViews = 0;
+    users.forEach((u) => {
+      totalViews += u.watchHistory ? u.watchHistory.length : 0;
+    });
+
+    const chartData: any[] = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const year = d.getFullYear();
+      const monthIndex = d.getMonth();
+      const monthLabel = `T${monthIndex + 1}`;
+      chartData.push({
+        year,
+        monthIndex,
+        month: monthLabel,
+        LuotXem: 0,
+        BinhLuan: 0,
+      });
+    }
+
+    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const comments = await this.commentModel.find({
+      createdAt: { $gte: sixMonthsAgo }
+    }).exec();
+
+    comments.forEach((c: any) => {
+      const cDate = new Date(c.createdAt || new Date());
+      const match = chartData.find(
+        (m) => m.year === cDate.getFullYear() && m.monthIndex === cDate.getMonth()
+      );
+      if (match) {
+        match.BinhLuan += 1;
+      }
+    });
+
+    users.forEach((u) => {
+      if (u.watchHistory) {
+        u.watchHistory.forEach((item) => {
+          const vDate = new Date(item.updatedAt || new Date());
+          if (vDate >= sixMonthsAgo) {
+            const match = chartData.find(
+              (m) => m.year === vDate.getFullYear() && m.monthIndex === vDate.getMonth()
+            );
+            if (match) {
+              match.LuotXem += 1;
+            }
+          }
+        });
+      }
+    });
+
+    return {
+      totalUsers,
+      totalComments,
+      activeReports,
+      totalViews,
+      chartData: chartData.map((d) => ({
+        month: d.month,
+        LuotXem: d.LuotXem,
+        BinhLuan: d.BinhLuan,
+      })),
+    };
+  }
 }

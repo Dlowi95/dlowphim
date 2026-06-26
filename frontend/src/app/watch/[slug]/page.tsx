@@ -41,6 +41,7 @@ interface MovieDetail {
   category: { name: string; slug: string }[];
   country: { name: string; slug: string }[];
   episodes: Server[];
+  isCustom?: boolean;
 }
 
 
@@ -95,28 +96,88 @@ function WatchContent({ slug }: { slug: string }) {
     hasSkippedIntro.current = false;
   }, [playerType, activeEpisodeIndex, activeServerIndex]);
 
-  // 1. Fetch thông tin phim từ OPhim API
+  // 1. Fetch thông tin phim từ OPhim API hoặc Custom API
   useEffect(() => {
     async function fetchMovieDetail() {
       try {
         setLoading(true);
         setError(null);
         
-        const res = await fetch(`https://ophim1.com/v1/api/phim/${slug}`);
-        if (!res.ok) throw new Error("Không thể kết nối máy chủ phim.");
-        
-        const data = await res.json();
-        if (data.status === true || data.status === "success") {
-          const item = data.data?.item || data.movie;
-          if (item) {
-            setMovie(item);
-            
+        // a. Kiểm tra xem phim có bị Block (Ẩn) hay không
+        try {
+          const blockRes = await fetch(`${API_URL}/movies/check-blocked/${slug}`);
+          if (blockRes.ok) {
+            const blockData = await blockRes.json();
+            if (blockData.isBlocked) {
+              throw new Error("Phim này hiện không khả dụng do bản quyền hoặc yêu cầu gỡ bỏ.");
+            }
+          }
+        } catch (blockErr: any) {
+          if (blockErr.message.includes("bản quyền")) {
+            throw blockErr;
+          }
+          console.error("Lỗi kiểm tra chặn phim:", blockErr);
+        }
 
-          } else {
+        // b. Tải phim từ OPhim API
+        let ophimDetail: any = null;
+        try {
+          const res = await fetch(`https://ophim1.com/v1/api/phim/${slug}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.status === true || data.status === "success") {
+              ophimDetail = data.data?.item || data.movie;
+            }
+          }
+        } catch (e) {
+          console.warn("Không tìm thấy trên OPhim hoặc lỗi API, thử tìm phim Custom...");
+        }
+
+        if (ophimDetail) {
+          setMovie(ophimDetail);
+        } else {
+          // c. Nếu OPhim không có, thử tìm trong Custom Movies
+          const customRes = await fetch(`${API_URL}/movies/custom/${slug}`);
+          if (!customRes.ok) {
             throw new Error("Không tìm thấy thông tin phim.");
           }
-        } else {
-          throw new Error("Không tải được dữ liệu phim.");
+          const customData = await customRes.json();
+          // Convert custom data to MovieDetail format
+          const adaptedMovie: MovieDetail = {
+            _id: customData._id,
+            name: customData.name,
+            slug: customData.slug,
+            origin_name: customData.origin_name,
+            content: customData.content || "",
+            type: "single",
+            status: "completed",
+            thumb_url: customData.thumb_url,
+            poster_url: customData.poster_url,
+            time: customData.time || "120 phút",
+            episode_current: customData.quality || "FHD",
+            episode_total: "1",
+            year: customData.year || 2026,
+            actor: [],
+            director: [],
+            category: customData.category || [],
+            country: customData.country || [],
+            episodes: [
+              {
+                server_name: "DlowServer",
+                server_data: [
+                  {
+                    name: "Full",
+                    slug: "full",
+                    filename: customData.name,
+                    link_embed: "",
+                    link_m3u8: customData.link_m3u8,
+                  }
+                ]
+              }
+            ],
+            isCustom: true,
+          };
+          setMovie(adaptedMovie);
         }
       } catch (err: any) {
         console.error("Lỗi lấy chi tiết phim:", err);
@@ -132,7 +193,7 @@ function WatchContent({ slug }: { slug: string }) {
 
   // Fetch thêm nguồn từ KKPhim song song
   useEffect(() => {
-    if (!slug) return;
+    if (!slug || movie?.isCustom) return;
     async function fetchKKPhimDetail() {
       try {
         const res = await fetch(`https://phimapi.com/phim/${slug}`);
@@ -159,7 +220,14 @@ function WatchContent({ slug }: { slug: string }) {
     }
     setKkServers([]);
     fetchKKPhimDetail();
-  }, [slug]);
+  }, [slug, movie?.isCustom]);
+
+  // Tự động chuyển kiểu player sang HLS nếu là phim tự đăng
+  useEffect(() => {
+    if (movie?.isCustom) {
+      setPlayerType("hls");
+    }
+  }, [movie]);
 
   const cleanedName = movie ? cleanMovieName(movie.name) : "";
 

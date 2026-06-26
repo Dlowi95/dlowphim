@@ -3,13 +3,17 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Navbar, NavbarBrand, NavbarContent, NavbarItem, Input, Button, useDisclosure, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Avatar } from "@heroui/react";
 import { Search, User, Loader2, ChevronDown, Play, Bell, ChevronUp, Wallet, Heart, Plus, History, LogOut } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import AuthModal from "./AuthModal";
 import { useAuth } from "@/context/AuthContext";
 import { cleanMovieName, cleanSlug } from "@/utils/movieUtils";
 
 export default function NavbarComponent() {
+  const pathname = usePathname();
+  if (pathname?.startsWith("/sys-dlowadmin")) {
+    return null;
+  }
   const [searchQuery, setSearchQuery] = useState("");
   const [isScrolled, setIsScrolled] = useState(false);
   const [suggestions, setSuggestions] = useState<any[]>([]);
