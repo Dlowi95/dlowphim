@@ -29,6 +29,7 @@ interface Banner {
   description?: string;
   order: number;
   isActive: boolean;
+  isFallback?: boolean;
 }
 
 export default function BannersManagementView() {
@@ -67,16 +68,58 @@ export default function BannersManagementView() {
     setLoading(true);
     try {
       const token = Cookies.get("token");
+      
+      // 1. Fetch DB Banners
       const res = await fetch(`${API_URL}/banners/admin`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
+      let dbBanners: Banner[] = [];
       if (res.ok) {
-        setBanners(await res.json());
-      } else {
-        showToast("Không thể tải danh sách banner", "error");
+        dbBanners = await res.json();
       }
+
+      // 2. Fetch OPhim fallback movies (5 items)
+      let fallbackMovies: any[] = [];
+      try {
+        const ophimRes = await fetch("https://ophim1.com/danh-sach/phim-moi-cap-nhat?page=1");
+        if (ophimRes.ok) {
+          const ophimData = await ophimRes.json();
+          fallbackMovies = ophimData.items ? ophimData.items.slice(0, 5) : [];
+        }
+      } catch (err) {
+        console.error("Lỗi fetch OPhim fallback:", err);
+      }
+
+      // 3. Merge to create exactly 5 slots
+      const merged: Banner[] = [];
+      for (let i = 1; i <= 5; i++) {
+        const custom = dbBanners.find((b) => b.order === i);
+        if (custom) {
+          merged.push({
+            ...custom,
+            isFallback: false
+          });
+        } else {
+          const movie = fallbackMovies[i - 1];
+          if (movie) {
+            const fileName = movie.thumb_url.split("/").pop();
+            merged.push({
+              title: movie.name,
+              originName: movie.origin_name,
+              movieSlug: movie.slug,
+              imageUrl: `https://img.ophim.live/uploads/movies/${fileName}`,
+              description: "Banner mặc định hệ thống (OPhim). Chỉnh sửa để thay đổi hình ảnh/nội dung.",
+              order: i,
+              isActive: true,
+              isFallback: true
+            });
+          }
+        }
+      }
+
+      setBanners(merged);
     } catch (err) {
       console.error(err);
       showToast("Lỗi kết nối máy chủ", "error");
@@ -220,10 +263,11 @@ export default function BannersManagementView() {
 
     try {
       const token = Cookies.get("token");
-      const url = editingBanner
+      const isEditMode = editingBanner && !editingBanner.isFallback;
+      const url = isEditMode
         ? `${API_URL}/banners/${editingBanner._id}`
         : `${API_URL}/banners`;
-      const method = editingBanner ? "PUT" : "POST";
+      const method = isEditMode ? "PUT" : "POST";
 
       const res = await fetch(url, {
         method,
@@ -235,7 +279,7 @@ export default function BannersManagementView() {
       });
 
       if (res.ok) {
-        showToast(editingBanner ? "Cập nhật banner thành công" : "Tạo banner mới thành công", "success");
+        showToast(isEditMode ? "Cập nhật banner thành công" : "Tạo banner mới thành công", "success");
         setShowModal(false);
         fetchBanners();
       } else {
@@ -305,31 +349,13 @@ export default function BannersManagementView() {
         <div className="text-left">
           <h3 className="text-base md:text-lg font-black text-white tracking-tight">Quản lý Banner nổi bật</h3>
           <p className="text-[10px] font-semibold text-zinc-500 mt-0.5">
-            Tùy biến danh sách các phim nổi bật hiển thị trên thanh trượt lớn (Hero Banner) ngoài Trang chủ.
+            Tùy biến danh sách các phim nổi bật hiển thị trên thanh trượt lớn (Hero Banner) ngoài Trang chủ (Cố định 5 vị trí).
           </p>
         </div>
-
-        <button
-          onClick={openAddModal}
-          className="h-9 px-4 rounded-xl bg-pink-500 hover:bg-pink-600 text-white font-extrabold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer border-none shadow-md shadow-pink-500/20"
-        >
-          <Plus size={15} /> Thêm Banner Mới
-        </button>
       </div>
 
       {/* Control bar */}
       <div className="flex items-center gap-2 justify-end">
-        <div className="relative">
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Tìm kiếm banner..."
-            className="h-9 w-48 sm:w-60 bg-[#0d0e13] border border-zinc-900 rounded-xl px-3 pl-8 text-xs text-zinc-200 placeholder-zinc-650 focus:outline-none focus:border-pink-500/50"
-          />
-          <Search size={12} className="text-zinc-650 absolute top-1/2 left-3 -translate-y-1/2" />
-        </div>
-
         <button
           onClick={fetchBanners}
           disabled={loading}
@@ -370,7 +396,7 @@ export default function BannersManagementView() {
           <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
             {filteredBanners.map((banner) => (
               <div
-                key={banner._id}
+                key={`${banner.movieSlug}-${banner.order}`}
                 className="bg-[#0c0d12] border border-zinc-900/80 rounded-2xl p-4 flex flex-col sm:flex-row gap-4 transition-all hover:border-zinc-800"
               >
                 {/* Image display */}
@@ -384,7 +410,7 @@ export default function BannersManagementView() {
                     }}
                   />
                   <div className="absolute top-2 left-2 bg-black/60 backdrop-blur px-2 py-0.5 rounded text-[8px] font-black text-pink-400 border border-zinc-800/40">
-                    Thứ tự: {banner.order}
+                    Vị trí: {banner.order}
                   </div>
                 </div>
 
@@ -392,19 +418,39 @@ export default function BannersManagementView() {
                 <div className="flex-grow min-w-0 flex flex-col justify-between text-left">
                   <div className="space-y-1">
                     <div className="flex items-start justify-between gap-2">
-                      <h4 className="text-xs font-bold text-white truncate leading-tight" title={banner.title}>
-                        {banner.title}
-                      </h4>
-                      <button
-                        onClick={() => handleToggleActive(banner)}
-                        className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase border transition-all cursor-pointer ${
-                          banner.isActive
-                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                            : "bg-zinc-800 text-zinc-500 border-transparent"
-                        }`}
-                      >
-                        {banner.isActive ? "Hoạt động" : "Đang ẩn"}
-                      </button>
+                      <div className="flex flex-col gap-1 min-w-0">
+                        <h4 className="text-xs font-bold text-white truncate leading-tight" title={banner.title}>
+                          {banner.title}
+                        </h4>
+                        <div className="flex items-center gap-1.5">
+                          {banner.isFallback ? (
+                            <span className="px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[7px] font-extrabold uppercase select-none">
+                              Hệ thống
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.2 rounded bg-pink-500/10 text-pink-400 border border-pink-500/20 text-[7px] font-extrabold uppercase select-none">
+                              Tùy biến
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {banner.isFallback ? (
+                        <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase bg-zinc-900 text-zinc-500 select-none">
+                          Hoạt động
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleToggleActive(banner)}
+                          className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase border transition-all cursor-pointer ${
+                            banner.isActive
+                              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                              : "bg-zinc-800 text-zinc-500 border-transparent"
+                          }`}
+                        >
+                          {banner.isActive ? "Hoạt động" : "Đang ẩn"}
+                        </button>
+                      )}
                     </div>
                     {banner.originName && (
                       <p className="text-[10px] text-zinc-500 font-semibold truncate">{banner.originName}</p>
@@ -426,21 +472,23 @@ export default function BannersManagementView() {
                     <button
                       onClick={() => openEditModal(banner)}
                       className="w-7 h-7 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-lg flex items-center justify-center transition-all cursor-pointer border-none"
-                      title="Chỉnh sửa banner"
+                      title={banner.isFallback ? "Cấu hình tùy biến banner này" : "Chỉnh sửa banner"}
                     >
                       <Edit size={12} />
                     </button>
-                    <button
-                      onClick={() => {
-                        if (window.confirm("Bạn có chắc chắn muốn xóa banner này?")) {
-                          handleDeleteBanner(banner._id!);
-                        }
-                      }}
-                      className="w-7 h-7 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-lg flex items-center justify-center transition-all cursor-pointer border-none"
-                      title="Xóa banner"
-                    >
-                      <Trash2 size={12} />
-                    </button>
+                    {!banner.isFallback && (
+                      <button
+                        onClick={() => {
+                          if (window.confirm("Bạn có chắc chắn muốn xóa banner tùy biến này và quay về mặc định hệ thống?")) {
+                            handleDeleteBanner(banner._id!);
+                          }
+                        }}
+                        className="w-7 h-7 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-lg flex items-center justify-center transition-all cursor-pointer border-none"
+                        title="Xóa banner tùy biến"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
                     <a
                       href={`/movie/${banner.movieSlug}`}
                       target="_blank"
@@ -468,7 +516,7 @@ export default function BannersManagementView() {
             <div className="flex items-center justify-between p-4 border-b border-zinc-900">
               <h3 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
                 <ImageIcon size={16} className="text-pink-500" />
-                {editingBanner ? "Chỉnh sửa Banner" : "Thêm Banner Mới"}
+                Cấu hình Banner Vị trí {formOrder}
               </h3>
               <button
                 onClick={() => setShowModal(false)}
@@ -482,7 +530,7 @@ export default function BannersManagementView() {
             <div className="overflow-y-auto p-5 space-y-4 text-left flex-1 custom-scrollbar">
 
               {/* Auto crawl banner helper */}
-              {!editingBanner && (
+              {true && (
                 <div className="p-4 bg-pink-500/5 rounded-2xl border border-pink-500/10 space-y-3">
                   <div className="flex items-start gap-2.5">
                     <Info size={16} className="text-pink-400 shrink-0 mt-0.5" />
@@ -581,13 +629,13 @@ export default function BannersManagementView() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-zinc-400">Thứ tự hiển thị</label>
+                    <label className="text-[10px] font-bold text-zinc-400">Vị trí hiển thị (Khóa cố định)</label>
                     <input
                       type="number"
                       required
+                      disabled
                       value={formOrder}
-                      onChange={(e) => setFormOrder(Number(e.target.value))}
-                      className="w-full h-9 bg-zinc-950 border border-zinc-900 rounded-xl px-3 text-xs text-zinc-200 focus:outline-none focus:border-pink-500/50"
+                      className="w-full h-9 bg-zinc-900/50 border border-zinc-900 rounded-xl px-3 text-xs text-zinc-500 cursor-not-allowed focus:outline-none"
                     />
                   </div>
                 </div>

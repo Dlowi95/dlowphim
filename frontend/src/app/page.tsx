@@ -190,33 +190,39 @@ export default function HomePage() {
           console.error("Lỗi khi kết nối API OPhim:", error);
         }
 
-        // 3. Combine Banner & Grid logic
-        if (dbBanners.length > 0) {
-          // Map DB Banners to standard Hero movie layout
-          const mappedBanners = dbBanners.map((b: any) => ({
-            _id: b._id,
-            name: b.title,
-            origin_name: b.originName || "",
-            slug: b.movieSlug,
-            thumb_url: b.imageUrl,
-            poster_url: b.imageUrl,
-            content: b.description || "",
-            isCustomBanner: true
-          }));
-          setHeroCandidates(mappedBanners);
-          
-          // Use OPhim movies for the grid below
-          setMovieList(ophimMovies.length > 0 ? ophimMovies.slice(0, 8) : FALLBACK_CANDIDATES);
-        } else {
-          // Fallback to old behavior: Use first 5 OPhim movies for Hero Slider
-          if (ophimMovies.length > 0) {
-            setHeroCandidates(ophimMovies.slice(0, 5));
-            setMovieList(ophimMovies.slice(5, 13));
+        // 3. Combine Banner & Grid logic: Merge DB Banners with OPhim fallback for exactly 5 Hero slots
+        const finalHeroCandidates = [];
+        const fallbackMovies = ophimMovies.length > 0 ? ophimMovies : FALLBACK_CANDIDATES;
+
+        for (let i = 1; i <= 5; i++) {
+          const custom = dbBanners.find((b: any) => b.order === i && b.isActive);
+          if (custom) {
+            finalHeroCandidates.push({
+              _id: custom._id,
+              name: custom.title,
+              origin_name: custom.originName || "",
+              slug: custom.movieSlug,
+              thumb_url: custom.imageUrl,
+              poster_url: custom.imageUrl,
+              content: custom.description || "",
+              isCustomBanner: true
+            });
           } else {
-            setHeroCandidates(FALLBACK_CANDIDATES);
-            setMovieList(FALLBACK_CANDIDATES);
+            const movie = fallbackMovies[i - 1];
+            if (movie) {
+              finalHeroCandidates.push({
+                ...movie,
+                isCustomBanner: false
+              });
+            }
           }
         }
+
+        setHeroCandidates(finalHeroCandidates);
+        
+        // Use OPhim movies for the grid below
+        const gridMovies = ophimMovies.length > 5 ? ophimMovies.slice(5, 13) : ophimMovies.slice(0, 8);
+        setMovieList(gridMovies.length > 0 ? gridMovies : FALLBACK_CANDIDATES);
       } catch (error) {
         console.error("Lỗi đồng bộ dữ liệu trang chủ:", error);
         setHeroCandidates(FALLBACK_CANDIDATES);

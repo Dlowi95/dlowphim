@@ -11,6 +11,7 @@ import PlaceholderView from "@/components/admin/PlaceholderView";
 import MoviesManagementView from "@/components/admin/MoviesManagementView";
 import UsersManagementView from "@/components/admin/UsersManagementView";
 import BannersManagementView from "@/components/admin/BannersManagementView";
+import MovieReportsView from "@/components/admin/MovieReportsView";
 
 interface ReportedComment {
   id: string;
@@ -132,10 +133,34 @@ export default function AdminDashboardPage() {
     }
   };
 
+  // Movie reports state
+  const [movieReports, setMovieReports] = useState<any[]>([]);
+  const [loadingMovieReports, setLoadingMovieReports] = useState(false);
+
+  const fetchMovieReports = async () => {
+    setLoadingMovieReports(true);
+    try {
+      const token = Cookies.get("token");
+      const res = await fetch(`${API_URL}/movie-reports/admin`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        setMovieReports(await res.json());
+      }
+    } catch (err) {
+      console.error("Lỗi fetch movie reports:", err);
+    } finally {
+      setLoadingMovieReports(false);
+    }
+  };
+
   // Run on mount to populate sidebar badge
   useEffect(() => {
     fetchReports();
     fetchStats();
+    fetchMovieReports();
   }, []);
 
   // Automatically refresh reports list or stats when switching tabs
@@ -145,6 +170,8 @@ export default function AdminDashboardPage() {
       fetchAllComments();
     } else if (activeTab === "dashboard") {
       fetchStats();
+    } else if (activeTab === "reports") {
+      fetchMovieReports();
     }
   }, [activeTab]);
 
@@ -202,6 +229,7 @@ export default function AdminDashboardPage() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         reportsCount={reports.length}
+        movieReportsCount={movieReports.filter((r) => r.status === "pending").length}
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
       />
@@ -222,6 +250,7 @@ export default function AdminDashboardPage() {
           reportsCount={reports.length}
           setActiveTab={setActiveTab}
           reports={reports}
+          movieReports={movieReports}
         />
 
         {/* ─── CONTENT TAB PANEL ─── */}
@@ -260,7 +289,7 @@ export default function AdminDashboardPage() {
           )}
 
           {activeTab === "reports" && (
-            <PlaceholderView />
+            <MovieReportsView />
           )}
         </div>
       </div>

@@ -17,6 +17,7 @@ interface AdminSidebarProps {
   activeTab: string;
   setActiveTab: (tab: any) => void;
   reportsCount: number;
+  movieReportsCount?: number;
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
 }
@@ -25,6 +26,7 @@ export default function AdminSidebar({
   activeTab,
   setActiveTab,
   reportsCount,
+  movieReportsCount = 0,
   sidebarOpen,
   setSidebarOpen,
 }: AdminSidebarProps) {
@@ -56,7 +58,7 @@ export default function AdminSidebar({
             { id: "users", label: "Quản lý Người dùng", icon: Users },
             { id: "comments", label: "Bình luận & Báo xấu", icon: MessageSquare, count: reportsCount },
             { id: "banners", label: "Quản lý Banner", icon: ImageIcon },
-            { id: "reports", label: "Báo cáo lỗi", icon: AlertTriangle },
+            { id: "reports", label: "Báo cáo lỗi", icon: AlertTriangle, count: movieReportsCount },
           ].map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, Suspense } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Send, Sparkles, Tv, HelpCircle, Plus, Users, Flag, X } from "lucide-react";
 import CommentRatingSection from "@/components/CommentRatingSection";
@@ -61,7 +62,7 @@ function WatchContent({ slug }: { slug: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const { user, toggleFavorite: toggleFavoriteCtx } = useAuth();
+  const { user, toggleFavorite: toggleFavoriteCtx, showToast } = useAuth();
 
   // States phát phim
   const [activeServerIndex, setActiveServerIndex] = useState(0);
@@ -89,6 +90,70 @@ function WatchContent({ slug }: { slug: string }) {
   // Phim liên quan
   const [relatedMovies, setRelatedMovies] = useState<any[]>([]);
   const [loadingRelated, setLoadingRelated] = useState(false);
+
+  // States báo lỗi phim
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
+
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportErrorType, setReportErrorType] = useState("video_broken");
+  const [reportDescription, setReportDescription] = useState("");
+  const [submittingReport, setSubmittingReport] = useState(false);
+
+  const handleSendReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!movie) return;
+
+    let episodeName = "Tập 1";
+    try {
+      const server = movie.episodes?.[activeServerIndex] || kkServers?.[activeServerIndex];
+      const ep = server?.server_data?.[activeEpisodeIndex];
+      if (ep) {
+        episodeName = ep.name;
+      }
+    } catch (err) {
+      console.error("Lỗi lấy tập phim:", err);
+    }
+
+    setSubmittingReport(true);
+    try {
+      const token = Cookies.get("token");
+      const headers: HeadersInit = {
+        "Content-Type": "application/json",
+      };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const res = await fetch(`${API_URL}/movie-reports`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          movieSlug: movie.slug,
+          movieName: movie.name,
+          episodeName,
+          errorType: reportErrorType,
+          description: reportDescription.trim() || undefined,
+        }),
+      });
+
+      if (res.ok) {
+        showToast("Gửi báo cáo lỗi thành công! Admin sẽ sớm khắc phục.", "success");
+        setShowReportModal(false);
+        setReportDescription("");
+      } else {
+        showToast("Gửi báo cáo thất bại, vui lòng thử lại.", "error");
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("Lỗi kết nối máy chủ", "error");
+    } finally {
+      setSubmittingReport(false);
+    }
+  };
 
   // Reset play states on source changes
   useEffect(() => {
@@ -836,7 +901,7 @@ function WatchContent({ slug }: { slug: string }) {
                   <div className="p-3 bg-[#0d0e13] border-t border-zinc-900 flex items-center justify-start">
                     <button
                       onClick={() => {
-                        document.getElementById("watch-player-section")?.scrollIntoView({ behavior: "smooth" });
+                        setShowReportModal(true);
                       }}
                       className="flex items-center gap-1.5 text-zinc-500 hover:text-pink-500 transition-colors bg-transparent border-none cursor-pointer text-xs font-bold"
                     >
@@ -914,6 +979,7 @@ function WatchContent({ slug }: { slug: string }) {
                 </div>
 
                 <button
+                  onClick={() => setShowReportModal(true)}
                   className="flex items-center gap-1 text-zinc-500 hover:text-pink-500 transition-all cursor-pointer ml-auto bg-transparent border-none hover:bg-zinc-800/30 px-2 py-1 rounded-lg"
                 >
                   <Flag size={14} />
@@ -1269,6 +1335,105 @@ function WatchContent({ slug }: { slug: string }) {
               </div>
             )}
           </div>
+        )}
+
+        {/* Modal Báo Lỗi */}
+        {showReportModal && mounted && createPortal(
+          <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-md px-4 select-none">
+            <div className="w-full max-w-md bg-[#0c0d12] border border-zinc-900 shadow-2xl flex flex-col rounded-2xl overflow-hidden animate-scaleUp text-left">
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b border-zinc-900/60">
+                <h3 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+                  <Flag size={15} className="text-pink-500" />
+                  <span>Báo cáo lỗi phim</span>
+                </h3>
+                <button
+                  onClick={() => setShowReportModal(false)}
+                  className="p-1 hover:bg-zinc-900 text-zinc-400 hover:text-white rounded-lg transition-colors cursor-pointer border-none bg-transparent"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Form */}
+              <form onSubmit={handleSendReport} className="p-5 space-y-4">
+                <div className="space-y-2">
+                  <span className="text-[10px] font-bold text-zinc-400 block">Bộ phim: <span className="text-zinc-200">{movie?.name}</span></span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-zinc-400 block">Loại lỗi gặp phải (Bắt buộc)</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { value: "video_broken", label: "Link hỏng / Không xem được" },
+                      { value: "audio_issue", label: "Lỗi âm thanh (mất tiếng...)" },
+                      { value: "subtitle_issue", label: "Lỗi phụ đề / Vietsub" },
+                      { value: "other", label: "Lỗi khác" },
+                    ].map((item) => (
+                      <label
+                        key={item.value}
+                        className={`p-2.5 rounded-xl border text-[10px] font-bold flex items-center justify-center text-center cursor-pointer transition-all ${
+                          reportErrorType === item.value
+                            ? "bg-pink-500/10 border-pink-500/50 text-pink-400"
+                            : "bg-zinc-900/40 border-zinc-900 text-zinc-400 hover:border-zinc-800"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="errorType"
+                          value={item.value}
+                          checked={reportErrorType === item.value}
+                          onChange={(e) => setReportErrorType(e.target.value)}
+                          className="sr-only"
+                        />
+                        {item.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-zinc-400 block">Mô tả chi tiết lỗi (Không bắt buộc)</label>
+                  <textarea
+                    rows={3}
+                    placeholder="Mô tả cụ thể lỗi gặp phải giúp Admin dễ sửa hơn nhé (Ví dụ: Tập 05 bị lệch sub từ phút 10...)"
+                    value={reportDescription}
+                    onChange={(e) => setReportDescription(e.target.value.slice(0, 250))}
+                    className="w-full bg-zinc-950 border border-zinc-900 rounded-xl p-3 text-xs text-zinc-200 focus:outline-none focus:border-pink-500/50 placeholder-zinc-650 resize-none"
+                  />
+                  <div className="flex justify-end">
+                    <span className="text-[8px] font-bold text-zinc-600">{reportDescription.length}/250 ký tự</span>
+                  </div>
+                </div>
+
+                {/* Footer Buttons */}
+                <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-zinc-900/60">
+                  <button
+                    type="button"
+                    onClick={() => setShowReportModal(false)}
+                    className="h-8 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white text-xs font-black transition-colors cursor-pointer border-none"
+                  >
+                    Hủy bỏ
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingReport}
+                    className="h-8 px-4 rounded-xl bg-pink-500 hover:bg-pink-600 disabled:opacity-50 text-white text-xs font-black transition-colors flex items-center justify-center gap-1.5 cursor-pointer border-none shadow-md shadow-pink-500/20"
+                  >
+                    {submittingReport ? (
+                      <>
+                        <Loader2 size={12} className="animate-spin" />
+                        Đang gửi...
+                      </>
+                    ) : (
+                      "Gửi báo cáo"
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>,
+          document.body
         )}
 
       </div>

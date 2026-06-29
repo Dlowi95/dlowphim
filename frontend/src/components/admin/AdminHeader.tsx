@@ -10,6 +10,7 @@ interface AdminHeaderProps {
   reportsCount: number;
   setActiveTab: (tab: any) => void;
   reports?: any[];
+  movieReports?: any[];
 }
 
 export default function AdminHeader({
@@ -18,9 +19,47 @@ export default function AdminHeader({
   reportsCount,
   setActiveTab,
   reports = [],
+  movieReports = [],
 }: AdminHeaderProps) {
   const { showToast } = useAuth();
   const [showNotif, setShowNotif] = useState(false);
+
+  // Filter pending (unresolved) movie reports
+  const activeMovieReports = movieReports.filter((r) => r.status === "pending");
+
+  // Merge and sort reports by creation date descending
+  const notificationsList = [
+    ...reports.map((r) => ({
+      id: r.id || r._id,
+      type: "comment_report",
+      title: `${r.reporter?.name || "Thành viên"} báo xấu bình luận`,
+      subtitle: `Lý do: ${r.reason}`,
+      content: `"${r.comment?.content || ""}"`,
+      createdAt: r.createdAt,
+      targetTab: "comments",
+    })),
+    ...activeMovieReports.map((r) => {
+      const getErrorLabel = (t: string) => {
+        if (t === "video_broken") return "Link hỏng / Không phát được";
+        if (t === "audio_issue") return "Lỗi âm thanh";
+        if (t === "subtitle_issue") return "Lỗi phụ đề";
+        return "Lỗi khác";
+      };
+      return {
+        id: r._id,
+        type: "movie_report",
+        title: `Báo lỗi phim: ${r.movieName}`,
+        subtitle: `Sự cố: ${getErrorLabel(r.errorType)} (${r.episodeName})`,
+        content: r.description ? `"${r.description}"` : "Không có ghi chú chi tiết",
+        createdAt: r.createdAt,
+        targetTab: "reports",
+      };
+    }),
+  ].sort((a, b) => {
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+
+  const totalUnresolvedCount = reports.length + activeMovieReports.length;
 
   return (
     <header className="h-16 shrink-0 bg-[#0d0e13]/60 backdrop-blur-md border-b border-zinc-900 flex items-center justify-between px-6 sticky top-0 z-30 select-none">
@@ -64,8 +103,10 @@ export default function AdminHeader({
           >
             <Bell size={15} />
           </button>
-          {reportsCount > 0 && (
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 animate-ping shadow" />
+          {totalUnresolvedCount > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full bg-red-500 text-[8px] font-black text-white px-1 flex items-center justify-center shadow-[0_0_8px_rgba(239,68,68,0.7)] animate-pulse border border-[#0d0e13]">
+              {totalUnresolvedCount}
+            </span>
           )}
 
           {showNotif && (
@@ -79,61 +120,86 @@ export default function AdminHeader({
                 style={{ borderColor: "rgba(236, 72, 153, 0.25)" }}
               >
                 <div className="flex items-center justify-between pb-2 border-b border-zinc-900">
-                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Thông báo</span>
-                  {reportsCount > 0 && (
+                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Thông báo hệ thống</span>
+                  {totalUnresolvedCount > 0 && (
                     <span className="bg-red-500/10 text-red-400 font-extrabold text-[9px] px-2 py-0.5 rounded">
-                      {reportsCount} mới
+                      {totalUnresolvedCount} mới
                     </span>
                   )}
                 </div>
 
-                <div className="flex flex-col gap-2 max-h-[320px] overflow-y-auto pr-1">
-                  {reports.length > 0 ? (
+                <div className="flex flex-col gap-2 max-h-[320px] overflow-y-auto pr-1 custom-scrollbar">
+                  {notificationsList.length > 0 ? (
                     <>
-                      {reports.slice(0, 5).map((report) => (
+                      {notificationsList.slice(0, 5).map((notif) => (
                         <div
-                          key={report.id}
+                          key={notif.id}
                           onClick={() => {
-                            setActiveTab("comments");
+                            setActiveTab(notif.targetTab);
                             setShowNotif(false);
                           }}
-                          className="p-2.5 rounded-xl bg-red-500/5 hover:bg-red-500/10 border border-red-500/10 hover:border-red-500/20 cursor-pointer flex gap-2.5 items-start text-left transition-all"
+                          className={`p-2.5 rounded-xl border cursor-pointer flex gap-2.5 items-start text-left transition-all ${
+                            notif.type === "comment_report"
+                              ? "bg-red-500/5 hover:bg-red-500/10 border-red-500/10 hover:border-red-500/20"
+                              : "bg-amber-500/5 hover:bg-amber-500/10 border-amber-500/10 hover:border-amber-500/20"
+                          }`}
                         >
-                          <AlertTriangle size={14} className="text-red-400 shrink-0 mt-0.5" />
+                          {notif.type === "comment_report" ? (
+                            <AlertTriangle size={14} className="text-red-400 shrink-0 mt-0.5" />
+                          ) : (
+                            <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
+                          )}
                           <div className="space-y-1 flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-2">
                               <span className="text-[10px] font-extrabold text-zinc-200 truncate">
-                                {report.reporter?.name || "Thành viên"} báo xấu
+                                {notif.title}
                               </span>
                               <span className="text-[8px] font-bold text-zinc-550 shrink-0">
-                                {report.createdAt
-                                  ? new Date(report.createdAt).toLocaleDateString("vi-VN", {
+                                {notif.createdAt
+                                  ? new Date(notif.createdAt).toLocaleDateString("vi-VN", {
                                       day: "numeric",
                                       month: "numeric",
                                     })
                                   : ""}
                               </span>
                             </div>
-                            <p className="text-[9px] font-extrabold text-pink-500 uppercase tracking-wider">
-                              Lý do: {report.reason}
+                            <p className={`text-[9px] font-extrabold uppercase tracking-wider ${
+                              notif.type === "comment_report" ? "text-pink-500" : "text-amber-500"
+                            }`}>
+                              {notif.subtitle}
                             </p>
                             <p className="text-[10px] text-zinc-400 leading-normal italic line-clamp-2 bg-zinc-950/60 px-2 py-1.5 rounded border border-zinc-900/40">
-                              "{report.comment?.content || ""}"
+                              {notif.content}
                             </p>
                           </div>
                         </div>
                       ))}
 
-                      {reports.length > 5 && (
-                        <button
-                          onClick={() => {
-                            setActiveTab("comments");
-                            setShowNotif(false);
-                          }}
-                          className="w-full py-2 mt-1 rounded-xl bg-zinc-900/40 hover:bg-zinc-900 border border-zinc-900 hover:border-zinc-800 text-[10px] font-extrabold text-zinc-400 hover:text-white uppercase tracking-wider transition-all cursor-pointer"
-                        >
-                          Xem thêm {reports.length - 5} báo cáo khác
-                        </button>
+                      {notificationsList.length > 5 && (
+                        <div className="flex gap-2 pt-1 border-t border-zinc-900/60">
+                          {reports.length > 0 && (
+                            <button
+                              onClick={() => {
+                                setActiveTab("comments");
+                                setShowNotif(false);
+                              }}
+                              className="flex-1 py-1.5 rounded-xl bg-zinc-900/40 hover:bg-zinc-900 border border-zinc-900 hover:border-zinc-800 text-[8px] font-extrabold text-zinc-400 hover:text-white uppercase tracking-wider transition-all cursor-pointer text-center"
+                            >
+                              Bình luận ({reports.length})
+                            </button>
+                          )}
+                          {activeMovieReports.length > 0 && (
+                            <button
+                              onClick={() => {
+                                setActiveTab("reports");
+                                setShowNotif(false);
+                              }}
+                              className="flex-1 py-1.5 rounded-xl bg-zinc-900/40 hover:bg-zinc-900 border border-zinc-900 hover:border-zinc-800 text-[8px] font-extrabold text-zinc-400 hover:text-white uppercase tracking-wider transition-all cursor-pointer text-center"
+                            >
+                              Báo lỗi ({activeMovieReports.length})
+                            </button>
+                          )}
+                        </div>
                       )}
                     </>
                   ) : (

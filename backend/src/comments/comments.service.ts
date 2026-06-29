@@ -166,6 +166,16 @@ export class CommentsService {
     const user = await this.userModel.findById(userId).exec();
     const userRole = user?.role || 'member';
 
+    console.log('--- DEBUG DELETE COMMENT ---', {
+      commentId,
+      commentUserId: comment.userId.toString(),
+      requestUserId: userId,
+      userRole,
+      isOwner: comment.userId.toString() === userId,
+      isAdmin: userRole === 'admin',
+      willAllow: comment.userId.toString() === userId || userRole === 'admin'
+    });
+
     // Kiểm tra quyền xóa: người tạo hoặc admin
     if (comment.userId.toString() !== userId && userRole !== 'admin') {
       throw new ForbiddenException('Bạn không có quyền xóa bình luận này');

@@ -8,6 +8,7 @@ import { CommentsModule } from './comments/comments.module';
 import { RatingsModule } from './ratings/ratings.module';
 import { MoviesModule } from './movies/movies.module';
 import { BannersModule } from './banners/banners.module';
+import { MovieReportsModule } from './movie-reports/movie-reports.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { BannersModule } from './banners/banners.module';
     RatingsModule,
     MoviesModule,
     BannersModule,
+    MovieReportsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

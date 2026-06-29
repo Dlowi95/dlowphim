@@ -367,13 +367,28 @@ export default function CommentRatingSection({
           <div className="flex items-center gap-3">
             {user ? (
               <>
-                <div className="w-10 h-10 rounded-full font-black text-sm flex items-center justify-center shrink-0 shadow bg-gradient-to-tr from-pink-500 to-rose-500 text-white select-none">
-                  {user.displayName
-                    ? user.displayName[0].toUpperCase()
-                    : user.email
-                      ? user.email[0].toUpperCase()
-                      : "U"}
-                </div>
+                {user.avatar ? (
+                  <img
+                    src={user.avatar}
+                    alt={user.displayName}
+                    className={`w-10 h-10 rounded-full object-cover shrink-0 shadow-sm border border-zinc-800 ${
+                      user.role === "admin"
+                        ? "ring-2 ring-pink-500 ring-offset-2 ring-offset-[#0d0e13] shadow-[0_0_10px_rgba(236,72,153,0.5)]"
+                        : ""
+                    }`}
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <img
+                    src="/images/avatars/default.png"
+                    alt={user.displayName}
+                    className={`w-10 h-10 rounded-full object-cover shrink-0 shadow-sm border border-zinc-800 ${
+                      user.role === "admin"
+                        ? "ring-2 ring-pink-500 ring-offset-2 ring-offset-[#0d0e13] shadow-[0_0_10px_rgba(236,72,153,0.5)]"
+                        : ""
+                    }`}
+                  />
+                )}
                 <div className="flex flex-col text-left">
                   <span className="text-[10px] text-zinc-500 font-semibold select-none leading-none">
                     Bình luận với tên
@@ -478,6 +493,16 @@ export default function CommentRatingSection({
                   const isRevealed = revealedSpoilers[comment.id];
                   const replies = comments.filter((r: Comment) => r.parentId === comment.id).sort((a: Comment, b: Comment) => a.id.localeCompare(b.id));
 
+                  console.log("DEBUG FRONTEND CHECK:", {
+                    commentAuthor: comment.name,
+                    commentUserId: comment.userId,
+                    currentUserId: user?.id,
+                    currentUserRole: user?.role,
+                    isOwner: user?.id === comment.userId,
+                    isAdmin: user?.role === "admin",
+                    showDelete: user && (user.id === comment.userId || user.role === "admin")
+                  });
+
                   return (
                     <div key={comment.id} className={`flex flex-col gap-4 ${index === 0 ? "pt-0" : "pt-4"}`}>
                       {/* Root Comment Container */}
@@ -491,18 +516,23 @@ export default function CommentRatingSection({
                           <img
                             src={comment.avatarUrl}
                             alt={comment.name}
-                            className="w-9 h-9 rounded-full object-cover shrink-0 shadow-sm border border-zinc-800"
+                            className={`w-9 h-9 rounded-full object-cover shrink-0 shadow-sm border border-zinc-800 ${
+                              isAdmin
+                                ? "ring-2 ring-pink-500 ring-offset-[1.5px] ring-offset-[#0d0e13] shadow-[0_0_8px_rgba(236,72,153,0.45)]"
+                                : ""
+                            }`}
                             referrerPolicy="no-referrer"
                           />
                         ) : (
-                          <div
-                            className={`w-9 h-9 rounded-full font-black text-sm flex items-center justify-center shrink-0 shadow-sm ${isAdmin
-                              ? "bg-gradient-to-tr from-pink-500 to-rose-500 text-white"
-                              : "bg-zinc-800 text-zinc-300"
-                              }`}
-                          >
-                            {comment.avatar}
-                          </div>
+                          <img
+                            src="/images/avatars/default.png"
+                            alt={comment.name}
+                            className={`w-9 h-9 rounded-full object-cover shrink-0 shadow-sm border border-zinc-800 ${
+                              isAdmin
+                                ? "ring-2 ring-pink-500 ring-offset-[1.5px] ring-offset-[#0d0e13] shadow-[0_0_8px_rgba(236,72,153,0.45)]"
+                                : ""
+                            }`}
+                          />
                         )}
 
                         {/* Content */}
@@ -751,25 +781,30 @@ export default function CommentRatingSection({
                               <div key={reply.id} className="flex gap-3">
                                 {/* Reply Avatar */}
                                 {reply.avatarUrl === "vietnam-flag" ? (
-                                  <div className="w-7 h-7 rounded-full bg-red-600 flex items-center justify-center shrink-0 border border-red-500 select-none">
+                                  <div className={`w-7 h-7 rounded-full bg-red-600 flex items-center justify-center shrink-0 border border-red-500 select-none ${isReplyAdmin ? "ring-2 ring-pink-500 ring-offset-1 ring-offset-[#0d0e13] shadow-[0_0_8px_rgba(236,72,153,0.45)]" : ""}`}>
                                     <Star size={10} className="fill-yellow-400 text-yellow-400 stroke-none" />
                                   </div>
                                 ) : reply.avatarUrl ? (
                                   <img
                                     src={reply.avatarUrl}
                                     alt={reply.name}
-                                    className="w-7 h-7 rounded-full object-cover shrink-0 border border-zinc-800"
+                                    className={`w-7 h-7 rounded-full object-cover shrink-0 border border-zinc-800 ${
+                                      isReplyAdmin
+                                        ? "ring-2 ring-pink-500 ring-offset-1 ring-offset-[#0d0e13] shadow-[0_0_8px_rgba(236,72,153,0.45)]"
+                                        : ""
+                                    }`}
                                     referrerPolicy="no-referrer"
                                   />
                                 ) : (
-                                  <div
-                                    className={`w-7 h-7 rounded-full font-black text-xs flex items-center justify-center shrink-0 shadow-sm ${isReplyAdmin
-                                      ? "bg-gradient-to-tr from-pink-500 to-rose-500 text-white"
-                                      : "bg-zinc-800 text-zinc-300"
-                                      }`}
-                                  >
-                                    {reply.avatar}
-                                  </div>
+                                  <img
+                                    src="/images/avatars/default.png"
+                                    alt={reply.name}
+                                    className={`w-7 h-7 rounded-full object-cover shrink-0 border border-zinc-800 ${
+                                      isReplyAdmin
+                                        ? "ring-2 ring-pink-500 ring-offset-1 ring-offset-[#0d0e13] shadow-[0_0_8px_rgba(236,72,153,0.45)]"
+                                        : ""
+                                    }`}
+                                  />
                                 )}
 
                                 {/* Reply Content */}
