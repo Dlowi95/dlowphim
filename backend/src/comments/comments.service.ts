@@ -260,6 +260,36 @@ export class CommentsService {
     return { success: true, message: 'Đã bỏ qua báo cáo vi phạm thành công' };
   }
 
+  async getAllComments() {
+    const comments = await this.commentModel
+      .find()
+      .populate('userId', 'displayName email avatar')
+      .sort({ createdAt: -1 })
+      .exec();
+
+    return comments.map((c: any) => {
+      return {
+        id: c._id.toString(),
+        userId: c.userId?._id?.toString() || c.userId?.toString() || '',
+        name: c.userId?.displayName || c.displayName || 'Thành viên',
+        avatar: c.userId?.avatar || c.avatar || '',
+        role: c.role || 'member',
+        content: c.content,
+        time: getFormattedDate((c as any).createdAt || new Date()),
+        isSpoiler: c.isSpoiler,
+        episodeLabel: c.episodeLabel,
+        parentId: c.parentId ? c.parentId.toString() : null,
+        movieSlug: c.movieSlug,
+        author: {
+          id: c.userId?._id?.toString() || c.userId?.toString() || '',
+          name: c.userId?.displayName || c.displayName || 'Thành viên',
+          email: c.userId?.email || '',
+          avatar: c.userId?.avatar || c.avatar || '',
+        }
+      };
+    });
+  }
+
   async getAdminStats() {
     const totalUsers = await this.userModel.countDocuments({}).exec();
     const totalComments = await this.commentModel.countDocuments({}).exec();

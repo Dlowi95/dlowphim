@@ -1,6 +1,7 @@
-import { Controller, Post, Body, Get, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Body, Get, Put, Delete, Param, UseGuards, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './guards/auth.guard';
+import { RolesGuard } from './guards/roles.guard';
 import * as express from 'express';
 
 @Controller('auth')
@@ -55,5 +56,40 @@ export class AuthController {
   async syncHistory(@Req() req: express.Request, @Body('localHistory') localHistory: any[]) {
     const userId = req['user']?.sub;
     return this.authService.syncHistory(userId, localHistory || []);
+  }
+
+  @Get('admin/users')
+  @UseGuards(AuthGuard, RolesGuard)
+  async getAllUsers() {
+    return this.authService.getAllUsers();
+  }
+
+  @Put('admin/users/:id/role')
+  @UseGuards(AuthGuard, RolesGuard)
+  async updateUserRole(
+    @Req() req: express.Request,
+    @Param('id') userId: string,
+    @Body('role') role: string,
+  ) {
+    const adminId = req['user']?.sub;
+    return this.authService.updateUserRole(adminId, userId, role);
+  }
+
+  @Put('admin/users/:id/status')
+  @UseGuards(AuthGuard, RolesGuard)
+  async updateUserStatus(
+    @Req() req: express.Request,
+    @Param('id') userId: string,
+    @Body('isActive') isActive: boolean,
+  ) {
+    const adminId = req['user']?.sub;
+    return this.authService.updateUserStatus(adminId, userId, isActive);
+  }
+
+  @Delete('admin/users/:id')
+  @UseGuards(AuthGuard, RolesGuard)
+  async deleteUser(@Req() req: express.Request, @Param('id') userId: string) {
+    const adminId = req['user']?.sub;
+    return this.authService.deleteUser(adminId, userId);
   }
 }

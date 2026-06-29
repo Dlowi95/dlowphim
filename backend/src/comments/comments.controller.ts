@@ -78,6 +78,12 @@ export class CommentsController {
     return this.commentsService.getReportedComments();
   }
 
+  @Get('admin/all')
+  @UseGuards(AuthGuard, RolesGuard)
+  async getAllComments() {
+    return this.commentsService.getAllComments();
+  }
+
   @Delete('admin/reports/:id/dismiss')
   @UseGuards(AuthGuard, RolesGuard)
   async dismissReport(@Param('id') reportId: string) {

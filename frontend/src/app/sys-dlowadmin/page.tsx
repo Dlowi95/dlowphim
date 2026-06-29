@@ -9,6 +9,8 @@ import DashboardView from "@/components/admin/DashboardView";
 import CommentReportsView from "@/components/admin/CommentReportsView";
 import PlaceholderView from "@/components/admin/PlaceholderView";
 import MoviesManagementView from "@/components/admin/MoviesManagementView";
+import UsersManagementView from "@/components/admin/UsersManagementView";
+import BannersManagementView from "@/components/admin/BannersManagementView";
 
 interface ReportedComment {
   id: string;
@@ -46,6 +48,10 @@ export default function AdminDashboardPage() {
   const [reports, setReports] = useState<ReportedComment[]>([]);
   const [loadingReports, setLoadingReports] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+
+  // All comments state
+  const [allComments, setAllComments] = useState<any[]>([]);
+  const [loadingAllComments, setLoadingAllComments] = useState(false);
 
   // Real statistics states
   const [stats, setStats] = useState<{
@@ -103,6 +109,29 @@ export default function AdminDashboardPage() {
     }
   };
 
+  // Fetch all comments from API
+  const fetchAllComments = async () => {
+    setLoadingAllComments(true);
+    try {
+      const token = Cookies.get("token");
+      const res = await fetch(`${API_URL}/comments/admin/all`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        setAllComments(await res.json());
+      } else {
+        showToast("Không thể tải danh sách tất cả bình luận", "error");
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("Lỗi kết nối máy chủ", "error");
+    } finally {
+      setLoadingAllComments(false);
+    }
+  };
+
   // Run on mount to populate sidebar badge
   useEffect(() => {
     fetchReports();
@@ -113,6 +142,7 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     if (activeTab === "comments") {
       fetchReports();
+      fetchAllComments();
     } else if (activeTab === "dashboard") {
       fetchStats();
     }
@@ -153,6 +183,7 @@ export default function AdminDashboardPage() {
       });
       if (res.ok) {
         setReports((prev) => prev.filter((r) => r.comment.id !== commentId));
+        setAllComments((prev) => prev.filter((c) => c.id !== commentId && c.parentId !== commentId));
         showToast("Xóa bình luận vi phạm thành công", "success");
       } else {
         const data = await res.json();
@@ -203,9 +234,14 @@ export default function AdminDashboardPage() {
             <CommentReportsView
               reports={reports}
               loadingReports={loadingReports}
+              allComments={allComments}
+              loadingAllComments={loadingAllComments}
               searchTerm={searchTerm}
               setSearchTerm={setSearchTerm}
-              onRefresh={fetchReports}
+              onRefresh={() => {
+                fetchReports();
+                fetchAllComments();
+              }}
               onDismiss={handleDismissReport}
               onDelete={handleDeleteComment}
             />
@@ -215,7 +251,15 @@ export default function AdminDashboardPage() {
             <MoviesManagementView />
           )}
 
-          {["users", "banners", "reports"].includes(activeTab) && (
+          {activeTab === "users" && (
+            <UsersManagementView />
+          )}
+
+          {activeTab === "banners" && (
+            <BannersManagementView />
+          )}
+
+          {activeTab === "reports" && (
             <PlaceholderView />
           )}
         </div>

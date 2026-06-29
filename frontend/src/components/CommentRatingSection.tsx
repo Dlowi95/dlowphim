@@ -9,6 +9,7 @@ import {
   ArrowDown,
   CornerDownLeft,
   MoreHorizontal,
+  ShieldAlert,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
@@ -84,6 +85,21 @@ export default function CommentRatingSection({
   // Action menu state
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
 
+  interface ReportModalState {
+    isOpen: boolean;
+    commentId: string | null;
+    reason: string;
+    customReason: string;
+  }
+
+  // Report Modal state
+  const [reportModal, setReportModal] = useState<ReportModalState>({
+    isOpen: false,
+    commentId: null,
+    reason: "Spam / Quảng cáo không phù hợp",
+    customReason: "",
+  });
+
   // ── Fetch data ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -144,7 +160,7 @@ export default function CommentRatingSection({
       });
       if (res.ok) {
         const newComment = await res.json();
-        setComments((prev) => [newComment, ...prev]);
+        setComments((prev: Comment[]) => [newComment, ...prev]);
         setCommentText("");
         setIsSpoiler(false);
       }
@@ -173,7 +189,7 @@ export default function CommentRatingSection({
       });
       if (res.ok) {
         const newReply = await res.json();
-        setComments((prev) => [...prev, newReply]);
+        setComments((prev: Comment[]) => [...prev, newReply]);
         setReplyText("");
         setReplyToId(null);
         setReplyIsSpoiler(false);
@@ -194,15 +210,15 @@ export default function CommentRatingSection({
         },
       });
       if (res.ok) {
-        setComments((prev) => {
-          const target = prev.find((c) => c.id === commentId);
+        setComments((prev: Comment[]) => {
+          const target = prev.find((c: Comment) => c.id === commentId);
           if (!target) return prev;
           if (!target.parentId) {
             // Xóa cha -> xóa cả con
-            return prev.filter((c) => c.id !== commentId && c.parentId !== commentId);
+            return prev.filter((c: Comment) => c.id !== commentId && c.parentId !== commentId);
           } else {
             // Xóa con -> chỉ xóa chính nó
-            return prev.filter((c) => c.id !== commentId);
+            return prev.filter((c: Comment) => c.id !== commentId);
           }
         });
         showToast("Xóa bình luận thành công!", "success");
@@ -217,7 +233,7 @@ export default function CommentRatingSection({
     }
   };
 
-  const handleReportComment = async (commentId: string) => {
+  const handleReportComment = async (commentId: string, reason: string) => {
     if (!user) {
       window.dispatchEvent(new Event("dlowphim_open_auth"));
       return;
@@ -230,7 +246,7 @@ export default function CommentRatingSection({
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ reason: "Nội dung không phù hợp / Spam" }),
+        body: JSON.stringify({ reason }),
       });
       if (res.ok) {
         showToast("Đã gửi báo cáo vi phạm bình luận này!", "success");
@@ -243,6 +259,16 @@ export default function CommentRatingSection({
       console.error("Lỗi báo xấu:", err);
       showToast("Lỗi kết nối máy chủ", "error");
     }
+  };
+
+  const openReportModal = (commentId: string) => {
+    setReportModal({
+      isOpen: true,
+      commentId,
+      reason: "Spam / Quảng cáo không phù hợp",
+      customReason: "",
+    });
+    setActiveMenuId(null);
   };
 
   const handleVote = async (commentId: string, type: "up" | "down") => {
@@ -262,8 +288,8 @@ export default function CommentRatingSection({
       });
       if (res.ok) {
         const data = await res.json();
-        setComments((prev) =>
-          prev.map((c) =>
+        setComments((prev: Comment[]) =>
+          prev.map((c: Comment) =>
             c.id === commentId
               ? { ...c, likes: data.likes, liked: data.liked, userVote: data.userVote }
               : c
@@ -437,7 +463,7 @@ export default function CommentRatingSection({
 
           {/* Comment list */}
           <div className="space-y-4 pt-2">
-            {comments.filter(c => !c.parentId).length === 0 ? (
+            {comments.filter((c: Comment) => !c.parentId).length === 0 ? (
               <div className="p-12 text-center flex flex-col items-center justify-center gap-3 bg-zinc-950/40 rounded-2xl select-none">
                 <MessageSquare size={36} className="text-zinc-700 stroke-[1.5]" />
                 <span className="text-xs font-bold text-zinc-550">
@@ -446,11 +472,11 @@ export default function CommentRatingSection({
               </div>
             ) : (
               <div className="space-y-5 divide-y divide-zinc-900/60">
-                {comments.filter(c => !c.parentId).map((comment, index) => {
+                {comments.filter((c: Comment) => !c.parentId).map((comment: Comment, index: number) => {
                   const isAdmin = comment.role === "admin";
                   const hasSpoiler = comment.isSpoiler;
                   const isRevealed = revealedSpoilers[comment.id];
-                  const replies = comments.filter(r => r.parentId === comment.id).sort((a, b) => a.id.localeCompare(b.id));
+                  const replies = comments.filter((r: Comment) => r.parentId === comment.id).sort((a: Comment, b: Comment) => a.id.localeCompare(b.id));
 
                   return (
                     <div key={comment.id} className={`flex flex-col gap-4 ${index === 0 ? "pt-0" : "pt-4"}`}>
@@ -523,7 +549,7 @@ export default function CommentRatingSection({
                           {hasSpoiler && !isRevealed ? (
                             <div
                               onClick={() =>
-                                setRevealedSpoilers((prev) => ({ ...prev, [comment.id]: true }))
+                                setRevealedSpoilers((prev: Record<string, boolean>) => ({ ...prev, [comment.id]: true }))
                               }
                               className="bg-[#1b1d2a]/55 hover:bg-[#1b1d2a]/75 border border-zinc-800/40 rounded-lg px-3 py-2 text-[11px] text-zinc-400 font-semibold cursor-pointer transition-colors mt-1 select-none flex items-center gap-1.5"
                             >
@@ -629,7 +655,7 @@ export default function CommentRatingSection({
                                     {user && user.id !== comment.userId && (
                                       <button
                                         type="button"
-                                        onClick={() => handleReportComment(comment.id)}
+                                        onClick={() => openReportModal(comment.id)}
                                         className="w-full text-left px-2.5 py-1.5 hover:bg-[#1b1d2a] hover:text-white text-zinc-400 text-[10px] font-extrabold rounded-lg transition-colors cursor-pointer border-none bg-transparent"
                                       >
                                         Báo xấu
@@ -715,10 +741,11 @@ export default function CommentRatingSection({
                       {/* Nested Replies List (Indented under parent) */}
                       {replies.length > 0 && (
                         <div className="ml-12 pl-3 border-l border-zinc-900/80 space-y-4.5 mt-2">
-                          {replies.map((reply) => {
+                          {replies.map((reply: Comment) => {
                             const isReplyAdmin = reply.role === "admin";
                             const isReplySpoiler = reply.isSpoiler;
                             const isReplyRevealed = revealedSpoilers[reply.id];
+                            const repliesOfReply = comments.filter(r => r.parentId === reply.id).sort((a, b) => a.id.localeCompare(b.id)); // not used yet but for safety
 
                             return (
                               <div key={reply.id} className="flex gap-3">
@@ -770,7 +797,7 @@ export default function CommentRatingSection({
                                   {isReplySpoiler && !isReplyRevealed ? (
                                     <div
                                       onClick={() =>
-                                        setRevealedSpoilers((prev) => ({ ...prev, [reply.id]: true }))
+                                        setRevealedSpoilers((prev: Record<string, boolean>) => ({ ...prev, [reply.id]: true }))
                                       }
                                       className="bg-[#1b1d2a]/55 hover:bg-[#1b1d2a]/75 border border-zinc-800/40 rounded-lg px-2.5 py-1.5 text-[10px] text-zinc-400 font-semibold cursor-pointer transition-colors mt-1 select-none flex items-center gap-1.5"
                                     >
@@ -842,7 +869,7 @@ export default function CommentRatingSection({
                                             {user && user.id !== reply.userId && (
                                               <button
                                                 type="button"
-                                                onClick={() => handleReportComment(reply.id)}
+                                                onClick={() => openReportModal(reply.id)}
                                                 className="w-full text-left px-2.5 py-1.5 hover:bg-[#1b1d2a] hover:text-white text-zinc-400 text-[10px] font-extrabold rounded-lg transition-colors cursor-pointer border-none bg-transparent"
                                               >
                                                 Báo xấu
@@ -970,6 +997,86 @@ export default function CommentRatingSection({
                 — {hoverStar}/10
               </p>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Reason Selection Modal for Report Comment ─── */}
+      {reportModal.isOpen && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center px-4 animate-fadeIn">
+          <div
+            onClick={() => setReportModal((prev: ReportModalState) => ({ ...prev, isOpen: false }))}
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+          />
+          <div className="relative w-full max-w-sm bg-[#0d0e13] border border-zinc-900 rounded-2xl p-6 shadow-2xl space-y-4 animate-scaleUp text-left">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-500/5 border border-red-500/10 flex items-center justify-center text-red-455 shrink-0">
+                <ShieldAlert size={20} className="stroke-[2.5]" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-sm text-zinc-150">Báo xấu bình luận</h4>
+                <p className="text-[10px] text-zinc-500 mt-0.5 font-semibold">
+                  Chọn lý do để giúp quản trị viên kiểm duyệt nhanh chóng.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {[
+                "Spam / Quảng cáo không phù hợp",
+                "Tiết lộ trước nội dung phim (Spoilers)",
+                "Ngôn từ thô tục, xúc phạm người khác",
+                "Nội dung khiêu dâm / Nhạy cảm",
+                "Lý do khác"
+              ].map((r: string) => (
+                <label
+                  key={r}
+                  className="flex items-center gap-3 p-2.5 rounded-xl bg-[#13141d]/40 border border-zinc-900/60 hover:bg-[#13141d]/85 transition-colors cursor-pointer"
+                >
+                  <input
+                    type="radio"
+                    name="reportReason"
+                    checked={reportModal.reason === r}
+                    onChange={() => setReportModal((prev: ReportModalState) => ({ ...prev, reason: r }))}
+                    className="accent-pink-500 cursor-pointer"
+                  />
+                  <span className="text-xs text-zinc-300 font-bold select-none">{r}</span>
+                </label>
+              ))}
+
+              {reportModal.reason === "Lý do khác" && (
+                <textarea
+                  value={reportModal.customReason}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReportModal((prev: ReportModalState) => ({ ...prev, customReason: e.target.value.slice(0, 100) }))}
+                  placeholder="Nhập lý do cụ thể của bạn (tối đa 100 ký tự)..."
+                  className="w-full bg-[#13141d] border border-zinc-900/60 rounded-xl p-3 text-xs text-zinc-200 focus:outline-none focus:border-pink-500/50 resize-none h-18 font-semibold placeholder-zinc-650"
+                />
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setReportModal((prev: ReportModalState) => ({ ...prev, isOpen: false }))}
+                className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-[11px] font-black rounded-lg transition-colors cursor-pointer border-none"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                disabled={reportModal.reason === "Lý do khác" && !reportModal.customReason.trim()}
+                onClick={() => {
+                  const finalReason = reportModal.reason === "Lý do khác" ? reportModal.customReason.trim() : reportModal.reason;
+                  if (reportModal.commentId) {
+                    handleReportComment(reportModal.commentId, finalReason);
+                  }
+                  setReportModal((prev: ReportModalState) => ({ ...prev, isOpen: false }));
+                }}
+                className="px-4 py-2 bg-pink-500 hover:bg-pink-600 disabled:opacity-50 text-white text-[11px] font-black rounded-lg transition-colors cursor-pointer border-none flex items-center justify-center"
+              >
+                Gửi báo cáo
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -81,6 +81,10 @@ export class AuthService {
       throw new UnauthorizedException('Email hoặc mật khẩu không đúng');
     }
 
+    if (user.isActive === false) {
+      throw new UnauthorizedException('Tài khoản của bạn đã bị khóa bởi quản trị viên');
+    }
+
     if (!user.password) {
       throw new BadRequestException(
         'Tài khoản này được đăng ký bằng Google. Hãy chọn đăng nhập bằng Google.',
@@ -140,6 +144,10 @@ export class AuthService {
 
       let user = await this.userModel.findOne({ email });
 
+      if (user && user.isActive === false) {
+        throw new UnauthorizedException('Tài khoản của bạn đã bị khóa bởi quản trị viên');
+      }
+
       if (!user) {
         // Create new user if not exists
         user = new this.userModel({
@@ -176,6 +184,9 @@ export class AuthService {
     const user = await this.userModel.findById(userId);
     if (!user) {
       throw new UnauthorizedException('Không tìm thấy người dùng');
+    }
+    if (user.isActive === false) {
+      throw new UnauthorizedException('Tài khoản của bạn đã bị khóa bởi quản trị viên');
     }
     return {
       id: user._id,
@@ -298,5 +309,56 @@ export class AuthService {
     await user.save();
 
     return { watchHistory: user.watchHistory };
+  }
+
+  async getAllUsers() {
+    return this.userModel
+      .find({}, 'email displayName avatar role isActive createdAt')
+      .sort({ createdAt: -1 })
+      .exec();
+  }
+
+  async updateUserRole(adminId: string, userId: string, newRole: string) {
+    if (adminId === userId) {
+      throw new BadRequestException('Bạn không thể tự thay đổi vai trò của chính mình');
+    }
+
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new BadRequestException('Không tìm thấy người dùng');
+    }
+    user.role = newRole;
+    await user.save();
+    return { message: 'Cập nhật vai trò thành công', user: { id: user._id, role: user.role } };
+  }
+
+  async updateUserStatus(adminId: string, userId: string, isActive: boolean) {
+    if (adminId === userId) {
+      throw new BadRequestException('Bạn không thể tự khóa tài khoản của chính mình');
+    }
+
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new BadRequestException('Không tìm thấy người dùng');
+    }
+    user.isActive = isActive;
+    await user.save();
+    return {
+      message: isActive ? 'Đã mở khóa tài khoản' : 'Đã khóa tài khoản',
+      user: { id: user._id, isActive: user.isActive },
+    };
+  }
+
+  async deleteUser(adminId: string, userId: string) {
+    if (adminId === userId) {
+      throw new BadRequestException('Bạn không thể tự xóa tài khoản của chính mình');
+    }
+
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new BadRequestException('Không tìm thấy người dùng');
+    }
+    await this.userModel.findByIdAndDelete(userId).exec();
+    return { message: 'Đã xóa người dùng thành công' };
   }
 }

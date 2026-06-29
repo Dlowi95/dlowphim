@@ -136,6 +136,8 @@ const fetchTmdbLogo = async (tmdbType: string, tmdbId: string | number) => {
 };
 
 export default function HomePage() {
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
   const [heroCandidates, setHeroCandidates] = useState<any[]>([]);
   const [activeHeroIndex, setActiveHeroIndex] = useState(0);
   const [detailsCache, setDetailsCache] = useState<Record<string, any>>({});
@@ -150,36 +152,73 @@ export default function HomePage() {
 
   const isFavorited = user?.favorites?.includes(heroCandidates[activeHeroIndex]?.slug || "") || false;
 
-  // 1. Fetch danh sách phim mới cập nhật để lấy candidates và danh sách grid
+  // 1. Fetch banners & danh sách phim
   useEffect(() => {
-    async function fetchOPhim() {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        console.warn("API OPhim timeout. Aborting request and using fallback data.");
-        controller.abort();
-      }, 6000); // 6 seconds timeout
-
+    async function fetchData() {
       try {
         setLoading(true);
-        const res = await fetch("https://ophim1.com/danh-sach/phim-moi-cap-nhat?page=1", {
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        const data = await res.json();
         
-        if (data.status && data.items && data.items.length > 0) {
-          // Lấy 5 phim làm ứng cử viên cho Slider Hero
-          const candidates = data.items.slice(0, 5);
-          setHeroCandidates(candidates);
+        // 1. Fetch custom banners from our DB
+        let dbBanners: any[] = [];
+        try {
+          const bannerRes = await fetch(`${API_URL}/banners`);
+          if (bannerRes.ok) {
+            const bannerData = await bannerRes.json();
+            if (bannerData && bannerData.length > 0) {
+              dbBanners = bannerData;
+            }
+          }
+        } catch (e) {
+          console.error("Lỗi khi fetch banners từ database:", e);
+        }
+
+        // 2. Fetch new movies from OPhim
+        let ophimMovies: any[] = [];
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        
+        try {
+          const res = await fetch("https://ophim1.com/danh-sach/phim-moi-cap-nhat?page=1", {
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+          const data = await res.json();
+          if (data.status && data.items && data.items.length > 0) {
+            ophimMovies = data.items;
+          }
+        } catch (error) {
+          console.error("Lỗi khi kết nối API OPhim:", error);
+        }
+
+        // 3. Combine Banner & Grid logic
+        if (dbBanners.length > 0) {
+          // Map DB Banners to standard Hero movie layout
+          const mappedBanners = dbBanners.map((b: any) => ({
+            _id: b._id,
+            name: b.title,
+            origin_name: b.originName || "",
+            slug: b.movieSlug,
+            thumb_url: b.imageUrl,
+            poster_url: b.imageUrl,
+            content: b.description || "",
+            isCustomBanner: true
+          }));
+          setHeroCandidates(mappedBanners);
           
-          // Các phim còn lại dùng hiển thị ở Grid bên dưới (tránh lặp phim)
-          setMovieList(data.items.slice(5, 13));
+          // Use OPhim movies for the grid below
+          setMovieList(ophimMovies.length > 0 ? ophimMovies.slice(0, 8) : FALLBACK_CANDIDATES);
         } else {
-          setHeroCandidates(FALLBACK_CANDIDATES);
-          setMovieList(FALLBACK_CANDIDATES);
+          // Fallback to old behavior: Use first 5 OPhim movies for Hero Slider
+          if (ophimMovies.length > 0) {
+            setHeroCandidates(ophimMovies.slice(0, 5));
+            setMovieList(ophimMovies.slice(5, 13));
+          } else {
+            setHeroCandidates(FALLBACK_CANDIDATES);
+            setMovieList(FALLBACK_CANDIDATES);
+          }
         }
       } catch (error) {
-        console.error("Lỗi khi kết nối API OPhim:", error);
+        console.error("Lỗi đồng bộ dữ liệu trang chủ:", error);
         setHeroCandidates(FALLBACK_CANDIDATES);
         setMovieList(FALLBACK_CANDIDATES);
       } finally {
@@ -187,10 +226,10 @@ export default function HomePage() {
       }
     }
 
-    fetchOPhim();
+    fetchData();
   }, []);
 
-  // 2. Pre-fetch thông tin chi tiết và logo của tất cả 5 phim ứng cử viên Hero Slider
+  // 2. Pre-fetch thông tin chi tiết và logo của tất cả phim ứng cử viên Hero Slider
   useEffect(() => {
     if (heroCandidates.length === 0) return;
 
@@ -201,7 +240,13 @@ export default function HomePage() {
         if (data.status === "success" || data.status === true) {
           const detail = data.data?.item || data.movie || null;
           if (detail) {
-            setDetailsCache(prev => ({ ...prev, [movie.slug]: detail }));
+            setDetailsCache(prev => ({ 
+              ...prev, 
+              [movie.slug]: {
+                ...detail,
+                content: movie.isCustomBanner && movie.content ? movie.content : detail.content
+              } 
+            }));
             
             const tmdbId = detail?.tmdb?.id;
             const tmdbType = detail?.tmdb?.type;
@@ -213,9 +258,44 @@ export default function HomePage() {
               setLogoCache(prev => ({ ...prev, [movie.slug]: null }));
             }
           }
+        } else {
+          if (movie.isCustomBanner) {
+            setDetailsCache(prev => ({
+              ...prev,
+              [movie.slug]: {
+                name: movie.name,
+                origin_name: movie.origin_name,
+                content: movie.content,
+                poster_url: movie.poster_url,
+                thumb_url: movie.thumb_url,
+                year: movie.year || 2026,
+                time: "Đang cập nhật",
+                episode_current: "Full HD",
+                category: []
+              }
+            }));
+            setLogoCache(prev => ({ ...prev, [movie.slug]: null }));
+          }
         }
       } catch (error) {
         console.error("Lỗi khi prefetch chi tiết phim Hero:", movie.slug, error);
+        if (movie.isCustomBanner) {
+          setDetailsCache(prev => ({
+            ...prev,
+            [movie.slug]: {
+              name: movie.name,
+              origin_name: movie.origin_name,
+              content: movie.content,
+              poster_url: movie.poster_url,
+              thumb_url: movie.thumb_url,
+              year: movie.year || 2026,
+              time: "Đang cập nhật",
+              episode_current: "Full HD",
+              category: []
+            }
+          }));
+          setLogoCache(prev => ({ ...prev, [movie.slug]: null }));
+        }
       }
     }
 
@@ -231,7 +311,7 @@ export default function HomePage() {
     setTimeout(() => {
       setActiveHeroIndex(index);
       setIsTransitioning(false);
-    }, 150); // 150ms để nội dung cũ mờ đi trước khi tráo đổi thông tin
+    }, 150);
   };
 
 
@@ -239,6 +319,9 @@ export default function HomePage() {
   // Trình biến đổi ảnh gốc thành link ảnh cdn .live cực nét và ổn định
   const getImageUrl = (path: string) => {
     if (!path) return "";
+    if (path.startsWith("http://") || path.startsWith("https://")) {
+      return path;
+    }
     const fileName = path.split("/").pop();
     return `https://img.ophim.live/uploads/movies/${fileName}`;
   };
