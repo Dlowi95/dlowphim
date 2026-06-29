@@ -9,6 +9,8 @@ import { RatingsModule } from './ratings/ratings.module';
 import { MoviesModule } from './movies/movies.module';
 import { BannersModule } from './banners/banners.module';
 import { MovieReportsModule } from './movie-reports/movie-reports.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { SystemSettingsModule } from './system-settings/system-settings.module';
 
 @Module({
   imports: [
@@ -28,6 +30,8 @@ import { MovieReportsModule } from './movie-reports/movie-reports.module';
     MoviesModule,
     BannersModule,
     MovieReportsModule,
+    NotificationsModule,
+    SystemSettingsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

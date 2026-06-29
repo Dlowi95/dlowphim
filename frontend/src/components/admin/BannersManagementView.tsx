@@ -92,8 +92,37 @@ export default function BannersManagementView() {
         console.error("Lỗi fetch OPhim fallback:", err);
       }
 
-      // 3. Merge to create exactly 5 slots
+      // 3. Merge to create exactly 5 slots (using TMDB for high-quality fallback backdrops)
       const merged: Banner[] = [];
+      const tmdbApiKey = "e897a0225bb9007f33d45543c3f1591f";
+      
+      const fallbackImages = await Promise.all(
+        fallbackMovies.map(async (movie) => {
+          try {
+            const query = movie.origin_name || movie.name;
+            const searchRes = await fetch(
+              `https://api.themoviedb.org/3/search/movie?api_key=${tmdbApiKey}&query=${encodeURIComponent(query)}&language=vi`
+            );
+            if (searchRes.ok) {
+              const searchData = await searchRes.json();
+              const tmdbMovie = searchData.results?.[0];
+              if (tmdbMovie) {
+                if (tmdbMovie.backdrop_path) {
+                  return `https://image.tmdb.org/t/p/w1280${tmdbMovie.backdrop_path}`;
+                }
+                if (tmdbMovie.poster_path) {
+                  return `https://image.tmdb.org/t/p/w1280${tmdbMovie.poster_path}`;
+                }
+              }
+            }
+          } catch (e) {
+            console.error("Lỗi fetch TMDB image cho fallback:", movie.name, e);
+          }
+          const fileName = movie.thumb_url.split("/").pop();
+          return `https://img.ophim.live/uploads/movies/${fileName}`;
+        })
+      );
+
       for (let i = 1; i <= 5; i++) {
         const custom = dbBanners.find((b) => b.order === i);
         if (custom) {
@@ -104,13 +133,12 @@ export default function BannersManagementView() {
         } else {
           const movie = fallbackMovies[i - 1];
           if (movie) {
-            const fileName = movie.thumb_url.split("/").pop();
             merged.push({
               title: movie.name,
               originName: movie.origin_name,
               movieSlug: movie.slug,
-              imageUrl: `https://img.ophim.live/uploads/movies/${fileName}`,
-              description: "Banner mặc định hệ thống (OPhim). Chỉnh sửa để thay đổi hình ảnh/nội dung.",
+              imageUrl: fallbackImages[i - 1],
+              description: "Banner mặc định hệ thống (OPhim + TMDB). Chỉnh sửa để thay đổi hình ảnh/nội dung.",
               order: i,
               isActive: true,
               isFallback: true
@@ -211,9 +239,37 @@ export default function BannersManagementView() {
             }
           };
 
-          setFormImageUrl(formatImg(movie.poster_url || movie.thumb_url));
+          // Thử lấy ảnh chất lượng cao từ TMDB
+          let tmdbImgUrl = "";
+          try {
+            const query = movie.origin_name || movie.name;
+            const tmdbApiKey = "e897a0225bb9007f33d45543c3f1591f";
+            const searchRes = await fetch(
+              `https://api.themoviedb.org/3/search/movie?api_key=${tmdbApiKey}&query=${encodeURIComponent(query)}&language=vi`
+            );
+            if (searchRes.ok) {
+              const searchData = await searchRes.json();
+              const tmdbMovie = searchData.results?.[0];
+              if (tmdbMovie) {
+                if (tmdbMovie.backdrop_path) {
+                  tmdbImgUrl = `https://image.tmdb.org/t/p/w1280${tmdbMovie.backdrop_path}`;
+                } else if (tmdbMovie.poster_path) {
+                  tmdbImgUrl = `https://image.tmdb.org/t/p/w1280${tmdbMovie.poster_path}`;
+                }
+              }
+            }
+          } catch (e) {
+            console.error("Lỗi fetch TMDB image:", e);
+          }
+
+          setFormImageUrl(tmdbImgUrl || formatImg(movie.poster_url || movie.thumb_url));
           setFormDescription(movie.content ? movie.content.replace(/<[^>]*>/g, "").trim() : "");
-          showToast("Tự động cào thông tin phim thành công!", "success");
+          showToast(
+            tmdbImgUrl 
+              ? "Tự động cào tin và lấy ảnh TMDB HD thành công!" 
+              : "Tự động cào tin thành công (dùng ảnh gốc của nguồn)!", 
+            "success"
+          );
         } else {
           throw new Error("Không tìm thấy dữ liệu phim.");
         }

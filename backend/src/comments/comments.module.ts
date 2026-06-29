@@ -6,6 +6,7 @@ import { Comment, CommentSchema } from './schemas/comment.schema';
 import { User, UserSchema } from '../auth/schemas/user.schema';
 import { Report, ReportSchema } from './schemas/report.schema';
 import { AuthModule } from '../auth/auth.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { AuthModule } from '../auth/auth.module';
       { name: Report.name, schema: ReportSchema },
     ]),
     AuthModule,
+    NotificationsModule,
   ],
   controllers: [CommentsController],
   providers: [CommentsService],

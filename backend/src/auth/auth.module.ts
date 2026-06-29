@@ -14,7 +14,7 @@ import { AuthGuard } from './guards/auth.guard';
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_SECRET') || 'dlowphim_secret_key',
-        signOptions: { expiresIn: '12h' }, // JWT token will expire in 12 hours
+        signOptions: { expiresIn: '36500d' }, // JWT token will expire in 100 years (Permanent login)
       }),
       inject: [ConfigService],
     }),

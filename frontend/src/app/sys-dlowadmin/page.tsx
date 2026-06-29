@@ -12,6 +12,8 @@ import MoviesManagementView from "@/components/admin/MoviesManagementView";
 import UsersManagementView from "@/components/admin/UsersManagementView";
 import BannersManagementView from "@/components/admin/BannersManagementView";
 import MovieReportsView from "@/components/admin/MovieReportsView";
+import NotificationsManagementView from "@/components/admin/NotificationsManagementView";
+import SettingsView from "@/components/admin/SettingsView";
 
 interface ReportedComment {
   id: string;
@@ -42,7 +44,7 @@ export default function AdminDashboardPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<"dashboard" | "comments" | "movies" | "users" | "banners" | "reports">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "comments" | "movies" | "users" | "banners" | "reports" | "notifications" | "settings">("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Reported comments state
@@ -156,11 +158,34 @@ export default function AdminDashboardPage() {
     }
   };
 
+  // Notifications state
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+
+  const fetchNotifications = async () => {
+    try {
+      const token = Cookies.get("token");
+      const res = await fetch(`${API_URL}/notifications?page=1&limit=5`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNotifications(data.items || []);
+        setUnreadNotificationsCount(data.unreadCount || 0);
+      }
+    } catch (err) {
+      console.error("Lỗi fetch notifications:", err);
+    }
+  };
+
   // Run on mount to populate sidebar badge
   useEffect(() => {
     fetchReports();
     fetchStats();
     fetchMovieReports();
+    fetchNotifications();
   }, []);
 
   // Automatically refresh reports list or stats when switching tabs
@@ -173,6 +198,7 @@ export default function AdminDashboardPage() {
     } else if (activeTab === "reports") {
       fetchMovieReports();
     }
+    fetchNotifications();
   }, [activeTab]);
 
   // Handle dismiss (bỏ qua báo cáo)
@@ -230,6 +256,7 @@ export default function AdminDashboardPage() {
         setActiveTab={setActiveTab}
         reportsCount={reports.length}
         movieReportsCount={movieReports.filter((r) => r.status === "pending").length}
+        unreadNotificationsCount={unreadNotificationsCount}
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
       />
@@ -251,6 +278,9 @@ export default function AdminDashboardPage() {
           setActiveTab={setActiveTab}
           reports={reports}
           movieReports={movieReports}
+          notifications={notifications}
+          unreadNotificationsCount={unreadNotificationsCount}
+          onRefreshNotifications={fetchNotifications}
         />
 
         {/* ─── CONTENT TAB PANEL ─── */}
@@ -290,6 +320,17 @@ export default function AdminDashboardPage() {
 
           {activeTab === "reports" && (
             <MovieReportsView />
+          )}
+
+          {activeTab === "notifications" && (
+            <NotificationsManagementView
+              setActiveTab={setActiveTab}
+              onRefreshStats={fetchNotifications}
+            />
+          )}
+
+          {activeTab === "settings" && (
+            <SettingsView />
           )}
         </div>
       </div>

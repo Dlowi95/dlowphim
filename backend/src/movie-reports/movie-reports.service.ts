@@ -2,12 +2,14 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { MovieReport, MovieReportDocument } from './schemas/movie-report.schema';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class MovieReportsService {
   constructor(
     @InjectModel(MovieReport.name)
     private readonly movieReportModel: Model<MovieReportDocument>,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async createReport(
@@ -28,7 +30,26 @@ export class MovieReportsService {
       errorType: dto.errorType,
       description: dto.description,
     });
-    return newReport.save();
+    const saved = await newReport.save();
+
+    const getErrorLabel = (t: string) => {
+      if (t === 'video_broken') return 'Link hỏng / Không phát được';
+      if (t === 'audio_issue') return 'Lỗi âm thanh';
+      if (t === 'subtitle_issue') return 'Lỗi phụ đề';
+      return 'Lỗi khác';
+    };
+
+    // Tạo thông báo tương ứng
+    await this.notificationsService.createNotification({
+      type: 'movie_report',
+      title: `Báo lỗi phim: ${saved.movieName}`,
+      subtitle: `Sự cố: ${getErrorLabel(saved.errorType)} (${saved.episodeName})`,
+      content: saved.description ? `"${saved.description}"` : 'Không có ghi chú chi tiết',
+      targetId: saved._id.toString(),
+      targetTab: 'reports',
+    });
+
+    return saved;
   }
 
   async getReportsForAdmin() {
@@ -45,6 +66,12 @@ export class MovieReportsService {
       throw new NotFoundException('Không tìm thấy báo cáo lỗi');
     }
     report.status = status;
+
+    // Khi cập nhật sang trạng thái khác pending (resolved hoặc ignored), ta xóa thông báo đi
+    if (status !== 'pending') {
+      await this.notificationsService.deleteByTargetId(id);
+    }
+    
     return report.save();
   }
 
@@ -53,6 +80,8 @@ export class MovieReportsService {
     if (!result) {
       throw new NotFoundException('Không tìm thấy báo cáo lỗi để xóa');
     }
+    // Xóa thông báo đi kèm
+    await this.notificationsService.deleteByTargetId(id);
     return { success: true, message: 'Xóa báo cáo lỗi thành công' };
   }
 }

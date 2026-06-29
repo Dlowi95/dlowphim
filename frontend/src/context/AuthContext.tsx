@@ -37,6 +37,8 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
 
   const logout = () => {
     Cookies.remove("token");
+    localStorage.removeItem("dlowphim_favorites");
+    localStorage.removeItem("dlowphim_history");
     setUser(null);
   };
 
@@ -148,8 +150,8 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const saveTokenAndUser = (token: string, userData: User) => {
-    // Cookie expires in exactly 8 hours
-    const expires = new Date(new Date().getTime() + 8 * 60 * 60 * 1000);
+    // Cookie expires in exactly 100 years (Permanent login)
+    const expires = new Date(new Date().getTime() + 365 * 100 * 24 * 60 * 60 * 1000);
     Cookies.set("token", token, { expires });
     setUser(userData);
     

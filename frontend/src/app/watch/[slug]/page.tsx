@@ -649,7 +649,7 @@ function WatchContent({ slug }: { slug: string }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#07070a] text-white pb-20 relative overflow-hidden pt-24">
+    <div className="w-full flex-grow flex flex-col bg-[#07070a] text-white pb-16 relative overflow-hidden pt-24">
       {/* BACKGROUND BLURRED */}
       <div className="absolute top-0 left-0 right-0 h-[60vh] overflow-hidden pointer-events-none select-none z-0">
         <img

@@ -377,31 +377,31 @@ export default function HomePage() {
             100% { left: 100%; }
           }
         `}</style>
-        <div className="flex flex-col items-center gap-5 animate-pulse duration-2000">
+        <div className="flex flex-col items-center gap-6 animate-pulse duration-2000">
           {/* Logo lớn sang trọng ở trung tâm */}
-          <div className="flex items-center gap-3 md:gap-4.5">
-            <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center shadow-[0_0_50px_rgba(244,63,94,0.35)] shrink-0">
-              <Play className="text-white fill-white ml-1.5 md:ml-2" size={28} />
+          <div className="flex items-center gap-4 md:gap-6">
+            <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center shadow-[0_0_60px_rgba(244,63,94,0.4)] shrink-0">
+              <Play className="text-white fill-white ml-2 md:ml-2.5" size={32} />
             </div>
-            <span className="font-black text-4xl md:text-5xl tracking-widest select-none">
+            <span className="font-black text-5xl md:text-6xl tracking-widest select-none">
               Dlow<span className="text-pink-500">Phim</span>
             </span>
           </div>
 
           {/* Slogan việt hóa cao cấp giống cobephim */}
-          <p className="text-zinc-400 font-bold text-sm md:text-[15px] tracking-wide max-w-md text-center px-8 leading-relaxed mt-2 select-text">
+          <p className="text-zinc-350 font-black text-base md:text-lg lg:text-xl tracking-wide max-w-2xl text-center px-8 leading-relaxed mt-3 select-text">
             Xem Phim Miễn Phí Cực Nhanh, Chất Lượng Cao Và Cập Nhật Liên Tục
           </p>
 
           {/* Hiệu ứng loading bar mảnh */}
-          <div className="w-48 md:w-56 h-[3px] bg-zinc-800 rounded-full overflow-hidden mt-4 relative">
+          <div className="w-56 md:w-64 h-[4px] bg-zinc-800 rounded-full overflow-hidden mt-4 relative">
             <div className="absolute top-0 h-full bg-pink-500 w-[30%] rounded-full animate-[loadingBar_1.2s_infinite_linear]" />
           </div>
 
           {/* Spinner tròn nhẹ */}
-          <div className="flex items-center gap-2 text-zinc-500 mt-4">
-            <Loader2 className="animate-spin text-pink-500" size={16} />
-            <span className="text-xs font-semibold tracking-wider">Đang kết nối máy chủ...</span>
+          <div className="flex items-center gap-3.5 text-zinc-400 mt-5">
+            <Loader2 className="animate-spin text-pink-500" size={20} />
+            <span className="text-sm md:text-base font-extrabold tracking-widest uppercase">Đang kết nối máy chủ...</span>
           </div>
         </div>
       </div>
@@ -413,7 +413,7 @@ export default function HomePage() {
 
 
   return (
-    <div className="min-h-screen bg-black text-white pb-16">
+    <div className="w-full flex-grow flex flex-col bg-black text-white pb-16">
       
       {/* 1. HERO BANNER - SLIDER CHUYÊN NGHIỆP Y HỆT HÌNH ẢNH */}
       {activeMovie && (

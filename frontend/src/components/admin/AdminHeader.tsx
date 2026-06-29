@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
+import Cookies from "js-cookie";
 import { useAuth } from "@/context/AuthContext";
-import { Bell, Menu, AlertTriangle, ShieldCheck } from "lucide-react";
+import { Bell, Menu, AlertTriangle, ShieldCheck, CheckCheck } from "lucide-react";
 
 interface AdminHeaderProps {
   activeTab: string;
@@ -11,6 +12,9 @@ interface AdminHeaderProps {
   setActiveTab: (tab: any) => void;
   reports?: any[];
   movieReports?: any[];
+  notifications?: any[];
+  unreadNotificationsCount?: number;
+  onRefreshNotifications?: () => void;
 }
 
 export default function AdminHeader({
@@ -20,46 +24,48 @@ export default function AdminHeader({
   setActiveTab,
   reports = [],
   movieReports = [],
+  notifications = [],
+  unreadNotificationsCount = 0,
+  onRefreshNotifications,
 }: AdminHeaderProps) {
   const { showToast } = useAuth();
   const [showNotif, setShowNotif] = useState(false);
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
-  // Filter pending (unresolved) movie reports
-  const activeMovieReports = movieReports.filter((r) => r.status === "pending");
+  const handleMarkAsRead = async (id: string, targetTab: string) => {
+    try {
+      const token = Cookies.get("token");
+      await fetch(`${API_URL}/notifications/${id}/read`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (onRefreshNotifications) onRefreshNotifications();
+    } catch (e) {
+      console.error(e);
+    }
+    setActiveTab(targetTab);
+    setShowNotif(false);
+  };
 
-  // Merge and sort reports by creation date descending
-  const notificationsList = [
-    ...reports.map((r) => ({
-      id: r.id || r._id,
-      type: "comment_report",
-      title: `${r.reporter?.name || "Thành viên"} báo xấu bình luận`,
-      subtitle: `Lý do: ${r.reason}`,
-      content: `"${r.comment?.content || ""}"`,
-      createdAt: r.createdAt,
-      targetTab: "comments",
-    })),
-    ...activeMovieReports.map((r) => {
-      const getErrorLabel = (t: string) => {
-        if (t === "video_broken") return "Link hỏng / Không phát được";
-        if (t === "audio_issue") return "Lỗi âm thanh";
-        if (t === "subtitle_issue") return "Lỗi phụ đề";
-        return "Lỗi khác";
-      };
-      return {
-        id: r._id,
-        type: "movie_report",
-        title: `Báo lỗi phim: ${r.movieName}`,
-        subtitle: `Sự cố: ${getErrorLabel(r.errorType)} (${r.episodeName})`,
-        content: r.description ? `"${r.description}"` : "Không có ghi chú chi tiết",
-        createdAt: r.createdAt,
-        targetTab: "reports",
-      };
-    }),
-  ].sort((a, b) => {
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-  });
-
-  const totalUnresolvedCount = reports.length + activeMovieReports.length;
+  const handleMarkAllAsRead = async () => {
+    try {
+      const token = Cookies.get("token");
+      const res = await fetch(`${API_URL}/notifications/read-all`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        if (onRefreshNotifications) onRefreshNotifications();
+        showToast("Đã đọc tất cả thông báo", "success");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   return (
     <header className="h-16 shrink-0 bg-[#0d0e13]/60 backdrop-blur-md border-b border-zinc-900 flex items-center justify-between px-6 sticky top-0 z-30 select-none">
@@ -87,7 +93,9 @@ export default function AdminHeader({
               ? "Quản lý Người dùng"
               : activeTab === "banners"
               ? "Quản lý Banner"
-              : "Báo cáo lỗi"}
+              : activeTab === "reports"
+              ? "Báo cáo lỗi"
+              : "Thông báo"}
           </span>
         </div>
       </div>
@@ -103,9 +111,9 @@ export default function AdminHeader({
           >
             <Bell size={15} />
           </button>
-          {totalUnresolvedCount > 0 && (
+          {unreadNotificationsCount > 0 && (
             <span className="absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full bg-red-500 text-[8px] font-black text-white px-1 flex items-center justify-center shadow-[0_0_8px_rgba(239,68,68,0.7)] animate-pulse border border-[#0d0e13]">
-              {totalUnresolvedCount}
+              {unreadNotificationsCount}
             </span>
           )}
 
@@ -120,38 +128,42 @@ export default function AdminHeader({
                 style={{ borderColor: "rgba(236, 72, 153, 0.25)" }}
               >
                 <div className="flex items-center justify-between pb-2 border-b border-zinc-900">
-                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Thông báo hệ thống</span>
-                  {totalUnresolvedCount > 0 && (
-                    <span className="bg-red-500/10 text-red-400 font-extrabold text-[9px] px-2 py-0.5 rounded">
-                      {totalUnresolvedCount} mới
-                    </span>
+                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Thông báo mới</span>
+                  {unreadNotificationsCount > 0 && (
+                    <button
+                      onClick={handleMarkAllAsRead}
+                      className="text-pink-500 hover:text-pink-400 text-[9px] font-black uppercase tracking-wider flex items-center gap-1 border-none bg-transparent cursor-pointer transition-colors"
+                    >
+                      <CheckCheck size={11} /> Đọc tất cả
+                    </button>
                   )}
                 </div>
 
                 <div className="flex flex-col gap-2 max-h-[320px] overflow-y-auto pr-1 custom-scrollbar">
-                  {notificationsList.length > 0 ? (
+                  {notifications.length > 0 ? (
                     <>
-                      {notificationsList.slice(0, 5).map((notif) => (
+                      {notifications.slice(0, 5).map((notif) => (
                         <div
-                          key={notif.id}
-                          onClick={() => {
-                            setActiveTab(notif.targetTab);
-                            setShowNotif(false);
-                          }}
+                          key={notif._id}
+                          onClick={() => handleMarkAsRead(notif._id, notif.targetTab)}
                           className={`p-2.5 rounded-xl border cursor-pointer flex gap-2.5 items-start text-left transition-all ${
-                            notif.type === "comment_report"
-                              ? "bg-red-500/5 hover:bg-red-500/10 border-red-500/10 hover:border-red-500/20"
-                              : "bg-amber-500/5 hover:bg-amber-500/10 border-amber-500/10 hover:border-amber-500/20"
+                            !notif.isRead
+                              ? "bg-pink-500/5 hover:bg-pink-500/10 border-pink-500/20 hover:border-pink-500/30"
+                              : "bg-zinc-950/40 hover:bg-zinc-900/60 border-zinc-900/60 hover:border-zinc-800"
                           }`}
                         >
-                          {notif.type === "comment_report" ? (
-                            <AlertTriangle size={14} className="text-red-400 shrink-0 mt-0.5" />
-                          ) : (
-                            <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
-                          )}
+                          <div
+                            className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                              notif.type === "comment_report"
+                                ? "bg-red-500/10 text-red-400"
+                                : "bg-amber-500/10 text-amber-400"
+                            }`}
+                          >
+                            <AlertTriangle size={12} />
+                          </div>
                           <div className="space-y-1 flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-2">
-                              <span className="text-[10px] font-extrabold text-zinc-200 truncate">
+                              <span className={`text-[10px] font-extrabold truncate ${!notif.isRead ? "text-zinc-100" : "text-zinc-400"}`}>
                                 {notif.title}
                               </span>
                               <span className="text-[8px] font-bold text-zinc-550 shrink-0">
@@ -163,44 +175,33 @@ export default function AdminHeader({
                                   : ""}
                               </span>
                             </div>
-                            <p className={`text-[9px] font-extrabold uppercase tracking-wider ${
-                              notif.type === "comment_report" ? "text-pink-500" : "text-amber-500"
-                            }`}>
-                              {notif.subtitle}
-                            </p>
-                            <p className="text-[10px] text-zinc-400 leading-normal italic line-clamp-2 bg-zinc-950/60 px-2 py-1.5 rounded border border-zinc-900/40">
-                              {notif.content}
-                            </p>
+                            {notif.subtitle && (
+                              <p className={`text-[9px] font-extrabold uppercase tracking-wider ${
+                                notif.type === "comment_report" ? "text-pink-500" : "text-amber-500"
+                              }`}>
+                                {notif.subtitle}
+                              </p>
+                            )}
+                            {notif.content && (
+                              <p className="text-[10px] text-zinc-400 leading-normal italic line-clamp-2 bg-zinc-950/60 px-2 py-1.5 rounded border border-zinc-900/40">
+                                {notif.content}
+                              </p>
+                            )}
                           </div>
                         </div>
                       ))}
 
-                      {notificationsList.length > 5 && (
-                        <div className="flex gap-2 pt-1 border-t border-zinc-900/60">
-                          {reports.length > 0 && (
-                            <button
-                              onClick={() => {
-                                setActiveTab("comments");
-                                setShowNotif(false);
-                              }}
-                              className="flex-1 py-1.5 rounded-xl bg-zinc-900/40 hover:bg-zinc-900 border border-zinc-900 hover:border-zinc-800 text-[8px] font-extrabold text-zinc-400 hover:text-white uppercase tracking-wider transition-all cursor-pointer text-center"
-                            >
-                              Bình luận ({reports.length})
-                            </button>
-                          )}
-                          {activeMovieReports.length > 0 && (
-                            <button
-                              onClick={() => {
-                                setActiveTab("reports");
-                                setShowNotif(false);
-                              }}
-                              className="flex-1 py-1.5 rounded-xl bg-zinc-900/40 hover:bg-zinc-900 border border-zinc-900 hover:border-zinc-800 text-[8px] font-extrabold text-zinc-400 hover:text-white uppercase tracking-wider transition-all cursor-pointer text-center"
-                            >
-                              Báo lỗi ({activeMovieReports.length})
-                            </button>
-                          )}
-                        </div>
-                      )}
+                      <div className="pt-2 border-t border-zinc-900 flex justify-center">
+                        <button
+                          onClick={() => {
+                            setActiveTab("notifications");
+                            setShowNotif(false);
+                          }}
+                          className="w-full py-2 rounded-xl bg-zinc-900/40 hover:bg-zinc-900 border border-zinc-900 hover:border-zinc-800 text-[9px] font-extrabold text-zinc-400 hover:text-white uppercase tracking-widest transition-all cursor-pointer text-center"
+                        >
+                          Xem tất cả thông báo →
+                        </button>
+                      </div>
                     </>
                   ) : (
                     <div className="py-8 flex flex-col items-center justify-center gap-2 text-zinc-550">

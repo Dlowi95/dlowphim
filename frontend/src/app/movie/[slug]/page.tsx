@@ -304,7 +304,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
   const isTrailerOnly = movie.status === "trailer" || movie.episode_current?.toLowerCase().includes("trailer") || hasNoEpisodes;
 
   return (
-    <div className="min-h-screen bg-[#07070a] text-white pb-20 relative overflow-hidden">
+    <div className="w-full flex-grow flex flex-col bg-[#07070a] text-white pb-16 relative overflow-hidden">
       
       {/* 1. CINEMATIC LARGE BANNER AT TOP - BRIGHTER AND TALLER */}
       <div className="relative w-full h-[400px] lg:h-[480px] bg-zinc-950 overflow-hidden flex items-end pt-24 select-none">
@@ -425,7 +425,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
       </div>
 
       {/* 2. MAIN CONTENT AREA: TWO COLUMNS (LEFT COLUMN 320PX WITH RIGHT PADDING FOR BETTER BALANCE) */}
-      <div className="container mx-auto px-4 md:px-6 max-w-7xl grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-8 md:gap-10 pb-20 relative z-20">
+      <div className="container mx-auto px-4 md:px-6 max-w-7xl grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-8 md:gap-10 pb-8 relative z-20">
         
         {/* CỘT TRÁI: Poster nổi đè banner, TIÊU ĐỀ DƯỚI POSTER, badges, chi tiết phụ */}
         <div className="-mt-[120px] md:-mt-[150px] lg:-mt-[180px] relative z-30 flex flex-col gap-5 text-left px-4 lg:px-0 lg:pr-12">

@@ -5,6 +5,7 @@ import { MovieReportsService } from './movie-reports.service';
 import { MovieReport, MovieReportSchema } from './schemas/movie-report.schema';
 import { User, UserSchema } from '../auth/schemas/user.schema';
 import { AuthModule } from '../auth/auth.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { AuthModule } from '../auth/auth.module';
       { name: User.name, schema: UserSchema },
     ]),
     AuthModule,
+    NotificationsModule,
   ],
   controllers: [MovieReportsController],
   providers: [MovieReportsService],

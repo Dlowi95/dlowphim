@@ -9,7 +9,7 @@ export default function ChuDePage() {
   const router = useRouter();
 
   return (
-    <div className="min-h-screen bg-black text-white pt-28 pb-16 px-6">
+    <div className="w-full flex-grow flex flex-col bg-black text-white pt-28 pb-16 px-6">
       <div className="container mx-auto max-w-7xl space-y-8">
         
         {/* Tiêu đề trang */}

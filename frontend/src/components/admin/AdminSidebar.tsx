@@ -9,6 +9,7 @@ import {
   MessageSquare,
   Image as ImageIcon,
   AlertTriangle,
+  Bell,
   LogOut,
   Settings,
 } from "lucide-react";
@@ -18,6 +19,7 @@ interface AdminSidebarProps {
   setActiveTab: (tab: any) => void;
   reportsCount: number;
   movieReportsCount?: number;
+  unreadNotificationsCount?: number;
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
 }
@@ -27,6 +29,7 @@ export default function AdminSidebar({
   setActiveTab,
   reportsCount,
   movieReportsCount = 0,
+  unreadNotificationsCount = 0,
   sidebarOpen,
   setSidebarOpen,
 }: AdminSidebarProps) {
@@ -59,6 +62,7 @@ export default function AdminSidebar({
             { id: "comments", label: "Bình luận & Báo xấu", icon: MessageSquare, count: reportsCount },
             { id: "banners", label: "Quản lý Banner", icon: ImageIcon },
             { id: "reports", label: "Báo cáo lỗi", icon: AlertTriangle, count: movieReportsCount },
+            { id: "notifications", label: "Thông báo", icon: Bell, count: unreadNotificationsCount },
           ].map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -80,7 +84,7 @@ export default function AdminSidebar({
                   <span>{item.label}</span>
                 </div>
                 {item.count !== undefined && item.count > 0 && (
-                  <span className="bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full select-none shadow shadow-red-500/20">
+                  <span className="bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full select-none shadow shadow-red-500/20 animate-pulse">
                     {item.count}
                   </span>
                 )}
@@ -91,27 +95,35 @@ export default function AdminSidebar({
       </div>
 
       {/* Sidebar Footer */}
-      <div className="p-4 border-t border-zinc-900 bg-[#0a0a0d]/60 space-y-3.5">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center font-black text-white text-sm select-none shadow">
+      <div className="p-4 border-t border-zinc-900 bg-[#0a0a0d]/60 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center font-black text-white text-sm select-none shadow shrink-0">
             {user?.displayName ? user.displayName[0].toUpperCase() : "A"}
           </div>
-          <div className="flex-1 text-left min-w-0">
-            <h4 className="text-sm font-bold text-zinc-100 truncate">{user?.displayName || "Quản trị viên"}</h4>
-            <p className="text-[11px] text-pink-500 font-extrabold truncate uppercase tracking-wider">Super Admin</p>
+          <div className="flex-grow text-left min-w-0">
+            <h4 className="text-xs font-bold text-zinc-100 truncate leading-tight">{user?.displayName || "Quản trị viên"}</h4>
+            <p className="text-[10px] text-pink-500 font-black truncate uppercase tracking-widest mt-1">Super Admin</p>
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
-            onClick={() => showToast("Cài đặt hệ thống đang phát triển", "warning")}
-            className="flex-1 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-[11px] font-black rounded-lg transition-colors cursor-pointer border-none flex items-center justify-center gap-1.5"
+            onClick={() => {
+              setActiveTab("settings");
+              setSidebarOpen(false);
+            }}
+            className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all cursor-pointer border-none ${
+              activeTab === "settings"
+                ? "bg-pink-500 text-white shadow-md shadow-pink-500/10"
+                : "bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+            }`}
+            title="Cài đặt hệ thống"
           >
-            <Settings size={13} /> Cài đặt
+            <Settings size={14} />
           </button>
           <button
             onClick={logout}
-            className="px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 text-[11px] font-black rounded-lg transition-colors cursor-pointer border-none flex items-center justify-center"
+            className="w-8 h-8 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 flex items-center justify-center transition-colors cursor-pointer border-none"
             title="Đăng xuất"
           >
             <LogOut size={14} />

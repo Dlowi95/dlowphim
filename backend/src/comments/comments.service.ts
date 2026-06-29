@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { Comment, CommentDocument } from './schemas/comment.schema';
 import { User, UserDocument } from '../auth/schemas/user.schema';
 import { Report, ReportDocument } from './schemas/report.schema';
+import { NotificationsService } from '../notifications/notifications.service';
 
 function getFormattedDate(date: Date): string {
   const d = new Date(date);
@@ -21,6 +22,7 @@ export class CommentsService {
     @InjectModel(Comment.name) private commentModel: Model<CommentDocument>,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Report.name) private reportModel: Model<ReportDocument>,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async getComments(movieSlug: string, currentUserId?: string) {
@@ -186,6 +188,12 @@ export class CommentsService {
       await this.commentModel.deleteMany({ parentId: new Types.ObjectId(commentId) }).exec();
     }
 
+    // Lấy danh sách báo cáo liên quan đến bình luận này để xóa thông báo tương ứng
+    const relatedReports = await this.reportModel.find({ commentId: new Types.ObjectId(commentId) }).exec();
+    for (const r of relatedReports) {
+      await this.notificationsService.deleteByTargetId(r._id);
+    }
+
     // Xóa các báo cáo liên quan đến bình luận này
     await this.reportModel.deleteMany({ commentId: new Types.ObjectId(commentId) }).exec();
 
@@ -216,7 +224,20 @@ export class CommentsService {
       reason: reason || 'Nội dung không phù hợp / Spam',
     });
 
-    await report.save();
+    const savedReport = await report.save();
+
+    const reporter = await this.userModel.findById(reporterId).select('displayName').exec();
+
+    // Tạo thông báo cho Admin
+    await this.notificationsService.createNotification({
+      type: 'comment_report',
+      title: `${reporter?.displayName || 'Thành viên'} báo xấu bình luận`,
+      subtitle: `Lý do: ${savedReport.reason}`,
+      content: `"${comment.content || ''}"`,
+      targetId: savedReport._id.toString(),
+      targetTab: 'comments',
+    });
+
     return { success: true, message: 'Gửi báo cáo vi phạm thành công' };
   }
 
@@ -267,6 +288,8 @@ export class CommentsService {
     if (!report) {
       throw new NotFoundException('Không tìm thấy báo cáo vi phạm');
     }
+    // Xóa thông báo liên quan
+    await this.notificationsService.deleteByTargetId(reportId);
     return { success: true, message: 'Đã bỏ qua báo cáo vi phạm thành công' };
   }
 

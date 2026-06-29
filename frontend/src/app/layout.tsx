@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Bungee, Cinzel, Creepster, Permanent_Marker, Pacifico } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
-import NavbarComponent from "@/components/Navbar";
-import FooterComponent from "@/components/Footer";
+import AppLayout from "@/components/AppLayout";
 
 const inter = Inter({ subsets: ["latin"] });
 const bungee = Bungee({ weight: "400", subsets: ["latin"], variable: "--font-bungee" });
@@ -30,13 +29,9 @@ export default function RootLayout({
       </head>
       <body className={`${inter.className} ${bungee.variable} ${cinzel.variable} ${creepster.variable} ${marker.variable} ${pacifico.variable} antialiased bg-black text-white min-h-screen flex flex-col`}>
         <Providers>
-          <NavbarComponent />
-          
-          <main className="flex-grow">
+          <AppLayout>
             {children}
-          </main>
-          
-          <FooterComponent />
+          </AppLayout>
         </Providers>
       </body>
     </html>

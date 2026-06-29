@@ -92,9 +92,9 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
   ];
 
   return (
-    <div className="min-h-screen bg-black text-white py-10 pt-28">
-      <div className="container mx-auto px-6 max-w-7xl">
-        <div className="flex flex-col lg:flex-row gap-8 items-start">
+    <div className="w-full bg-black text-white py-10 pt-28 flex-grow flex flex-col">
+      <div className="container mx-auto px-6 max-w-7xl flex-grow flex flex-col">
+        <div className="flex flex-col lg:flex-row gap-8 items-start flex-grow w-full">
           
           {/* SIDEBAR */}
           <div className="w-full lg:w-[280px] bg-[#12131b] border border-zinc-800/40 rounded-3xl p-6 flex flex-col justify-between shrink-0 select-none">
