@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/context/AuthContext";
+import { getTmdbApiKey } from "@/utils/tmdb";
 
 interface Banner {
   _id?: string;
@@ -69,7 +70,10 @@ export default function BannersManagementView() {
     try {
       const token = Cookies.get("token");
       
-      // 1. Fetch DB Banners
+      // 1. Fetch System Settings to get dynamic TMDB API Key
+      const tmdbApiKey = await getTmdbApiKey(API_URL);
+
+      // 2. Fetch DB Banners
       const res = await fetch(`${API_URL}/banners/admin`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -80,7 +84,7 @@ export default function BannersManagementView() {
         dbBanners = await res.json();
       }
 
-      // 2. Fetch OPhim fallback movies (5 items)
+      // 3. Fetch OPhim fallback movies (5 items)
       let fallbackMovies: any[] = [];
       try {
         const ophimRes = await fetch("https://ophim1.com/danh-sach/phim-moi-cap-nhat?page=1");
@@ -92,9 +96,8 @@ export default function BannersManagementView() {
         console.error("Lỗi fetch OPhim fallback:", err);
       }
 
-      // 3. Merge to create exactly 5 slots (using TMDB for high-quality fallback backdrops)
+      // 4. Merge to create exactly 5 slots (using TMDB for high-quality fallback backdrops)
       const merged: Banner[] = [];
-      const tmdbApiKey = "e897a0225bb9007f33d45543c3f1591f";
       
       const fallbackImages = await Promise.all(
         fallbackMovies.map(async (movie) => {
@@ -243,9 +246,10 @@ export default function BannersManagementView() {
           let tmdbImgUrl = "";
           try {
             const query = movie.origin_name || movie.name;
-            const tmdbApiKey = "e897a0225bb9007f33d45543c3f1591f";
+            const activeTmdbApiKey = await getTmdbApiKey(API_URL);
+
             const searchRes = await fetch(
-              `https://api.themoviedb.org/3/search/movie?api_key=${tmdbApiKey}&query=${encodeURIComponent(query)}&language=vi`
+              `https://api.themoviedb.org/3/search/movie?api_key=${activeTmdbApiKey}&query=${encodeURIComponent(query)}&language=vi`
             );
             if (searchRes.ok) {
               const searchData = await searchRes.json();

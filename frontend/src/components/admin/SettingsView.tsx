@@ -15,6 +15,7 @@ import {
   Radio
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { clearTmdbApiKeyCache } from "@/utils/tmdb";
 
 interface SystemSettingsData {
   websiteName: string;
@@ -26,6 +27,7 @@ interface SystemSettingsData {
   facebookLink?: string;
   telegramLink?: string;
   adsEnabled: boolean;
+  tmdbApiKey?: string;
 }
 
 export default function SettingsView() {
@@ -46,6 +48,7 @@ export default function SettingsView() {
     facebookLink: "https://facebook.com/dlowphim",
     telegramLink: "https://t.me/dlowphim",
     adsEnabled: false,
+    tmdbApiKey: "591c025bb1641315ae087330271132bc",
   });
 
   const fetchSettings = async () => {
@@ -105,6 +108,7 @@ export default function SettingsView() {
       if (res.ok) {
         const updated = await res.json();
         setSettings(updated);
+        clearTmdbApiKeyCache();
         showToast("Lưu cấu hình hệ thống thành công", "success");
       } else {
         showToast("Lưu cấu hình thất bại", "error");
@@ -291,6 +295,24 @@ export default function SettingsView() {
                       Đang Bật
                     </span>
                   </div>
+                </div>
+
+                <div className="space-y-1.5 pt-3">
+                  <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Settings size={12} className="text-zinc-550" />
+                    TMDB API Key (Miễn phí)
+                  </label>
+                  <input
+                    type="text"
+                    name="tmdbApiKey"
+                    value={settings.tmdbApiKey || ""}
+                    onChange={handleChange}
+                    placeholder="Nhập API Key TMDB riêng của bạn..."
+                    className="w-full bg-zinc-950 border border-zinc-900 hover:border-zinc-800 focus:border-pink-500/50 rounded-xl px-4 py-3 text-xs text-white outline-none transition-all placeholder-zinc-700 font-mono"
+                  />
+                  <span className="text-[9px] font-bold text-zinc-650 leading-relaxed block">
+                    Dùng để tra cứu hình ảnh chất lượng cao 4K/HD sạch sẽ từ TheMovieDB. Nếu trống, hệ thống sẽ tự động sử dụng API Key công cộng của DlowPhim.
+                  </span>
                 </div>
               </div>
             )}

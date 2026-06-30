@@ -35,6 +35,10 @@ export class SystemSetting {
   // Monetization / Ads
   @Prop({ default: false })
   adsEnabled: boolean;
+
+  // TMDB API Config
+  @Prop({ default: '591c025bb1641315ae087330271132bc' })
+  tmdbApiKey?: string;
 }
 
 export const SystemSettingSchema = SchemaFactory.createForClass(SystemSetting);

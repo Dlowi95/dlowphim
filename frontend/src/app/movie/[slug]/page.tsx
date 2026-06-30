@@ -9,6 +9,7 @@ import MovieCard from "@/components/MovieCard";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
+import { getTmdbApiKey } from "@/utils/tmdb";
 
 interface Episode {
   name: string;
@@ -55,6 +56,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [tmdbImages, setTmdbImages] = useState<{ backdrop?: string; poster?: string } | null>(null);
 
   // States tương tác
   const isFavorite = user?.favorites?.includes(movie?.slug || "") || false;
@@ -111,6 +113,31 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
 
         if (ophimDetail) {
           setMovie(ophimDetail);
+          
+          // Cào thêm ảnh nét từ TMDB cho phim chi tiết
+          const tmdbId = ophimDetail.tmdb?.id;
+          const tmdbType = ophimDetail.tmdb?.type || "movie";
+          if (tmdbId) {
+            (async () => {
+              try {
+                const tmdbApiKey = await getTmdbApiKey(API_URL);
+                const tmdbRes = await fetch(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId}?api_key=${tmdbApiKey}&language=vi`);
+                if (tmdbRes.ok) {
+                  const tmdbData = await tmdbRes.json();
+                  const images: { backdrop?: string; poster?: string } = {};
+                  if (tmdbData.backdrop_path) {
+                    images.backdrop = `https://image.tmdb.org/t/p/w1280${tmdbData.backdrop_path}`;
+                  }
+                  if (tmdbData.poster_path) {
+                    images.poster = `https://image.tmdb.org/t/p/w500${tmdbData.poster_path}`;
+                  }
+                  setTmdbImages(images);
+                }
+              } catch (e) {
+                console.error("Lỗi cào TMDB ảnh cho MovieDetail:", e);
+              }
+            })();
+          }
         } else {
           // c. Nếu OPhim không có, thử tìm trong Custom Movies
           const customRes = await fetch(`${API_URL}/movies/custom/${slug}`);
@@ -311,7 +338,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
         {/* Background Backdrop image */}
         <div className="absolute inset-0 z-0">
           <img
-            src={getImageUrl(movie.poster_url || movie.thumb_url)}
+            src={tmdbImages?.backdrop || getImageUrl(movie.poster_url || movie.thumb_url)}
             alt={cleanedName}
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover opacity-70 md:opacity-85"
@@ -433,7 +460,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
           {/* Poster chính thu nhỏ tỷ lệ */}
           <div className="w-[110px] md:w-[130px] lg:w-[150px] mx-auto lg:mx-0 relative aspect-[2/3] rounded-2xl overflow-hidden shadow-[0_15px_40px_rgba(0,0,0,0.85)] bg-zinc-950 select-none">
             <img
-              src={getImageUrl(movie.thumb_url || movie.poster_url)}
+              src={tmdbImages?.poster || getImageUrl(movie.thumb_url || movie.poster_url)}
               alt={cleanedName}
               referrerPolicy="no-referrer"
               className="w-full h-full object-cover"

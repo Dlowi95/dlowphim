@@ -24,6 +24,7 @@ export class SystemSettingsService {
         facebookLink: 'https://facebook.com/dlowphim',
         telegramLink: 'https://t.me/dlowphim',
         adsEnabled: false,
+        tmdbApiKey: '591c025bb1641315ae087330271132bc',
       });
       await settings.save();
     }

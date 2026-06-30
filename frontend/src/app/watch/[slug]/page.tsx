@@ -9,6 +9,7 @@ import { cleanMovieName } from "@/utils/movieUtils";
 import MovieCard from "@/components/MovieCard";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
+import { getTmdbApiKey } from "@/utils/tmdb";
 
 interface Episode {
   name: string;
@@ -61,6 +62,7 @@ function WatchContent({ slug }: { slug: string }) {
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [tmdbBackdrop, setTmdbBackdrop] = useState<string | null>(null);
 
   const { user, toggleFavorite: toggleFavoriteCtx, showToast } = useAuth();
 
@@ -200,6 +202,28 @@ function WatchContent({ slug }: { slug: string }) {
 
         if (ophimDetail) {
           setMovie(ophimDetail);
+          
+          // Cào thêm ảnh nét từ TMDB cho watch page
+          const tmdbId = ophimDetail.tmdb?.id;
+          const tmdbType = ophimDetail.tmdb?.type || "movie";
+          if (tmdbId) {
+            (async () => {
+              try {
+                const tmdbApiKey = await getTmdbApiKey(API_URL);
+                const tmdbRes = await fetch(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId}?api_key=${tmdbApiKey}&language=vi`);
+                if (tmdbRes.ok) {
+                  const tmdbData = await tmdbRes.json();
+                  if (tmdbData.backdrop_path) {
+                    setTmdbBackdrop(`https://image.tmdb.org/t/p/w1280${tmdbData.backdrop_path}`);
+                  } else if (tmdbData.poster_path) {
+                    setTmdbBackdrop(`https://image.tmdb.org/t/p/w1280${tmdbData.poster_path}`);
+                  }
+                }
+              } catch (e) {
+                console.error("Lỗi cào TMDB ảnh cho WatchPage:", e);
+              }
+            })();
+          }
         } else {
           // c. Nếu OPhim không có, thử tìm trong Custom Movies
           const customRes = await fetch(`${API_URL}/movies/custom/${slug}`);
@@ -653,7 +677,7 @@ function WatchContent({ slug }: { slug: string }) {
       {/* BACKGROUND BLURRED */}
       <div className="absolute top-0 left-0 right-0 h-[60vh] overflow-hidden pointer-events-none select-none z-0">
         <img
-          src={getImageUrl(movie.poster_url || movie.thumb_url)}
+          src={tmdbBackdrop || getImageUrl(movie.poster_url || movie.thumb_url)}
           alt={cleanedName}
           referrerPolicy="no-referrer"
           className="w-full h-full object-cover opacity-15 blur-[60px] scale-110"

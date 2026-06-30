@@ -8,6 +8,7 @@ import { cleanMovieName, cleanSlug } from "@/utils/movieUtils";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
+import { getTmdbApiKey } from "@/utils/tmdb";
 
 interface Movie {
   _id: string;
@@ -322,6 +323,27 @@ export default function AnimeRow() {
         if (data.status === true || data.status === "success") {
           const item = data.data?.item || data.movie || null;
           if (item) {
+            // Cào thêm ảnh nét từ TMDB
+            const tmdbId = item.tmdb?.id;
+            const tmdbType = item.tmdb?.type || "tv";
+            if (tmdbId) {
+              try {
+                const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+                const tmdbApiKey = await getTmdbApiKey(API_URL);
+
+                const tmdbRes = await fetch(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId}?api_key=${tmdbApiKey}&language=vi`);
+                if (tmdbRes.ok) {
+                  const tmdbData = await tmdbRes.json();
+                  if (tmdbData.backdrop_path) {
+                    item.poster_url = `https://image.tmdb.org/t/p/w1280${tmdbData.backdrop_path}`;
+                  } else if (tmdbData.poster_path) {
+                    item.poster_url = `https://image.tmdb.org/t/p/w1280${tmdbData.poster_path}`;
+                  }
+                }
+              } catch (e) {
+                console.error("Lỗi cào TMDB ảnh cho AnimeRow:", e);
+              }
+            }
             setDetailsCache(prev => ({ ...prev, [activeMovie!.slug]: item }));
             setDetails(item);
           }
