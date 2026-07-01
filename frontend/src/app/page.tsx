@@ -13,6 +13,7 @@ import UpcomingRow from "@/components/UpcomingRow";
 import CinemaRow from "@/components/CinemaRow";
 import AnimeRow from "@/components/AnimeRow";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
+import Image from "next/image";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { getTmdbApiKey } from "@/utils/tmdb";
@@ -109,49 +110,21 @@ const getMovieTitleStyle = (movie: any) => {
   };
 };
 
-const fetchTmdbLogoSmart = async (movieTitle: string, apiUrl: string, tmdbType?: string, tmdbId?: string | number) => {
-  const activeApiKey = await getTmdbApiKey(apiUrl);
-  let targetId = tmdbId;
-  let targetType = tmdbType === "tv" ? "tv" : "movie";
-
+const fetchTmdbLogoSmart = async (slug: string, movieTitle: string, apiUrl: string, tmdbType?: string, tmdbId?: string | number) => {
   try {
-    // 1. Nếu không có tmdbId, tìm kiếm theo tên phim trên TMDB
-    if (!targetId && movieTitle) {
-      const searchRes = await fetch(
-        `https://api.themoviedb.org/3/search/multi?api_key=${activeApiKey}&query=${encodeURIComponent(movieTitle)}&language=vi`
-      );
-      if (searchRes.ok) {
-        const searchData = await searchRes.json();
-        const firstResult = searchData.results?.[0];
-        if (firstResult) {
-          targetId = firstResult.id;
-          targetType = firstResult.media_type === "tv" ? "tv" : "movie";
-        }
-      }
-    }
-
-    if (!targetId) return null;
-
-    // 2. Gọi API lấy danh sách hình ảnh (bao gồm logo)
-    const res = await fetch(`https://api.themoviedb.org/3/${targetType}/${targetId}/images?api_key=${activeApiKey}`);
-    if (!res.ok) return null;
+    const res = await fetch(
+      `${apiUrl}/movies/logo/${slug}?title=${encodeURIComponent(movieTitle)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType || "movie"}`
+    );
+    if (!res.ok) return { logoUrl: null, backdropUrl: null, posterUrl: null };
     const data = await res.json();
-    const logos = data.logos || [];
-    if (logos.length === 0) return null;
-    
-    // Ưu tiên tiếng Việt
-    const viLogo = logos.find((l: any) => l.iso_639_1 === "vi");
-    if (viLogo) return `https://image.tmdb.org/t/p/w500${viLogo.file_path}`;
-    
-    // Ưu tiên tiếng Anh
-    const enLogo = logos.find((l: any) => l.iso_639_1 === "en");
-    if (enLogo) return `https://image.tmdb.org/t/p/w500${enLogo.file_path}`;
-    
-    // Dự phòng logo đầu tiên
-    return `https://image.tmdb.org/t/p/w500${logos[0].file_path}`;
+    return {
+      logoUrl: data.logoUrl || null,
+      backdropUrl: data.backdropUrl || null,
+      posterUrl: data.posterUrl || null,
+    };
   } catch (error) {
-    console.error("Failed to fetch TMDB logo:", error);
-    return null;
+    console.error("Failed to fetch TMDB logo from proxy backend:", error);
+    return { logoUrl: null, backdropUrl: null, posterUrl: null };
   }
 };
 
@@ -281,27 +254,16 @@ export default function HomePage() {
             // Lấy TMDB API Key động
             (async () => {
               try {
-                const tmdbApiKey = await getTmdbApiKey(API_URL);
-
-                // Gọi fetch logo thông minh
                 const movieTitleQuery = detail.origin_name || detail.name || movie.origin_name || movie.name;
-                fetchTmdbLogoSmart(movieTitleQuery, API_URL, tmdbType, tmdbId).then((logoUrl) => {
-                  setLogoCache(prev => ({ ...prev, [movie.slug]: logoUrl }));
-                });
-
-                // Fetch backdrop từ TMDB
-                if (tmdbId) {
-                  const tmdbRes = await fetch(
-                    `https://api.themoviedb.org/3/${tmdbType}/${tmdbId}?api_key=${tmdbApiKey}&language=vi`
-                  );
-                  if (tmdbRes.ok) {
-                    const tmdbData = await tmdbRes.json();
-                    if (tmdbData.backdrop_path) {
-                      setBackdropCache(prev => ({ ...prev, [movie.slug]: `https://image.tmdb.org/t/p/w1280${tmdbData.backdrop_path}` }));
-                    } else if (tmdbData.poster_path) {
-                      setBackdropCache(prev => ({ ...prev, [movie.slug]: `https://image.tmdb.org/t/p/w1280${tmdbData.poster_path}` }));
-                    }
-                  }
+                const tmdbData = await fetchTmdbLogoSmart(movie.slug, movieTitleQuery, API_URL, tmdbType, tmdbId);
+                
+                if (tmdbData.logoUrl) {
+                  setLogoCache(prev => ({ ...prev, [movie.slug]: tmdbData.logoUrl }));
+                }
+                if (tmdbData.backdropUrl) {
+                  setBackdropCache(prev => ({ ...prev, [movie.slug]: tmdbData.backdropUrl }));
+                } else if (tmdbData.posterUrl) {
+                  setBackdropCache(prev => ({ ...prev, [movie.slug]: tmdbData.posterUrl }));
                 }
               } catch (e) {
                 console.error("Lỗi khi tải dữ liệu TMDB cho Hero:", e);
@@ -465,15 +427,15 @@ export default function HomePage() {
           
           {/* Ảnh nền Full-width trong suốt và sáng đẹp giống hệt mockup */}
           <div className="absolute inset-0 z-0 select-none bg-black">
-            <img 
-              src={backdropCache[activeMovie.slug] || getImageUrl(heroDetail?.poster_url || activeMovie?.poster_url || heroDetail?.thumb_url || activeMovie?.thumb_url)} 
+            <Image 
+              src={backdropCache[activeMovie.slug] || getImageUrl(heroDetail?.thumb_url || activeMovie?.thumb_url || heroDetail?.poster_url || activeMovie?.poster_url)} 
               alt={activeMovie.name} 
-              referrerPolicy="no-referrer"
-              className={`w-full h-full object-cover transition-all duration-500 ease-in-out ${
+              fill
+              priority
+              className={`object-cover transition-all duration-500 ease-in-out ${
                 isTransitioning ? "opacity-0 scale-102 blur-[4px]" : "opacity-100 scale-100 blur-0"
               }`}
-              fetchPriority="high"
-              decoding="async"
+              sizes="100vw"
             />
             {/* Halftone dot grid pattern overlay to make the image look crisp and textured */}
             <HalftoneOverlay />
@@ -606,13 +568,12 @@ export default function HomePage() {
                       : "border border-zinc-800/80 opacity-50 hover:opacity-90 hover:scale-[1.02]"
                   }`}
                 >
-                  <img
-                    src={getImageUrl(movie.poster_url || movie.thumb_url)}
+                  <Image
+                    src={backdropCache[movie.slug] || getImageUrl(movie.thumb_url || movie.poster_url)}
                     alt={movie.name}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                    decoding="async"
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 768px) 112px, 112px"
                   />
                   <div className="absolute inset-0 bg-black/10 hover:bg-transparent transition-colors" />
                 </div>

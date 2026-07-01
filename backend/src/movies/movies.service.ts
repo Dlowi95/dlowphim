@@ -3,12 +3,16 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { BlockedMovie, BlockedMovieDocument } from './schemas/blocked-movie.schema';
 import { CustomMovie, CustomMovieDocument } from './schemas/custom-movie.schema';
+import { MovieLogo, MovieLogoDocument } from './schemas/movie-logo.schema';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
 
 @Injectable()
 export class MoviesService {
   constructor(
     @InjectModel(BlockedMovie.name) private blockedModel: Model<BlockedMovieDocument>,
     @InjectModel(CustomMovie.name) private customModel: Model<CustomMovieDocument>,
+    @InjectModel(MovieLogo.name) private movieLogoModel: Model<MovieLogoDocument>,
+    private readonly settingsService: SystemSettingsService,
   ) {}
 
   // ─── BLOCKED MOVIES ───
@@ -123,5 +127,103 @@ export class MoviesService {
       .replace(/(\s+)/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-+|-+$/g, '');
+  }
+
+  // ─── MOVIE LOGO PROXY CACHE ───
+  async getMovieLogo(slug: string, title?: string, tmdbId?: string, tmdbType?: string): Promise<any> {
+    const trimmedSlug = slug.trim().toLowerCase();
+    
+    // 1. Kiểm tra trong DB
+    const existing = await this.movieLogoModel.findOne({ slug: trimmedSlug }).exec();
+    if (existing) {
+      return {
+        logoUrl: existing.logoUrl || '',
+        backdropUrl: (existing as any).backdropUrl || '',
+        posterUrl: (existing as any).posterUrl || '',
+      };
+    }
+
+    // 2. Nếu chưa có, cào từ TMDB
+    let logoUrl = '';
+    let backdropUrl = '';
+    let posterUrl = '';
+    try {
+      const settings = await this.settingsService.getSettings();
+      const apiKey = settings.tmdbApiKey || '591c025bb1641315ae087330271132bc';
+      
+      let targetId = tmdbId;
+      let targetType = tmdbType === 'tv' ? 'tv' : 'movie';
+
+      // 2a. Nếu không có tmdbId, search TMDB theo tên
+      if (!targetId && title) {
+        const searchRes = await fetch(
+          `https://api.themoviedb.org/3/search/multi?api_key=${apiKey}&query=${encodeURIComponent(title)}&language=vi`
+        );
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          const firstResult = searchData.results?.[0];
+          if (firstResult) {
+            targetId = firstResult.id;
+            targetType = firstResult.media_type === 'tv' ? 'tv' : 'movie';
+          }
+        }
+      }
+
+      if (targetId) {
+        // 2b. Lấy danh sách logos
+        const logosRes = await fetch(`https://api.themoviedb.org/3/${targetType}/${targetId}/images?api_key=${apiKey}`);
+        if (logosRes.ok) {
+          const data = await logosRes.json();
+          const logos = data.logos || [];
+          if (logos.length > 0) {
+            // Lấy tiếng Việt
+            const viLogo = logos.find((l: any) => l.iso_639_1 === 'vi');
+            if (viLogo) {
+              logoUrl = `https://image.tmdb.org/t/p/w500${viLogo.file_path}`;
+            } else {
+              // Lấy tiếng Anh
+              const enLogo = logos.find((l: any) => l.iso_639_1 === 'en');
+              if (enLogo) {
+                logoUrl = `https://image.tmdb.org/t/p/w500${enLogo.file_path}`;
+              } else {
+                // Lấy đầu tiên
+                logoUrl = `https://image.tmdb.org/t/p/w500${logos[0].file_path}`;
+              }
+            }
+          }
+        }
+
+        // 2c. Lấy chi tiết phim từ TMDB để lấy backdrop & poster
+        const infoRes = await fetch(`https://api.themoviedb.org/3/${targetType}/${targetId}?api_key=${apiKey}&language=vi`);
+        if (infoRes.ok) {
+          const infoData = await infoRes.json();
+          if (infoData.backdrop_path) {
+            backdropUrl = `https://image.tmdb.org/t/p/w1280${infoData.backdrop_path}`;
+          } else if (infoData.poster_path) {
+            backdropUrl = `https://image.tmdb.org/t/p/w1280${infoData.poster_path}`;
+          }
+          if (infoData.poster_path) {
+            posterUrl = `https://image.tmdb.org/t/p/w500${infoData.poster_path}`;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Lỗi lấy thông tin từ TMDB trong MoviesService:', err);
+    }
+
+    // 3. Lưu vào DB để cache
+    try {
+      const cached = new this.movieLogoModel({
+        slug: trimmedSlug,
+        logoUrl,
+        backdropUrl,
+        posterUrl,
+      });
+      await cached.save();
+    } catch (saveErr) {
+      console.error('Lỗi lưu cache logo vào DB:', saveErr);
+    }
+
+    return { logoUrl, backdropUrl, posterUrl };
   }
 }

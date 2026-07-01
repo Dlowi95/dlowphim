@@ -9,6 +9,7 @@ import HalftoneOverlay from "@/components/HalftoneOverlay";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { getTmdbApiKey } from "@/utils/tmdb";
+import Image from "next/image";
 
 interface Movie {
   _id: string;
@@ -323,25 +324,25 @@ export default function AnimeRow() {
         if (data.status === true || data.status === "success") {
           const item = data.data?.item || data.movie || null;
           if (item) {
-            // Cào thêm ảnh nét từ TMDB
+            // Cào thêm ảnh nét từ TMDB thông qua Backend Proxy Cache
             const tmdbId = item.tmdb?.id;
             const tmdbType = item.tmdb?.type || "tv";
-            if (tmdbId) {
+            if (tmdbId || item.name) {
               try {
                 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-                const tmdbApiKey = await getTmdbApiKey(API_URL);
-
-                const tmdbRes = await fetch(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId}?api_key=${tmdbApiKey}&language=vi`);
-                if (tmdbRes.ok) {
-                  const tmdbData = await tmdbRes.json();
-                  if (tmdbData.backdrop_path) {
-                    item.poster_url = `https://image.tmdb.org/t/p/w1280${tmdbData.backdrop_path}`;
-                  } else if (tmdbData.poster_path) {
-                    item.poster_url = `https://image.tmdb.org/t/p/w1280${tmdbData.poster_path}`;
+                const proxyRes = await fetch(
+                  `${API_URL}/movies/logo/${activeMovie!.slug}?title=${encodeURIComponent(item.origin_name || item.name)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`
+                );
+                if (proxyRes.ok) {
+                  const proxyData = await proxyRes.json();
+                  if (proxyData.backdropUrl) {
+                    item.poster_url = proxyData.backdropUrl;
+                  } else if (proxyData.posterUrl) {
+                    item.poster_url = proxyData.posterUrl;
                   }
                 }
               } catch (e) {
-                console.error("Lỗi cào TMDB ảnh cho AnimeRow:", e);
+                console.error("Lỗi cào TMDB ảnh cho AnimeRow qua proxy:", e);
               }
             }
             setDetailsCache(prev => ({ ...prev, [activeMovie!.slug]: item }));
@@ -477,11 +478,12 @@ export default function AnimeRow() {
           
           {/* Right-aligned Backdrop Image (No mask inside to avoid sub-pixel bleed) */}
           <div className="absolute right-0 top-0 bottom-0 w-full md:w-[65%] h-full z-0 pointer-events-none select-none overflow-hidden rounded-r-3xl">
-            <img
-              src={getImageUrl(activeMovie.poster_url || activeMovie.thumb_url)}
+            <Image
+              src={getImageUrl(details?.poster_url || activeMovie.poster_url || details?.thumb_url || activeMovie.thumb_url)}
               alt={cleanedName}
-              referrerPolicy="no-referrer"
-              className="w-full h-full object-cover"
+              fill
+              className="object-cover"
+              sizes="(max-width: 768px) 100vw, 65vw"
             />
             {/* Halftone dot grid pattern overlay to make the image look crisp and textured */}
             <HalftoneOverlay />
@@ -604,13 +606,12 @@ export default function AnimeRow() {
                     maskImage: "radial-gradient(white, black)"
                   }}
                 >
-                  <img
+                  <Image
                     src={getImageUrl(movie.thumb_url || movie.poster_url)}
                     alt={title}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                    decoding="async"
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 768px) 70px, 100px"
                   />
                   {/* Subtle hover overlay */}
                   <div className="absolute inset-0 bg-black/10 hover:bg-black/0 transition-colors" />

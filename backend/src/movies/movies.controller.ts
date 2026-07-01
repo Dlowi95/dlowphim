@@ -29,6 +29,17 @@ export class MoviesController {
     return this.moviesService.getCustomMovieBySlug(slug);
   }
 
+  @Get('logo/:slug')
+  async getMovieLogo(
+    @Param('slug') slug: string,
+    @Query('title') title?: string,
+    @Query('tmdbId') tmdbId?: string,
+    @Query('tmdbType') tmdbType?: string,
+  ) {
+    const logoUrl = await this.moviesService.getMovieLogo(slug, title, tmdbId, tmdbType);
+    return { logoUrl };
+  }
+
   // ─── ADMIN ENDPOINTS (REQUIRES ADMIN ROLE) ───
   @Post('blocked')
   @UseGuards(AuthGuard, RolesGuard)
