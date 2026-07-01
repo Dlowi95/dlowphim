@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { cleanMovieName } from "@/utils/movieUtils";
 import MovieHoverPopup from "./MovieHoverPopup";
+import Image from "next/image";
+import { getProxyUrl } from "@/utils/api";
 
 interface Movie {
   _id: string;
@@ -57,6 +59,10 @@ export default function MovieCard({ movie, aspect = "landscape" }: MovieCardProp
   const handleMouseEnter = (e: React.MouseEvent) => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     
+    // Tải trước dữ liệu phim ngầm (Prefetching)
+    const prefetchUrl = getProxyUrl(`https://ophim1.com/v1/api/phim/${movie.slug}`);
+    fetch(prefetchUrl).catch(() => {});
+
     // Immediately mount the popup component (so it starts fetching details)
     setShowPopup(true);
 
@@ -126,13 +132,12 @@ export default function MovieCard({ movie, aspect = "landscape" }: MovieCardProp
             maskImage: "radial-gradient(white, black)"
           }}
         >
-          <img
+          <Image
             src={getImageUrl(movie)}
             alt={cleanedName}
-            referrerPolicy="no-referrer"
-            className="w-full h-full object-cover rounded-xl group-hover/card:scale-105 transition-transform duration-300"
-            loading="lazy"
-            decoding="async"
+            fill
+            className="object-cover rounded-xl group-hover/card:scale-105 transition-transform duration-300"
+            sizes={aspect === "landscape" ? "(max-width: 768px) 50vw, 25vw" : "(max-width: 768px) 33vw, 15vw"}
           />
 
           

@@ -10,6 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { getTmdbApiKey } from "@/utils/tmdb";
 import Image from "next/image";
+import { getProxyUrl } from "@/utils/api";
 
 interface Movie {
   _id: string;
@@ -259,7 +260,7 @@ export default function AnimeRow() {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
 
-        const res = await fetch("https://ophim1.com/v1/api/danh-sach/hoat-hinh?page=1", {
+        const res = await fetch(getProxyUrl("https://ophim1.com/v1/api/danh-sach/hoat-hinh?page=1"), {
           signal: controller.signal
         });
         clearTimeout(timeoutId);
@@ -317,7 +318,7 @@ export default function AnimeRow() {
     async function fetchActiveDetails() {
       try {
         setLoadingDetails(true);
-        const res = await fetch(`https://ophim1.com/v1/api/phim/${activeMovie!.slug}`, {
+        const res = await fetch(getProxyUrl(`https://ophim1.com/v1/api/phim/${activeMovie!.slug}`), {
           signal: controller.signal
         });
         const data = await res.json();

@@ -10,6 +10,7 @@ import MovieCard from "@/components/MovieCard";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { getTmdbApiKey } from "@/utils/tmdb";
+import { getProxyUrl } from "@/utils/api";
 
 interface Episode {
   name: string;
@@ -189,7 +190,7 @@ function WatchContent({ slug }: { slug: string }) {
         // b. Tải phim từ OPhim API
         let ophimDetail: any = null;
         try {
-          const res = await fetch(`https://ophim1.com/v1/api/phim/${slug}`);
+          const res = await fetch(getProxyUrl(`https://ophim1.com/v1/api/phim/${slug}`));
           if (res.ok) {
             const data = await res.json();
             if (data.status === true || data.status === "success") {
@@ -467,7 +468,7 @@ function WatchContent({ slug }: { slug: string }) {
     async function fetchRelated() {
       try {
         setLoadingRelated(true);
-        const res = await fetch(`https://ophim1.com/v1/api/the-loai/${genreSlug}?page=1`);
+        const res = await fetch(getProxyUrl(`https://ophim1.com/v1/api/the-loai/${genreSlug}?page=1`));
         const data = await res.json();
         
         if (data.status === true || data.status === "success") {

@@ -40,6 +40,11 @@ export class MoviesController {
     return { logoUrl };
   }
 
+  @Get('ophim-proxy')
+  async fetchOphimProxy(@Query('path') path: string) {
+    return this.moviesService.fetchOphimProxy(path);
+  }
+
   // ─── ADMIN ENDPOINTS (REQUIRES ADMIN ROLE) ───
   @Post('blocked')
   @UseGuards(AuthGuard, RolesGuard)

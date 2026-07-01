@@ -17,6 +17,7 @@ import Image from "next/image";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { getTmdbApiKey } from "@/utils/tmdb";
+import { getProxyUrl } from "@/utils/api";
 
 const FALLBACK_CANDIDATES = [
   {
@@ -172,7 +173,7 @@ export default function HomePage() {
         const timeoutId = setTimeout(() => controller.abort(), 6000);
         
         try {
-          const res = await fetch("https://ophim1.com/danh-sach/phim-moi-cap-nhat?page=1", {
+          const res = await fetch(getProxyUrl("https://ophim1.com/danh-sach/phim-moi-cap-nhat?page=1"), {
             signal: controller.signal
           });
           clearTimeout(timeoutId);
@@ -235,7 +236,7 @@ export default function HomePage() {
 
     async function prefetchDetail(movie: any) {
       try {
-        const res = await fetch(`https://ophim1.com/v1/api/phim/${movie.slug}`);
+        const res = await fetch(getProxyUrl(`https://ophim1.com/v1/api/phim/${movie.slug}`));
         const data = await res.json();
         if (data.status === "success" || data.status === true) {
           const detail = data.data?.item || data.movie || null;

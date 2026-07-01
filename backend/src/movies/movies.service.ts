@@ -226,4 +226,49 @@ export class MoviesService {
 
     return { logoUrl, backdropUrl, posterUrl };
   }
+
+  // ─── OPHIM API PROXY CACHE ───
+  private ophimCache = new Map<string, { data: any; expiry: number }>();
+
+  async fetchOphimProxy(path: string): Promise<any> {
+    const now = Date.now();
+    const cached = this.ophimCache.get(path);
+    if (cached && cached.expiry > now) {
+      return cached.data;
+    }
+
+    // Lấy domain nguồn cào từ Settings
+    let baseDomain = 'https://ophim1.com';
+    try {
+      const settings = await this.settingsService.getSettings();
+      if (settings.movieCrawlSource) {
+        const url = new URL(settings.movieCrawlSource);
+        baseDomain = url.origin;
+      }
+    } catch (e) {
+      // url không hợp lệ hoặc lỗi settings
+    }
+
+    const targetUrl = `${baseDomain}${path}`;
+    try {
+      const res = await fetch(targetUrl);
+      if (!res.ok) {
+        // Fallback về cache cũ đã hết hạn nếu có
+        if (cached) return cached.data;
+        throw new Error(`Failed to fetch from source: ${res.statusText}`);
+      }
+
+      const data = await res.json();
+      // Cache trong 10 phút (600,000 ms)
+      this.ophimCache.set(path, {
+        data,
+        expiry: now + 10 * 60 * 1000,
+      });
+
+      return data;
+    } catch (error) {
+      if (cached) return cached.data;
+      throw error;
+    }
+  }
 }
