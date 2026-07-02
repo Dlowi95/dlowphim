@@ -55,6 +55,13 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
 
   const menuItems = [
     {
+      href: "/user/account",
+      label: "Tài khoản",
+      icon: (isActive: boolean) => (
+        <User size={18} className={isActive ? "text-pink-500" : ""} />
+      ),
+    },
+    {
       href: "/user/favorite",
       label: "Yêu thích",
       icon: (isActive: boolean) => (
@@ -80,13 +87,6 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
       label: "Thông báo",
       icon: (isActive: boolean) => (
         <Bell size={18} className={isActive ? "text-pink-500 fill-pink-500/20" : ""} />
-      ),
-    },
-    {
-      href: "/user/account",
-      label: "Tài khoản",
-      icon: (isActive: boolean) => (
-        <User size={18} className={isActive ? "text-pink-500" : ""} />
       ),
     },
   ];

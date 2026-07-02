@@ -41,11 +41,17 @@ export class User {
   @Prop()
   avatar?: string;
 
+  @Prop({ default: 'other' })
+  gender: string;
+
   @Prop({ type: [String], default: [] })
   favorites: string[];
 
   @Prop({ type: [Object], default: [] })
   watchHistory: HistoryItem[];
+
+  @Prop({ type: [Object], default: [] })
+  playlists: { id: string; name: string; movies: string[] }[];
 
   @Prop({ default: 'member' })
   role: string;

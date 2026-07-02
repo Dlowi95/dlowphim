@@ -30,6 +30,16 @@ export class AuthController {
     return this.authService.getMe(userId);
   }
 
+  @Put('me/update')
+  @UseGuards(AuthGuard)
+  async updateProfile(
+    @Req() req: express.Request,
+    @Body() updateDto: { displayName?: string; gender?: string; avatar?: string }
+  ) {
+    const userId = req['user']?.sub;
+    return this.authService.updateProfile(userId, updateDto);
+  }
+
   @Post('favorites/toggle')
   @UseGuards(AuthGuard)
   async toggleFavorite(@Req() req: express.Request, @Body('movieSlug') movieSlug: string) {
@@ -91,5 +101,41 @@ export class AuthController {
   async deleteUser(@Req() req: express.Request, @Param('id') userId: string) {
     const adminId = req['user']?.sub;
     return this.authService.deleteUser(adminId, userId);
+  }
+
+  @Post('playlists')
+  @UseGuards(AuthGuard)
+  async createPlaylist(@Req() req: express.Request, @Body('name') name: string) {
+    const userId = req['user']?.sub;
+    return this.authService.createPlaylist(userId, name);
+  }
+
+  @Delete('playlists/:id')
+  @UseGuards(AuthGuard)
+  async deletePlaylist(@Req() req: express.Request, @Param('id') playlistId: string) {
+    const userId = req['user']?.sub;
+    return this.authService.deletePlaylist(userId, playlistId);
+  }
+
+  @Put('playlists/:id')
+  @UseGuards(AuthGuard)
+  async updatePlaylistName(
+    @Req() req: express.Request,
+    @Param('id') playlistId: string,
+    @Body('name') name: string,
+  ) {
+    const userId = req['user']?.sub;
+    return this.authService.updatePlaylistName(userId, playlistId, name);
+  }
+
+  @Post('playlists/:id/toggle')
+  @UseGuards(AuthGuard)
+  async toggleMovieInPlaylist(
+    @Req() req: express.Request,
+    @Param('id') playlistId: string,
+    @Body('movieSlug') movieSlug: string,
+  ) {
+    const userId = req['user']?.sub;
+    return this.authService.toggleMovieInPlaylist(userId, playlistId, movieSlug);
   }
 }

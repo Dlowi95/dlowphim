@@ -28,6 +28,7 @@ export class CommentsService {
   async getComments(movieSlug: string, currentUserId?: string) {
     const comments = await this.commentModel
       .find({ movieSlug })
+      .populate('userId', 'displayName avatar role')
       .sort({ createdAt: -1 })
       .exec();
 
@@ -46,13 +47,18 @@ export class CommentsService {
         }
       }
 
+      const userObj = c.userId as any;
+      const finalDisplayName = userObj?.displayName || c.displayName;
+      const finalAvatarUrl = userObj?.avatar || c.avatar;
+      const finalRole = userObj?.role || c.role || 'member';
+
       return {
         id: c._id.toString(),
-        userId: c.userId.toString(),
-        name: c.displayName,
-        avatar: c.displayName ? c.displayName[0].toUpperCase() : 'U',
-        avatarUrl: c.avatar || undefined,
-        role: c.role || 'member',
+        userId: userObj?._id?.toString() || c.userId.toString(),
+        name: finalDisplayName,
+        avatar: finalDisplayName ? finalDisplayName[0].toUpperCase() : 'U',
+        avatarUrl: finalAvatarUrl || undefined,
+        role: finalRole,
         content: c.content,
         time: getFormattedDate((c as any).createdAt || new Date()),
         likes: upvotesCount - downvotesCount,

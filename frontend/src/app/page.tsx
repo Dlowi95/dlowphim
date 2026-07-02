@@ -104,7 +104,7 @@ const getMovieTitleStyle = (movie: any) => {
     "from-purple-400 via-pink-500 to-rose-500",
   ];
   const colorIndex = Math.abs(slug.split("").reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0)) % colors.length;
-  
+
   return {
     fontClass: "font-black tracking-tight uppercase",
     textStyle: `bg-gradient-to-r ${colors[colorIndex]} bg-clip-text text-transparent drop-shadow-[0_3px_5px_rgba(0,0,0,0.85)] text-2xl md:text-4xl`
@@ -138,10 +138,10 @@ export default function HomePage() {
   const [logoCache, setLogoCache] = useState<Record<string, string | null>>({});
   const [backdropCache, setBackdropCache] = useState<Record<string, string | null>>({});
   const [isTransitioning, setIsTransitioning] = useState(false);
-  
+
   const [movieList, setMovieList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   const router = useRouter();
   const { user, toggleFavorite } = useAuth();
 
@@ -152,7 +152,7 @@ export default function HomePage() {
     async function fetchData() {
       try {
         setLoading(true);
-        
+
         // 1. Fetch custom banners from our DB
         let dbBanners: any[] = [];
         try {
@@ -171,7 +171,7 @@ export default function HomePage() {
         let ophimMovies: any[] = [];
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 6000);
-        
+
         try {
           const res = await fetch(getProxyUrl("https://ophim1.com/danh-sach/phim-moi-cap-nhat?page=1"), {
             signal: controller.signal
@@ -185,9 +185,96 @@ export default function HomePage() {
           console.error("Lỗi khi kết nối API OPhim:", error);
         }
 
-        // 3. Combine Banner & Grid logic: Merge DB Banners with OPhim fallback for exactly 5 Hero slots
-        const finalHeroCandidates = [];
-        const fallbackMovies = ophimMovies.length > 0 ? ophimMovies : FALLBACK_CANDIDATES;
+        // Tải trước thông tin chi tiết ngầm của 20 phim đầu tiên song song để lọc phim trailer và phim có logo đẹp
+        const preloadedDetails: Record<string, any> = {};
+        const preloadedLogos: Record<string, string | null> = {};
+        const preloadedBackdrops: Record<string, string | null> = {};
+        let nonTrailerMovies: any[] = [];
+        let trailerOrNoLogoMovies: any[] = []; // dự phòng nếu không đủ 5 phim có logo đẹp
+        if (ophimMovies.length > 0) {
+          try {
+            const detailPromises = ophimMovies.slice(0, 20).map(async (movie) => {
+              try {
+                const detailRes = await fetch(getProxyUrl(`https://ophim1.com/v1/api/phim/${movie.slug}`));
+                if (detailRes.ok) {
+                  const detailData = await detailRes.json();
+                  const detail = detailData.data?.item || detailData.movie || null;
+
+                  if (detail) {
+                    // Gọi API Logo/Backdrop Proxy song song của backend
+                    const tmdbId = detail.tmdb?.id;
+                    const tmdbType = detail.tmdb?.type || "movie";
+                    const movieTitleQuery = detail.origin_name || detail.name;
+
+                    try {
+                      const tmdbRes = await fetch(
+                        `${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movieTitleQuery)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`
+                      );
+                      if (tmdbRes.ok) {
+                        const tmdbData = await tmdbRes.json();
+                        return { movie, detail, tmdbData };
+                      }
+                    } catch (tmdbErr) {
+                      // Bỏ qua lỗi TMDB lẻ
+                    }
+                    return { movie, detail, tmdbData: null };
+                  }
+                  return { movie, detail, tmdbData: null };
+                }
+              } catch (e) {
+                // bỏ qua lỗi fetch lẻ
+              }
+              return { movie, detail: null, tmdbData: null };
+            });
+            const results = await Promise.all(detailPromises);
+
+            for (const item of results) {
+              if (item.movie) {
+                const currentEpisode = (item.detail?.episode_current || "").toLowerCase();
+                const isTrailer = currentEpisode.includes("trailer");
+                const hasLogo = item.tmdbData && item.tmdbData.logoUrl;
+
+                if (item.detail) {
+                  preloadedDetails[item.movie.slug] = item.detail;
+                }
+                if (item.tmdbData) {
+                  if (item.tmdbData.logoUrl) {
+                    preloadedLogos[item.movie.slug] = item.tmdbData.logoUrl;
+                  }
+                  if (item.tmdbData.backdropUrl) {
+                    preloadedBackdrops[item.movie.slug] = item.tmdbData.backdropUrl;
+                  } else if (item.tmdbData.posterUrl) {
+                    preloadedBackdrops[item.movie.slug] = item.tmdbData.posterUrl;
+                  }
+                }
+
+                if (!isTrailer && hasLogo) {
+                  nonTrailerMovies.push(item.movie);
+                } else if (!isTrailer) {
+                  trailerOrNoLogoMovies.push(item.movie);
+                }
+              }
+            }
+          } catch (e) {
+            console.error("Lỗi khi cào song song thông tin chi tiết:", e);
+            nonTrailerMovies = ophimMovies;
+          }
+        }
+
+        // Đổ thông tin chi tiết và ảnh đã preload vào cache
+        setDetailsCache(prev => ({ ...prev, ...preloadedDetails }));
+        setLogoCache(prev => ({ ...prev, ...preloadedLogos }));
+        setBackdropCache(prev => ({ ...prev, ...preloadedBackdrops }));
+
+        // Lấy danh sách phim cho Hero: Ưu tiên phim có logo trước, nếu thiếu thì bù phim không logo
+        let finalFallbackMovies = [...nonTrailerMovies];
+        if (finalFallbackMovies.length < 5) {
+          const needed = 5 - finalFallbackMovies.length;
+          finalFallbackMovies = [...finalFallbackMovies, ...trailerOrNoLogoMovies.slice(0, needed)];
+        }
+
+        const fallbackMovies = finalFallbackMovies.length > 0 ? finalFallbackMovies : FALLBACK_CANDIDATES;
+        const finalHeroCandidates: any[] = [];
 
         for (let i = 1; i <= 5; i++) {
           const custom = dbBanners.find((b: any) => b.order === i && b.isActive);
@@ -214,7 +301,7 @@ export default function HomePage() {
         }
 
         setHeroCandidates(finalHeroCandidates);
-        
+
         // Use OPhim movies for the grid below
         const gridMovies = ophimMovies.length > 5 ? ophimMovies.slice(5, 13) : ophimMovies.slice(0, 8);
         setMovieList(gridMovies.length > 0 ? gridMovies : FALLBACK_CANDIDATES);
@@ -241,23 +328,23 @@ export default function HomePage() {
         if (data.status === "success" || data.status === true) {
           const detail = data.data?.item || data.movie || null;
           if (detail) {
-            setDetailsCache(prev => ({ 
-              ...prev, 
+            setDetailsCache(prev => ({
+              ...prev,
               [movie.slug]: {
                 ...detail,
                 content: movie.isCustomBanner && movie.content ? movie.content : detail.content
-              } 
+              }
             }));
-            
+
             const tmdbId = detail?.tmdb?.id;
             const tmdbType = detail?.tmdb?.type || "movie";
-            
+
             // Lấy TMDB API Key động
             (async () => {
               try {
                 const movieTitleQuery = detail.origin_name || detail.name || movie.origin_name || movie.name;
                 const tmdbData = await fetchTmdbLogoSmart(movie.slug, movieTitleQuery, API_URL, tmdbType, tmdbId);
-                
+
                 if (tmdbData.logoUrl) {
                   setLogoCache(prev => ({ ...prev, [movie.slug]: tmdbData.logoUrl }));
                 }
@@ -348,7 +435,7 @@ export default function HomePage() {
   // Tính tuổi phân loại tượng trưng dựa trên thể loại để giao diện sinh động
   const getAgeRating = () => {
     if (!heroDetail?.category) return "P";
-    const hasAdultGenre = heroDetail.category.some((c: any) => 
+    const hasAdultGenre = heroDetail.category.some((c: any) =>
       ["kinh-di", "hinh-su", "tam-ly", "hanh-dong", "chien-tranh"].includes(c.slug)
     );
     return hasAdultGenre ? "T16" : "P";
@@ -387,8 +474,8 @@ export default function HomePage() {
         <div className="flex flex-col items-center gap-6 animate-pulse duration-2000">
           {/* Logo lớn sang trọng ở trung tâm */}
           <div className="flex items-center gap-4 md:gap-6">
-            <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center shadow-[0_0_60px_rgba(244,63,94,0.4)] shrink-0">
-              <Play className="text-white fill-white ml-2 md:ml-2.5" size={32} />
+            <div className="w-20 h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-[0_0_60px_rgba(244,63,94,0.4)] shrink-0">
+              <img src="/images/logo.png" alt="DlowPhim Logo" className="w-full h-full object-cover" />
             </div>
             <span className="font-black text-5xl md:text-6xl tracking-widest select-none">
               Dlow<span className="text-pink-500">Phim</span>
@@ -421,21 +508,20 @@ export default function HomePage() {
 
   return (
     <div className="w-full flex-grow flex flex-col bg-black text-white pb-16">
-      
+
       {/* 1. HERO BANNER - SLIDER CHUYÊN NGHIỆP Y HỆT HÌNH ẢNH */}
       {activeMovie && (
         <div className="relative w-full h-[75vh] md:h-[88vh] flex items-end overflow-hidden border-b border-zinc-900/60">
-          
+
           {/* Ảnh nền Full-width trong suốt và sáng đẹp giống hệt mockup */}
           <div className="absolute inset-0 z-0 select-none bg-black">
-            <Image 
-              src={backdropCache[activeMovie.slug] || getImageUrl(heroDetail?.thumb_url || activeMovie?.thumb_url || heroDetail?.poster_url || activeMovie?.poster_url)} 
-              alt={activeMovie.name} 
+            <Image
+              src={backdropCache[activeMovie.slug] || getImageUrl(heroDetail?.poster_url || activeMovie?.poster_url || heroDetail?.thumb_url || activeMovie?.thumb_url)}
+              alt={activeMovie.name}
               fill
               priority
-              className={`object-cover transition-all duration-500 ease-in-out ${
-                isTransitioning ? "opacity-0 scale-102 blur-[4px]" : "opacity-100 scale-100 blur-0"
-              }`}
+              className={`object-cover transition-all duration-500 ease-in-out ${isTransitioning ? "opacity-0 scale-102 blur-[4px]" : "opacity-100 scale-100 blur-0"
+                }`}
               sizes="100vw"
             />
             {/* Halftone dot grid pattern overlay to make the image look crisp and textured */}
@@ -446,13 +532,12 @@ export default function HomePage() {
           </div>
 
           {/* Nội dung thông tin phim Hero (Cụm bên trái) */}
-          <div className={`container mx-auto px-6 mb-16 md:mb-20 z-10 max-w-7xl space-y-5 transition-all duration-300 ease-out ${
-            isTransitioning ? "opacity-0 -translate-x-4 blur-[2px]" : "opacity-100 translate-x-0 blur-0"
-          }`}>
+          <div className={`container mx-auto px-6 mb-16 md:mb-20 z-10 max-w-7xl space-y-5 transition-all duration-300 ease-out ${isTransitioning ? "opacity-0 -translate-x-4 blur-[2px]" : "opacity-100 translate-x-0 blur-0"
+            }`}>
             <div className="inline-flex items-center gap-2 bg-pink-500/10 border border-pink-500/30 px-3 py-1 rounded-full text-[11px] text-pink-400 font-bold tracking-wider uppercase select-none">
               <Flame size={13} className="fill-pink-400 animate-pulse" /> PHIM MỚI CẬP BẾN RẠP
             </div>
-            
+
             <div className="space-y-2.5">
               {logoUrl ? (
                 <div className="relative h-20 md:h-28 flex items-center mb-1">
@@ -526,7 +611,7 @@ export default function HomePage() {
             {/* Nhóm nút tương tác chính */}
             <div className="flex items-center gap-3.5 pt-3">
               {/* Nút Play to lớn màu Hồng */}
-              <button 
+              <button
                 onClick={() => router.push(`/movie/${activeMovie.slug}`)}
                 className="w-14 h-14 rounded-full bg-pink-500 hover:bg-pink-600 flex items-center justify-center shadow-lg shadow-pink-500/25 hover:scale-110 active:scale-95 transition-all duration-300 group"
               >
@@ -536,11 +621,10 @@ export default function HomePage() {
               {/* Nút Yêu thích trái tim */}
               <button
                 onClick={handleHeroFavoriteToggle}
-                className={`w-12 h-12 rounded-full border flex items-center justify-center backdrop-blur-md transition-all duration-300 active:scale-95 ${
-                  isFavorited 
-                    ? "bg-rose-500/20 border-rose-500 text-rose-500 shadow-md shadow-rose-500/25 scale-105" 
-                    : "bg-zinc-900/60 border-zinc-800/80 hover:border-zinc-700 text-zinc-300 hover:text-white"
-                }`}
+                className={`w-12 h-12 rounded-full border flex items-center justify-center backdrop-blur-md transition-all duration-300 active:scale-95 ${isFavorited
+                  ? "bg-rose-500/20 border-rose-500 text-rose-500 shadow-md shadow-rose-500/25 scale-105"
+                  : "bg-zinc-900/60 border-zinc-800/80 hover:border-zinc-700 text-zinc-300 hover:text-white"
+                  }`}
               >
                 <Heart className={`transition-transform duration-300 ${isFavorited ? "fill-rose-500 scale-105" : ""}`} size={20} />
               </button>
@@ -563,11 +647,10 @@ export default function HomePage() {
                 <div
                   key={movie._id}
                   onClick={() => handleThumbnailClick(index)}
-                  className={`relative w-28 h-16 rounded-xl overflow-hidden cursor-pointer transition-all duration-300 ${
-                    isActive 
-                      ? "border-2 border-pink-500 ring-4 ring-pink-500/25 scale-105 opacity-100 shadow-md shadow-pink-500/10" 
-                      : "border border-zinc-800/80 opacity-50 hover:opacity-90 hover:scale-[1.02]"
-                  }`}
+                  className={`relative w-28 h-16 rounded-xl overflow-hidden cursor-pointer transition-all duration-300 ${isActive
+                    ? "border-2 border-pink-500 ring-4 ring-pink-500/25 scale-105 opacity-100 shadow-md shadow-pink-500/10"
+                    : "border border-zinc-800/80 opacity-50 hover:opacity-90 hover:scale-[1.02]"
+                    }`}
                 >
                   <Image
                     src={backdropCache[movie.slug] || getImageUrl(movie.thumb_url || movie.poster_url)}

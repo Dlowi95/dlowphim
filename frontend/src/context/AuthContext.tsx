@@ -9,8 +9,10 @@ interface User {
   email: string;
   displayName: string;
   avatar?: string;
+  gender?: string;
   favorites?: string[];
   watchHistory?: any[];
+  playlists?: { id: string; name: string; movies: string[] }[];
   role?: string;
 }
 
@@ -25,6 +27,10 @@ interface AuthContextType {
   showToast: (message: string, type: "success" | "error" | "warning") => void;
   toggleFavorite: (slug: string) => Promise<boolean>;
   refreshUser: () => Promise<void>;
+  createPlaylist: (name: string) => Promise<boolean>;
+  deletePlaylist: (playlistId: string) => Promise<boolean>;
+  updatePlaylistName: (playlistId: string, name: string) => Promise<boolean>;
+  toggleMovieInPlaylist: (playlistId: string, movieSlug: string) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -280,6 +286,136 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     return false;
   };
 
+  const createPlaylist = async (name: string): Promise<boolean> => {
+    if (!user) {
+      showAuthToast();
+      return false;
+    }
+    try {
+      const token = Cookies.get("token");
+      const res = await fetch(`${API_URL}/auth/playlists`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name }),
+      });
+
+      if (res.ok) {
+        const playlists = await res.json();
+        setUser(prev => {
+          if (!prev) return null;
+          return { ...prev, playlists };
+        });
+        showToast("Tạo danh sách phát thành công", "success");
+        return true;
+      }
+    } catch (e) {
+      console.error("Lỗi tạo danh sách phát:", e);
+    }
+    return false;
+  };
+
+  const deletePlaylist = async (playlistId: string): Promise<boolean> => {
+    if (!user) {
+      showAuthToast();
+      return false;
+    }
+    try {
+      const token = Cookies.get("token");
+      const res = await fetch(`${API_URL}/auth/playlists/${playlistId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.ok) {
+        const playlists = await res.json();
+        setUser(prev => {
+          if (!prev) return null;
+          return { ...prev, playlists };
+        });
+        showToast("Xóa danh sách phát thành công", "success");
+        return true;
+      }
+    } catch (e) {
+      console.error("Lỗi xóa danh sách phát:", e);
+    }
+    return false;
+  };
+
+  const updatePlaylistName = async (playlistId: string, name: string): Promise<boolean> => {
+    if (!user) {
+      showAuthToast();
+      return false;
+    }
+    try {
+      const token = Cookies.get("token");
+      const res = await fetch(`${API_URL}/auth/playlists/${playlistId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name }),
+      });
+
+      if (res.ok) {
+        const playlists = await res.json();
+        setUser(prev => {
+          if (!prev) return null;
+          return { ...prev, playlists };
+        });
+        showToast("Đổi tên danh sách phát thành công", "success");
+        return true;
+      }
+    } catch (e) {
+      console.error("Lỗi đổi tên danh sách phát:", e);
+    }
+    return false;
+  };
+
+  const toggleMovieInPlaylist = async (playlistId: string, movieSlug: string): Promise<boolean> => {
+    if (!user) {
+      showAuthToast();
+      return false;
+    }
+    try {
+      const token = Cookies.get("token");
+      const res = await fetch(`${API_URL}/auth/playlists/${playlistId}/toggle`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ movieSlug }),
+      });
+
+      if (res.ok) {
+        const playlists = await res.json();
+        setUser(prev => {
+          if (!prev) return null;
+          return { ...prev, playlists };
+        });
+        
+        const currentP = playlists.find((p: any) => p.id === playlistId);
+        const hasMovie = currentP?.movies?.includes(movieSlug);
+        
+        if (hasMovie) {
+          showToast(`Đã thêm phim vào danh sách "${currentP.name}"`, "success");
+        } else {
+          showToast(`Đã xóa phim khỏi danh sách "${currentP?.name || ""}"`, "success");
+        }
+        return true;
+      }
+    } catch (e) {
+      console.error("Lỗi cập nhật phim trong danh sách phát:", e);
+    }
+    return false;
+  };
+
   const refreshUser = async () => {
     const token = Cookies.get("token");
     if (token) {
@@ -300,6 +436,10 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
         showToast,
         toggleFavorite,
         refreshUser,
+        createPlaylist,
+        deletePlaylist,
+        updatePlaylistName,
+        toggleMovieInPlaylist,
       }}
     >
       {children}

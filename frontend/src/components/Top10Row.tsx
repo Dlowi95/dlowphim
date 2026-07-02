@@ -5,6 +5,8 @@ import { Loader2, Flame } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cleanMovieName, cleanSlug } from "@/utils/movieUtils";
 import MovieHoverPopup from "./MovieHoverPopup";
+import { getProxyUrl } from "@/utils/api";
+import Image from "next/image";
 
 interface Movie {
   _id: string;
@@ -193,6 +195,7 @@ const getAgeRating = (name: string, categories: any[] = []) => {
 export default function Top10Row() {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tmdbCache, setTmdbCache] = useState<Record<string, { backdropUrl: string; posterUrl: string }>>({});
 
   // Drag-to-scroll states
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -211,8 +214,8 @@ export default function Top10Row() {
         const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
 
         const [res1, res2] = await Promise.all([
-          fetch("https://ophim1.com/v1/api/danh-sach/phim-bo?page=1", { signal: controller.signal }),
-          fetch("https://ophim1.com/v1/api/danh-sach/phim-bo?page=2", { signal: controller.signal })
+          fetch(getProxyUrl("https://ophim1.com/v1/api/danh-sach/phim-bo?page=1"), { signal: controller.signal }),
+          fetch(getProxyUrl("https://ophim1.com/v1/api/danh-sach/phim-bo?page=2"), { signal: controller.signal })
         ]);
 
         clearTimeout(timeoutId);
@@ -246,7 +249,36 @@ export default function Top10Row() {
           });
 
           // Slice top 10
-          setMovies(uniqueItems.slice(0, 10));
+          const top10 = uniqueItems.slice(0, 10);
+          setMovies(top10);
+
+          // Cào thêm ảnh sắc nét từ TMDB song song qua backend proxy cache
+          const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+          const tmdbPromises = top10.map(async (movie) => {
+            try {
+              const tmdbRes = await fetch(
+                `${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`
+              );
+              if (tmdbRes.ok) {
+                const tmdbData = await tmdbRes.json();
+                return { slug: movie.slug, data: tmdbData };
+              }
+            } catch (e) {
+              // bỏ qua
+            }
+            return { slug: movie.slug, data: null };
+          });
+          const tmdbResults = await Promise.all(tmdbPromises);
+          const cacheUpdate: Record<string, any> = {};
+          tmdbResults.forEach((res) => {
+            if (res.data) {
+              cacheUpdate[res.slug] = {
+                backdropUrl: res.data.backdropUrl || "",
+                posterUrl: res.data.posterUrl || "",
+              };
+            }
+          });
+          setTmdbCache(cacheUpdate);
         } else {
           setMovies(FALLBACK_TOP_10);
         }
@@ -326,12 +358,14 @@ export default function Top10Row() {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUpOrLeave}
         onMouseLeave={handleMouseUpOrLeave}
-        className={`flex overflow-x-auto no-scrollbar w-full pt-6 pb-12 gap-5 select-none ${
+        className={`flex overflow-x-auto no-scrollbar w-full pt-6 pb-12 gap-4 select-none ${
           isDragging ? "cursor-grabbing" : "cursor-grab"
         }`}
         style={{
           msOverflowStyle: "none",
-          scrollbarWidth: "none"
+          scrollbarWidth: "none",
+          perspective: "800px",
+          transformStyle: "preserve-3d"
         }}
       >
         {movies.map((movie, index) => (
@@ -340,6 +374,7 @@ export default function Top10Row() {
             movie={movie}
             index={index}
             wasDraggingRef={wasDraggingRef}
+            tmdbCache={tmdbCache}
           />
         ))}
       </div>
@@ -351,9 +386,10 @@ interface Top10MovieCardProps {
   movie: Movie;
   index: number;
   wasDraggingRef: React.MutableRefObject<boolean>;
+  tmdbCache: Record<string, { backdropUrl: string; posterUrl: string }>;
 }
 
-function Top10MovieCard({ movie, index, wasDraggingRef }: Top10MovieCardProps) {
+function Top10MovieCard({ movie, index, wasDraggingRef, tmdbCache }: Top10MovieCardProps) {
   const [mounted, setMounted] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [showPopup, setShowPopup] = useState(false);
@@ -471,15 +507,16 @@ function Top10MovieCard({ movie, index, wasDraggingRef }: Top10MovieCardProps) {
   };
 
   // Sizing of cards: slightly wider and prominent so 1 to 5 fits nicely
-  const cardWidthClass = "w-[200px] sm:w-[220px] md:w-[236px] shrink-0";
+  const cardWidthClass = "w-[210px] sm:w-[245px] md:w-[284px] shrink-0";
   const zIndexStyle = isHovered ? 999 : 10;
 
   // Odd ranks tilt right (rotateY negative), Even ranks tilt left (rotateY positive)
   // Perspective restored to 1000px and rotateY reduced to 15deg (gentler, premium 3D wave accordion look)
+  // Odd ranks tilt left (rotateY positive), Even ranks tilt right (rotateY negative) to match Cobephim layout
   const isOdd = (index + 1) % 2 !== 0;
   const defaultTransform = isOdd
-    ? "perspective(1000px) rotateY(-15deg) rotateX(2deg) rotateZ(-1.5deg) scale(0.97)"
-    : "perspective(1000px) rotateY(15deg) rotateX(2deg) rotateZ(1.5deg) scale(0.97)";
+    ? "rotateY(22deg) rotateX(1deg) rotateZ(1deg) scale(0.95)"
+    : "rotateY(-22deg) rotateX(1deg) rotateZ(-1deg) scale(0.95)";
 
   return (
     <div
@@ -487,7 +524,7 @@ function Top10MovieCard({ movie, index, wasDraggingRef }: Top10MovieCardProps) {
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onClick={handleClick}
-      className={`${cardWidthClass} cursor-pointer select-none relative group/top10`}
+      className={`${cardWidthClass} cursor-pointer select-none relative group/top10 -mx-1.5 sm:-mx-2 md:-mx-2.5`}
       style={{ zIndex: zIndexStyle }}
     >
       <div className="relative flex flex-col h-full">
@@ -497,7 +534,7 @@ function Top10MovieCard({ movie, index, wasDraggingRef }: Top10MovieCardProps) {
           className="relative overflow-hidden w-full aspect-[2/3] bg-zinc-900 border-[3px] border-zinc-800/60 rounded-2xl transition-all duration-300 ease-out origin-center group-hover/top10:rotate-0 group-hover/top10:skew-y-0 group-hover/top10:scale-105 group-hover/top10:border-pink-500"
           style={{
             transform: isHovered
-              ? "perspective(1000px) rotateY(0deg) rotateX(0deg) rotateZ(0deg) scale(1.05)"
+              ? "rotateY(0deg) rotateX(0deg) rotateZ(0deg) scale(1.05)"
               : defaultTransform,
             boxShadow: isHovered 
               ? "0 0 35px 8px rgba(236, 72, 153, 0.85), 0 0 15px 3px rgba(236, 72, 153, 0.45)" 
@@ -506,13 +543,12 @@ function Top10MovieCard({ movie, index, wasDraggingRef }: Top10MovieCardProps) {
             maskImage: "radial-gradient(white, black)"
           }}
         >
-          <img
-            src={getImageUrl(movie)}
+          <Image
+            src={tmdbCache[movie.slug]?.posterUrl || getImageUrl(movie)}
             alt={cleanedName}
-            referrerPolicy="no-referrer"
-            className="w-full h-full object-cover rounded-2xl transition-transform duration-300 group-hover/top10:scale-105"
-            loading="lazy"
-            decoding="async"
+            fill
+            className="object-cover rounded-2xl transition-transform duration-300 group-hover/top10:scale-105"
+            sizes="(max-width: 768px) 150px, 200px"
           />
 
           

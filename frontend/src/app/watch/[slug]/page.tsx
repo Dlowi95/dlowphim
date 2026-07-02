@@ -3,7 +3,7 @@
 import React, { useEffect, useState, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Send, Sparkles, Tv, HelpCircle, Plus, Users, Flag, X } from "lucide-react";
+import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Send, Sparkles, Tv, HelpCircle, Plus, Users, Flag, X, Check } from "lucide-react";
 import CommentRatingSection from "@/components/CommentRatingSection";
 import { cleanMovieName } from "@/utils/movieUtils";
 import MovieCard from "@/components/MovieCard";
@@ -65,7 +65,7 @@ function WatchContent({ slug }: { slug: string }) {
   const [error, setError] = useState<string | null>(null);
   const [tmdbBackdrop, setTmdbBackdrop] = useState<string | null>(null);
 
-  const { user, toggleFavorite: toggleFavoriteCtx, showToast } = useAuth();
+  const { user, toggleFavorite: toggleFavoriteCtx, showToast, createPlaylist, toggleMovieInPlaylist } = useAuth();
 
   // States phát phim
   const [activeServerIndex, setActiveServerIndex] = useState(0);
@@ -78,6 +78,21 @@ function WatchContent({ slug }: { slug: string }) {
   const [autoplayNext, setAutoplayNext] = useState(false);
   const [skipIntro, setSkipIntro] = useState(false);
   const [isHlsPlaying, setIsHlsPlaying] = useState(false);
+
+  // Custom playlists states
+  const [showPlaylistDropdown, setShowPlaylistDropdown] = useState(false);
+  const [isCreatingPlaylist, setIsCreatingPlaylist] = useState(false);
+  const [newPlaylistName, setNewPlaylistName] = useState("");
+
+  const handleQuickCreatePlaylist = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPlaylistName.trim()) return;
+    const success = await createPlaylist(newPlaylistName.trim());
+    if (success) {
+      setNewPlaylistName("");
+      setIsCreatingPlaylist(false);
+    }
+  };
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const hasSkippedIntro = React.useRef(false);
   const lastHistorySavedTime = React.useRef<number>(0);
@@ -207,21 +222,22 @@ function WatchContent({ slug }: { slug: string }) {
           // Cào thêm ảnh nét từ TMDB cho watch page
           const tmdbId = ophimDetail.tmdb?.id;
           const tmdbType = ophimDetail.tmdb?.type || "movie";
-          if (tmdbId) {
+          if (tmdbId || ophimDetail.name) {
             (async () => {
               try {
-                const tmdbApiKey = await getTmdbApiKey(API_URL);
-                const tmdbRes = await fetch(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId}?api_key=${tmdbApiKey}&language=vi`);
-                if (tmdbRes.ok) {
-                  const tmdbData = await tmdbRes.json();
-                  if (tmdbData.backdrop_path) {
-                    setTmdbBackdrop(`https://image.tmdb.org/t/p/w1280${tmdbData.backdrop_path}`);
-                  } else if (tmdbData.poster_path) {
-                    setTmdbBackdrop(`https://image.tmdb.org/t/p/w1280${tmdbData.poster_path}`);
+                const proxyRes = await fetch(
+                  `${API_URL}/movies/logo/${slug}?title=${encodeURIComponent(ophimDetail.origin_name || ophimDetail.name)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`
+                );
+                if (proxyRes.ok) {
+                  const proxyData = await proxyRes.json();
+                  if (proxyData.backdropUrl) {
+                    setTmdbBackdrop(proxyData.backdropUrl);
+                  } else if (proxyData.posterUrl) {
+                    setTmdbBackdrop(proxyData.posterUrl);
                   }
                 }
               } catch (e) {
-                console.error("Lỗi cào TMDB ảnh cho WatchPage:", e);
+                console.error("Lỗi cào TMDB ảnh cho WatchPage qua proxy:", e);
               }
             })();
           }
@@ -952,12 +968,88 @@ function WatchContent({ slug }: { slug: string }) {
                     <span>Yêu thích</span>
                   </button>
 
-                  <button
-                    className="flex items-center gap-1 text-zinc-400 hover:text-white transition-all cursor-pointer bg-transparent border-none hover:bg-zinc-800/30 px-2 py-1 rounded-lg"
-                  >
-                    <Plus size={14} />
-                    <span>Thêm vào</span>
-                  </button>
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowPlaylistDropdown(!showPlaylistDropdown)}
+                      className="flex items-center gap-1 text-zinc-400 hover:text-white transition-all cursor-pointer bg-transparent border-none hover:bg-zinc-800/30 px-2 py-1 rounded-lg"
+                    >
+                      <Plus size={14} />
+                      <span>Thêm vào</span>
+                    </button>
+
+                    {/* Dropdown list các danh sách phát */}
+                    {showPlaylistDropdown && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-40 bg-transparent cursor-default" 
+                          onClick={() => {
+                            setShowPlaylistDropdown(false);
+                            setIsCreatingPlaylist(false);
+                            setNewPlaylistName("");
+                          }}
+                        />
+                        <div className="absolute bottom-9 left-0 z-50 w-56 bg-[#12131b]/95 border border-zinc-800 rounded-2xl p-3 shadow-2xl space-y-2.5 text-left animate-in fade-in slide-in-from-bottom-2 duration-150">
+                          <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Thêm vào danh sách</p>
+                          
+                          <div className="max-h-40 overflow-y-auto no-scrollbar space-y-1">
+                            {user?.playlists && user.playlists.length > 0 ? (
+                              user.playlists.map((playlist) => {
+                                const hasMovie = playlist.movies?.includes(movie?.slug || "");
+                                return (
+                                  <div
+                                    key={playlist.id}
+                                    onClick={() => toggleMovieInPlaylist(playlist.id, movie?.slug || "")}
+                                    className="flex items-center justify-between p-2 rounded-xl hover:bg-zinc-900/60 cursor-pointer transition-colors"
+                                  >
+                                    <span className="text-xs font-bold text-zinc-300 truncate max-w-[150px]">{playlist.name}</span>
+                                    {hasMovie ? (
+                                      <Check size={13} className="text-pink-500 stroke-[3]" />
+                                    ) : (
+                                      <Plus size={13} className="text-zinc-650" />
+                                    )}
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <p className="text-[11px] text-zinc-550 px-1 py-2 font-medium">Chưa có danh sách phát nào</p>
+                            )}
+                          </div>
+                          
+                          <div className="border-t border-zinc-850 pt-2.5">
+                            {isCreatingPlaylist ? (
+                              <form onSubmit={handleQuickCreatePlaylist} className="flex gap-1.5 w-full min-w-0 items-center">
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="Tên..."
+                                  value={newPlaylistName}
+                                  onChange={(e) => setNewPlaylistName(e.target.value)}
+                                  className="flex-1 min-w-0 h-7.5 bg-zinc-900 border border-zinc-800 focus:border-pink-500 rounded-lg px-2 text-xs text-zinc-200 outline-none font-semibold"
+                                  maxLength={30}
+                                  autoFocus
+                                />
+                                <button
+                                  type="submit"
+                                  className="h-7.5 px-2.5 bg-pink-500 hover:bg-pink-600 text-white font-extrabold text-[10px] rounded-lg active:scale-95 transition-all shrink-0"
+                                >
+                                  Thêm
+                                </button>
+                              </form>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setIsCreatingPlaylist(true)}
+                                className="w-full h-7.5 border border-zinc-800 hover:border-zinc-700 bg-zinc-900/30 hover:bg-zinc-900/60 text-zinc-400 hover:text-white font-extrabold text-[10px] rounded-lg flex items-center justify-center gap-1 transition-all"
+                              >
+                                <Plus size={10} className="stroke-[3]" />
+                                <span>Tạo danh sách mới</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
 
                   <button
                     onClick={() => setAutoplayNext(!autoplayNext)}

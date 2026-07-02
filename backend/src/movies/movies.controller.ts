@@ -36,8 +36,7 @@ export class MoviesController {
     @Query('tmdbId') tmdbId?: string,
     @Query('tmdbType') tmdbType?: string,
   ) {
-    const logoUrl = await this.moviesService.getMovieLogo(slug, title, tmdbId, tmdbType);
-    return { logoUrl };
+    return this.moviesService.getMovieLogo(slug, title, tmdbId, tmdbType);
   }
 
   @Get('ophim-proxy')

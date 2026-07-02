@@ -1,6 +1,6 @@
-import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { OAuth2Client } from 'google-auth-library';
@@ -193,9 +193,38 @@ export class AuthService {
       email: user.email,
       displayName: user.displayName,
       avatar: user.avatar,
+      gender: user.gender || 'other',
       favorites: user.favorites || [],
       watchHistory: user.watchHistory || [],
+      playlists: user.playlists || [],
       role: user.role || 'member',
+    };
+  }
+
+  async updateProfile(userId: string, updateDto: { displayName?: string; gender?: string; avatar?: string }) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('Không tìm thấy người dùng');
+    }
+
+    if (updateDto.displayName !== undefined) {
+      user.displayName = updateDto.displayName.trim();
+    }
+    if (updateDto.gender !== undefined) {
+      user.gender = updateDto.gender;
+    }
+    if (updateDto.avatar !== undefined) {
+      user.avatar = updateDto.avatar;
+    }
+
+    await user.save();
+    return {
+      id: user._id,
+      email: user.email,
+      displayName: user.displayName,
+      avatar: user.avatar,
+      gender: user.gender,
+      role: user.role,
     };
   }
 
@@ -360,5 +389,79 @@ export class AuthService {
     }
     await this.userModel.findByIdAndDelete(userId).exec();
     return { message: 'Đã xóa người dùng thành công' };
+  }
+
+  async createPlaylist(userId: string, name: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('Không tìm thấy người dùng');
+    }
+    if (!user.playlists) {
+      user.playlists = [];
+    }
+    const newPlaylist = {
+      id: new Types.ObjectId().toString(),
+      name: name.trim(),
+      movies: [],
+    };
+    user.playlists.push(newPlaylist);
+    user.markModified('playlists');
+    await user.save();
+    return user.playlists;
+  }
+
+  async deletePlaylist(userId: string, playlistId: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('Không tìm thấy người dùng');
+    }
+    if (!user.playlists) {
+      user.playlists = [];
+    }
+    user.playlists = user.playlists.filter((p) => p.id !== playlistId);
+    user.markModified('playlists');
+    await user.save();
+    return user.playlists;
+  }
+
+  async updatePlaylistName(userId: string, playlistId: string, name: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('Không tìm thấy người dùng');
+    }
+    if (!user.playlists) {
+      user.playlists = [];
+    }
+    const playlist = user.playlists.find((p) => p.id === playlistId);
+    if (!playlist) {
+      throw new NotFoundException('Không tìm thấy danh sách phát');
+    }
+    playlist.name = name.trim();
+    user.markModified('playlists');
+    await user.save();
+    return user.playlists;
+  }
+
+  async toggleMovieInPlaylist(userId: string, playlistId: string, movieSlug: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('Không tìm thấy người dùng');
+    }
+    if (!user.playlists) {
+      user.playlists = [];
+    }
+    const playlist = user.playlists.find((p) => p.id === playlistId);
+    if (!playlist) {
+      throw new NotFoundException('Không tìm thấy danh sách phát');
+    }
+    const movieIndex = playlist.movies.indexOf(movieSlug);
+    if (movieIndex > -1) {
+      playlist.movies.splice(movieIndex, 1);
+    } else {
+      playlist.movies.push(movieSlug);
+    }
+    user.markModified('playlists');
+    await user.save();
+    return user.playlists;
   }
 }
