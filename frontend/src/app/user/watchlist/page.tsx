@@ -5,6 +5,7 @@ import { Plus, ListPlus, Folder, Edit3, Trash2, X, ChevronLeft, Loader2, Play, S
 import { useAuth } from "@/context/AuthContext";
 import { cleanMovieName } from "@/utils/movieUtils";
 import Link from "next/link";
+import Pagination from "@/components/Pagination";
 
 interface MovieDetails {
   slug: string;
@@ -22,12 +23,19 @@ interface Playlist {
 }
 
 export default function UserWatchlistPage() {
-  const { user, createPlaylist, deletePlaylist, updatePlaylistName, toggleMovieInPlaylist } = useAuth();
+  const { user, createPlaylist, deletePlaylist, updatePlaylistName, toggleMovieInPlaylist, showToast } = useAuth();
   
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
   
   const [playlistMovies, setPlaylistMovies] = useState<MovieDetails[]>([]);
   const [loadingMovies, setLoadingMovies] = useState(false);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const playlistsPerPage = 9;
+  
+  const [movieCurrentPage, setMovieCurrentPage] = useState(1);
+  const moviesPerPage = 12;
   
   // Modals state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -36,8 +44,15 @@ export default function UserWatchlistPage() {
   
   const [editingPlaylist, setEditingPlaylist] = useState<Playlist | null>(null);
   const [editName, setEditName] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const playlists: Playlist[] = user?.playlists || [];
+
+  const totalPages = Math.ceil(playlists.length / playlistsPerPage);
+  const displayedPlaylists = playlists.slice((currentPage - 1) * playlistsPerPage, currentPage * playlistsPerPage);
+
+  const totalMoviePages = Math.ceil(playlistMovies.length / moviesPerPage);
+  const displayedMovies = playlistMovies.slice((movieCurrentPage - 1) * moviesPerPage, movieCurrentPage * moviesPerPage);
 
   // Đồng bộ lại selectedPlaylist khi user data thay đổi (ví dụ khi xóa phim khỏi playlist)
   useEffect(() => {
@@ -50,6 +65,11 @@ export default function UserWatchlistPage() {
       }
     }
   }, [user?.playlists]);
+
+  // Reset movie pagination when active playlist changes
+  useEffect(() => {
+    setMovieCurrentPage(1);
+  }, [selectedPlaylist?.id]);
 
   // Load chi tiết các phim trong playlist được chọn
   useEffect(() => {
@@ -100,10 +120,18 @@ export default function UserWatchlistPage() {
 
   const handleCreatePlaylist = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!playlistName.trim()) return;
+    const nameTrim = playlistName.trim();
+    if (!nameTrim) return;
+
+    // Kiểm tra trùng tên danh sách phát
+    const isDuplicate = playlists.some(p => p.name.toLowerCase() === nameTrim.toLowerCase());
+    if (isDuplicate) {
+      showToast(`Danh sách "${nameTrim}" đã tồn tại! Vui lòng chọn tên khác.`, "error");
+      return;
+    }
 
     setIsSubmitting(true);
-    const success = await createPlaylist(playlistName.trim());
+    const success = await createPlaylist(nameTrim);
     setIsSubmitting(false);
     if (success) {
       setPlaylistName("");
@@ -113,10 +141,20 @@ export default function UserWatchlistPage() {
 
   const handleUpdateName = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingPlaylist || !editName.trim()) return;
+    const nameTrim = editName.trim();
+    if (!editingPlaylist || !nameTrim) return;
+
+    // Kiểm tra trùng tên danh sách phát
+    const isDuplicate = playlists.some(
+      p => p.id !== editingPlaylist.id && p.name.toLowerCase() === nameTrim.toLowerCase()
+    );
+    if (isDuplicate) {
+      showToast(`Danh sách "${nameTrim}" đã tồn tại!`, "error");
+      return;
+    }
 
     setIsSubmitting(true);
-    const success = await updatePlaylistName(editingPlaylist.id, editName.trim());
+    const success = await updatePlaylistName(editingPlaylist.id, nameTrim);
     setIsSubmitting(false);
     if (success) {
       setEditingPlaylist(null);
@@ -124,11 +162,9 @@ export default function UserWatchlistPage() {
     }
   };
 
-  const handleDeletePlaylist = async (e: React.MouseEvent, id: string) => {
+  const handleDeletePlaylistClick = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (confirm("Bạn có chắc chắn muốn xóa danh sách phát này?")) {
-      await deletePlaylist(id);
-    }
+    setDeleteTarget(id);
   };
 
   const handleRemoveMovie = async (e: React.MouseEvent, movieSlug: string) => {
@@ -175,48 +211,61 @@ export default function UserWatchlistPage() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 pt-4">
-              {playlists.map((playlist) => (
-                <div
-                  key={playlist.id}
-                  onClick={() => setSelectedPlaylist(playlist)}
-                  className="bg-[#12131b]/60 hover:bg-[#151621] border border-zinc-800/40 hover:border-pink-500/20 p-5 rounded-2xl cursor-pointer transition-all duration-300 relative group flex flex-col justify-between min-h-[120px] shadow-sm hover:shadow-md hover:shadow-pink-500/5 hover:-translate-y-0.5"
-                >
-                  <div className="space-y-2">
-                    <h3 className="font-extrabold text-base text-zinc-200 group-hover:text-pink-500 transition-colors truncate pr-8">
-                      {playlist.name}
-                    </h3>
-                    <div className="flex items-center gap-2 text-xs font-semibold text-zinc-450">
-                      <Play size={12} className="fill-zinc-500 stroke-none" />
-                      <span>{playlist.movies.length} phim</span>
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5 pt-4">
+                {displayedPlaylists.map((playlist) => (
+                  <div
+                    key={playlist.id}
+                    onClick={() => setSelectedPlaylist(playlist)}
+                    className="bg-[#12131b]/60 hover:bg-[#151621] border border-zinc-800/40 hover:border-pink-500/20 p-4 rounded-2xl cursor-pointer transition-all duration-300 relative group flex items-center justify-between shadow-sm hover:shadow-md hover:shadow-pink-500/5 hover:-translate-y-0.5"
+                  >
+                    <div className="space-y-1 min-w-0 pr-8 text-left">
+                      <h3 className="font-extrabold text-sm text-zinc-200 group-hover:text-pink-500 transition-colors truncate">
+                        {playlist.name}
+                      </h3>
+                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-550">
+                        <Play size={10} className="fill-zinc-550 stroke-none" />
+                        <span>{playlist.movies.length} phim</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                      {/* Nút sửa */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingPlaylist(playlist);
+                          setEditName(playlist.name);
+                        }}
+                        className="text-zinc-500 hover:text-pink-500 transition-colors p-1"
+                        title="Sửa tên"
+                      >
+                        <Edit3 size={13} />
+                      </button>
+                      {/* Nút xóa */}
+                      <button
+                        onClick={(e) => handleDeletePlaylistClick(e, playlist.id)}
+                        className="text-zinc-500 hover:text-red-500 transition-colors p-1"
+                        title="Xóa danh sách"
+                      >
+                        <Trash2 size={13} />
+                      </button>
                     </div>
                   </div>
+                ))}
+              </div>
 
-                  <div className="flex justify-end gap-3.5 pt-3.5 border-t border-zinc-850/50 mt-4">
-                    {/* Nút sửa */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingPlaylist(playlist);
-                        setEditName(playlist.name);
-                      }}
-                      className="text-zinc-500 hover:text-pink-500 transition-colors p-1"
-                      title="Sửa tên"
-                    >
-                      <Edit3 size={14} />
-                    </button>
-                    {/* Nút xóa */}
-                    <button
-                      onClick={(e) => handleDeletePlaylist(e, playlist.id)}
-                      className="text-zinc-500 hover:text-red-500 transition-colors p-1"
-                      title="Xóa danh sách"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+              {/* Nút Phân trang Client-side */}
+              {totalPages > 1 && (
+                <div className="pt-8 flex justify-center">
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={(page) => setCurrentPage(page)}
+                  />
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </>
       ) : (
@@ -264,47 +313,60 @@ export default function UserWatchlistPage() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4.5 pt-4">
-              {playlistMovies.map((movie) => (
-                <div key={movie.slug} className="group relative flex flex-col gap-2 bg-[#12131b]/30 border border-zinc-900/50 p-2.5 rounded-2xl hover:border-zinc-850 hover:bg-[#151621] transition-all">
-                  <Link href={`/movie/${movie.slug}`} className="block relative aspect-[2/3] w-full rounded-xl overflow-hidden bg-zinc-900">
-                    <img 
-                      src={getImageUrl(movie.thumb_url)} 
-                      alt={movie.name}
-                      className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-300"
-                    />
-                    <div className="absolute top-2 left-2 bg-pink-500 text-white text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md shadow-md">
-                      {movie.quality}
-                    </div>
-
-                    {/* Lớp phủ hover chơi phim */}
-                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all duration-300">
-                      <div className="w-10 h-10 rounded-full bg-pink-500 flex items-center justify-center shadow-lg transform translate-y-3 group-hover:translate-y-0 transition-all duration-300">
-                        <Play size={16} className="text-white fill-white ml-0.5" />
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4.5 pt-4">
+                {displayedMovies.map((movie) => (
+                  <div key={movie.slug} className="group relative flex flex-col gap-2 bg-[#12131b]/30 border border-zinc-900/50 p-2.5 rounded-2xl hover:border-zinc-850 hover:bg-[#151621] transition-all">
+                    <Link href={`/movie/${movie.slug}`} className="block relative aspect-[2/3] w-full rounded-xl overflow-hidden bg-zinc-900">
+                      <img 
+                        src={getImageUrl(movie.thumb_url)} 
+                        alt={movie.name}
+                        className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-300"
+                      />
+                      <div className="absolute top-2 left-2 bg-pink-500 text-white text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md shadow-md">
+                        {movie.quality}
                       </div>
-                    </div>
-                  </Link>
 
-                  {/* Nút xóa phim khỏi playlist */}
-                  <button
-                    onClick={(e) => handleRemoveMovie(e, movie.slug)}
-                    className="absolute top-4 right-4 w-7 h-7 rounded-full bg-black/80 backdrop-blur-md border border-zinc-800 hover:border-red-500/30 text-zinc-400 hover:text-red-500 flex items-center justify-center transition-all shadow-md cursor-pointer opacity-0 group-hover:opacity-100 z-10"
-                    title="Xóa khỏi danh sách"
-                  >
-                    <X size={14} className="stroke-[2.5]" />
-                  </button>
-
-                  <div className="text-left px-1 py-0.5">
-                    <Link href={`/movie/${movie.slug}`} className="block font-black text-sm text-zinc-200 group-hover:text-pink-500 transition-colors truncate">
-                      {cleanMovieName(movie.name)}
+                      {/* Lớp phủ hover chơi phim */}
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all duration-300">
+                        <div className="w-10 h-10 rounded-full bg-pink-500 flex items-center justify-center shadow-lg transform translate-y-3 group-hover:translate-y-0 transition-all duration-300">
+                          <Play size={16} className="text-white fill-white ml-0.5" />
+                        </div>
+                      </div>
                     </Link>
-                    <p className="text-[10px] text-zinc-500 truncate mt-0.5 leading-none">
-                      {movie.origin_name}
-                    </p>
+
+                    {/* Nút xóa phim khỏi playlist */}
+                    <button
+                      onClick={(e) => handleRemoveMovie(e, movie.slug)}
+                      className="absolute top-4 right-4 w-7 h-7 rounded-full bg-black/80 backdrop-blur-md border border-zinc-800 hover:border-red-500/30 text-zinc-400 hover:text-red-500 flex items-center justify-center transition-all shadow-md cursor-pointer opacity-0 group-hover:opacity-100 z-10"
+                      title="Xóa khỏi danh sách"
+                    >
+                      <X size={14} className="stroke-[2.5]" />
+                    </button>
+
+                    <div className="text-left px-1 py-0.5">
+                      <Link href={`/movie/${movie.slug}`} className="block font-black text-sm text-zinc-200 group-hover:text-pink-500 transition-colors truncate">
+                        {cleanMovieName(movie.name)}
+                      </Link>
+                      <p className="text-[10px] text-zinc-550 truncate mt-0.5 leading-none">
+                        {movie.origin_name}
+                      </p>
+                    </div>
                   </div>
+                ))}
+              </div>
+
+              {/* Nút Phân trang cho Phim trong Playlist */}
+              {totalMoviePages > 1 && (
+                <div className="pt-8 flex justify-center">
+                  <Pagination
+                    currentPage={movieCurrentPage}
+                    totalPages={totalMoviePages}
+                    onPageChange={(page) => setMovieCurrentPage(page)}
+                  />
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </>
       )}
@@ -396,6 +458,45 @@ export default function UserWatchlistPage() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* POPUP CONFIRMATION MODAL: XÁC NHẬN XÓA DANH SÁCH */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
+          <div className="w-full max-w-xs bg-[#12131b] border border-zinc-800 rounded-3xl p-5 shadow-2xl relative text-center animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center mx-auto mb-3">
+              <Trash2 size={20} className="stroke-[2.5]" />
+            </div>
+
+            <h3 className="text-sm font-black text-zinc-200 uppercase tracking-wider mb-1.5">Xóa danh sách?</h3>
+            <p className="text-[11px] text-zinc-450 leading-relaxed mb-5">
+              Bạn có chắc chắn muốn xóa danh sách phát này? Phim bên trong sẽ không thể khôi phục.
+            </p>
+
+            <div className="flex gap-3 justify-center">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="h-9 px-4 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all cursor-pointer min-w-[85px] border-none"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (deleteTarget) {
+                    await deletePlaylist(deleteTarget);
+                    setDeleteTarget(null);
+                    showToast("Đã xóa danh sách phát thành công", "success");
+                  }
+                }}
+                className="h-9 px-4 bg-red-500 hover:bg-red-650 active:scale-98 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-red-500/10 cursor-pointer min-w-[85px] border-none"
+              >
+                Xóa
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

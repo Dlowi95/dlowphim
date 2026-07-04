@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Navbar, NavbarBrand, NavbarContent, NavbarItem, Input, Button, useDisclosure, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Avatar } from "@heroui/react";
-import { Search, User, Loader2, ChevronDown, Play, Bell, ChevronUp, Wallet, Heart, Plus, History, LogOut } from "lucide-react";
+import { Navbar, NavbarBrand, NavbarContent, NavbarItem, Input, Button, useDisclosure, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Avatar, Popover, PopoverTrigger, PopoverContent } from "@heroui/react";
+import { Search, User, Loader2, ChevronDown, Play, Bell, ChevronUp, Wallet, Heart, Plus, History, LogOut, MessageSquare, Film, Info } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import AuthModal from "./AuthModal";
@@ -27,7 +27,35 @@ export default function NavbarComponent() {
   const router = useRouter();
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
-  const { user, loading, logout } = useAuth();
+  
+  const { 
+    user, 
+    loading, 
+    logout, 
+    unreadNotificationsCount, 
+    getUserNotifications, 
+    readSingleNotification, 
+    readAllNotifications 
+  } = useAuth();
+
+  // State lưu thông báo xem nhanh ở Navbar
+  const [recentNotifications, setRecentNotifications] = useState<any[]>([]);
+  const [isLoadingNotifs, setIsLoadingNotifs] = useState(false);
+
+  const loadRecentNotifs = async () => {
+    if (!user) return;
+    setIsLoadingNotifs(true);
+    try {
+      const data = await getUserNotifications(1, 5);
+      if (data && data.items) {
+        setRecentNotifications(data.items);
+      }
+    } catch (e) {
+      console.error("Lỗi tải thông báo xem nhanh:", e);
+    } finally {
+      setIsLoadingNotifs(false);
+    }
+  };
 
   // 1. Lắng nghe cuộn chuột để bật/tắt trạng thái trong suốt
   useEffect(() => {
@@ -422,15 +450,103 @@ export default function NavbarComponent() {
               </Button>
             ) : user ? (
               <div className="flex items-center gap-4">
-                {/* Nút Chuông Thông Báo */}
-                <Button
-                  isIconOnly
-                  radius="full"
-                  variant="light"
-                  className="bg-[#1c203e]/60 hover:bg-[#23284e] border border-zinc-800/60 w-10 h-10 flex items-center justify-center transition-all duration-200"
+                {/* Nút Chuông Thông Báo Popover (Tối ưu hóa bằng Popover để hiển thị hoàn hảo) */}
+                <Popover
+                  placement="bottom-end"
+                  onOpenChange={(isOpen) => isOpen && loadRecentNotifs()}
                 >
-                  <Bell size={18} className="text-white fill-white" />
-                </Button>
+                  <PopoverTrigger>
+                    <Button
+                      isIconOnly
+                      radius="full"
+                      variant="light"
+                      className="bg-[#1c203e]/60 hover:bg-[#23284e] border border-zinc-800/60 w-10 h-10 flex items-center justify-center transition-all duration-200 relative cursor-pointer select-none"
+                    >
+                      <Bell size={18} className="text-white fill-white" />
+                      {unreadNotificationsCount > 0 && (
+                        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-pink-500 text-white text-[9px] font-black rounded-full flex items-center justify-center px-1 border-2 border-[#12131b] z-50 animate-bounce">
+                          {unreadNotificationsCount > 9 ? "9+" : unreadNotificationsCount}
+                        </span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="bg-[#161a33] text-white border border-zinc-800 rounded-3xl p-4 w-[340px] shadow-[0_25px_60px_rgba(0,0,0,0.8)] block text-left">
+                    {/* Header */}
+                    <div className="flex items-center justify-between w-full border-b border-zinc-800/50 pb-2.5 mb-3">
+                      <span className="font-extrabold text-sm text-white uppercase tracking-wider">Thông báo</span>
+                      {unreadNotificationsCount > 0 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            readAllNotifications();
+                          }}
+                          className="text-[10px] font-black text-pink-500 hover:text-pink-400 uppercase tracking-wider transition-colors cursor-pointer border-none bg-transparent"
+                        >
+                          Đọc tất cả
+                        </button>
+                      )}
+                    </div>
+                    
+                    {/* List Items */}
+                    <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1 no-scrollbar">
+                      {isLoadingNotifs ? (
+                        <div className="py-8 text-center flex flex-col items-center justify-center gap-2">
+                          <Loader2 size={20} className="animate-spin text-pink-500" />
+                          <span className="text-xs text-zinc-500 font-medium">Đang tải...</span>
+                        </div>
+                      ) : recentNotifications.length === 0 ? (
+                        <div className="py-8 text-center flex flex-col items-center justify-center gap-1.5 text-zinc-500">
+                          <Bell size={24} className="stroke-[1.5]" />
+                          <span className="text-xs font-semibold">Không có thông báo mới nào</span>
+                        </div>
+                      ) : (
+                        recentNotifications.map((notif) => {
+                          let Icon = Info;
+                          let iconColor = "text-sky-500 bg-sky-500/10";
+                          if (notif.type === "reply") {
+                            Icon = MessageSquare;
+                            iconColor = "text-pink-500 bg-pink-500/10";
+                          } else if (notif.type === "movie_update") {
+                            Icon = Film;
+                            iconColor = "text-yellow-500 bg-yellow-500/10";
+                          }
+                          return (
+                            <div
+                              key={notif._id}
+                              onClick={() => {
+                                readSingleNotification(notif._id);
+                                if (notif.link) {
+                                  router.push(notif.link);
+                                }
+                              }}
+                              className={`flex items-start gap-3 w-full hover:bg-zinc-800/40 p-2.5 rounded-2xl transition-all cursor-pointer ${
+                                !notif.isRead ? "bg-pink-500/5 border-l-2 border-pink-500 pl-2" : ""
+                              }`}
+                            >
+                              <div className={`p-2 rounded-xl shrink-0 ${iconColor}`}>
+                                <Icon size={16} />
+                              </div>
+                              <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                                <span className="font-bold text-xs text-zinc-200 truncate">{notif.title}</span>
+                                <p className="text-[11px] text-zinc-400 font-medium line-clamp-2 leading-relaxed">{notif.content}</p>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="pt-2.5 border-t border-zinc-800/50 mt-2">
+                      <button
+                        onClick={() => router.push("/user/notifications")}
+                        className="w-full h-9 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white font-extrabold text-xs rounded-xl transition-all cursor-pointer border-none"
+                      >
+                        Xem tất cả thông báo
+                      </button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
 
                 {/* Dropdown Avatar Premium */}
                 <Dropdown
@@ -444,7 +560,7 @@ export default function NavbarComponent() {
                       <img
                         src={user.avatar || "/images/avatars/default.png"}
                         alt={user.displayName}
-                        className="w-10 h-10 rounded-full border border-zinc-700 shadow-md object-cover cursor-pointer hover:border-pink-500/50 transition-all duration-200"
+                        className="w-10 h-10 rounded-full border border-zinc-700 shadow-md object-cover cursor-pointer hover:border-pink-500/50 transition-all duration-200 avatar-smooth"
                         referrerPolicy="no-referrer"
                       />
                       <ChevronDown size={14} className="text-zinc-400 group-hover:text-white transition-colors" />

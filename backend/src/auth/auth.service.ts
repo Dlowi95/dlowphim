@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { OAuth2Client } from 'google-auth-library';
 import * as bcrypt from 'bcrypt';
 import { User, UserDocument } from './schemas/user.schema';
+import { UserNotification, UserNotificationDocument } from '../notifications/schemas/user-notification.schema';
 
 @Injectable()
 export class AuthService {
@@ -13,6 +14,7 @@ export class AuthService {
 
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
+    @InjectModel(UserNotification.name) private userNotificationModel: Model<UserNotificationDocument>,
     private jwtService: JwtService,
     private configService: ConfigService,
   ) {
@@ -64,6 +66,22 @@ export class AuthService {
     });
 
     await newUser.save();
+
+    // Tự động tạo thông báo chào mừng thành viên mới
+    try {
+      const welcomeNotif = new this.userNotificationModel({
+        userId: newUser._id,
+        type: 'system',
+        title: 'Chào mừng thành viên mới!',
+        content: `Chào mừng bạn đến với DlowPhim! Hãy cập nhật avatar và tạo danh sách phát đầu tiên để bắt đầu trải nghiệm nhé.`,
+        link: '/user/account',
+        isRead: false,
+      });
+      await welcomeNotif.save();
+    } catch (err) {
+      console.error('Lỗi tạo thông báo chào mừng:', err);
+    }
+
     return { message: 'Đăng ký thành công' };
   }
 
@@ -463,5 +481,31 @@ export class AuthService {
     user.markModified('playlists');
     await user.save();
     return user.playlists;
+  }
+
+  async clearHistoryItem(userId: string, movieSlug: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('Không tìm thấy người dùng');
+    }
+    if (user.watchHistory) {
+      user.watchHistory = user.watchHistory.filter(
+        (item) => item.movieSlug !== movieSlug,
+      );
+      user.markModified('watchHistory');
+      await user.save();
+    }
+    return { watchHistory: user.watchHistory || [] };
+  }
+
+  async clearAllHistory(userId: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('Không tìm thấy người dùng');
+    }
+    user.watchHistory = [];
+    user.markModified('watchHistory');
+    await user.save();
+    return { watchHistory: [] };
   }
 }

@@ -31,6 +31,15 @@ interface AuthContextType {
   deletePlaylist: (playlistId: string) => Promise<boolean>;
   updatePlaylistName: (playlistId: string, name: string) => Promise<boolean>;
   toggleMovieInPlaylist: (playlistId: string, movieSlug: string) => Promise<boolean>;
+  deleteHistoryItem: (movieSlug: string) => Promise<boolean>;
+  clearAllHistory: () => Promise<boolean>;
+  unreadNotificationsCount: number;
+  setUnreadNotificationsCount: React.Dispatch<React.SetStateAction<number>>;
+  fetchUnreadNotificationsCount: () => Promise<void>;
+  getUserNotifications: (page?: number, limit?: number) => Promise<any>;
+  readAllNotifications: () => Promise<boolean>;
+  readSingleNotification: (id: string) => Promise<boolean>;
+  clearAllNotifications: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -38,6 +47,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthContextProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -46,6 +56,7 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     localStorage.removeItem("dlowphim_favorites");
     localStorage.removeItem("dlowphim_history");
     setUser(null);
+    setUnreadNotificationsCount(0);
   };
 
   const syncUserData = async (token: string) => {
@@ -130,6 +141,7 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
         if (data.watchHistory) {
           localStorage.setItem("dlowphim_history", JSON.stringify(data.watchHistory));
         }
+        fetchUnreadNotificationsCount(token);
       } else {
         // Token has expired or is invalid
         if (res.status === 401) {
@@ -416,6 +428,186 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     return false;
   };
 
+  const deleteHistoryItem = async (movieSlug: string): Promise<boolean> => {
+    try {
+      const localHist = JSON.parse(localStorage.getItem("dlowphim_history") || "[]");
+      const filtered = localHist.filter((item: any) => item.movieSlug !== movieSlug);
+      localStorage.setItem("dlowphim_history", JSON.stringify(filtered));
+
+      if (user) {
+        const token = Cookies.get("token");
+        const res = await fetch(`${API_URL}/auth/history/clear/${movieSlug}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          setUser((prev) => {
+            if (!prev) return null;
+            return { ...prev, watchHistory: data.watchHistory || [] };
+          });
+          return true;
+        }
+      } else {
+        setUser((prev) => {
+          if (!prev) return null;
+          return { ...prev, watchHistory: filtered };
+        });
+        return true;
+      }
+    } catch (e) {
+      console.error("Lỗi xóa mục lịch sử:", e);
+    }
+    return false;
+  };
+
+  const clearAllHistory = async (): Promise<boolean> => {
+    try {
+      localStorage.removeItem("dlowphim_history");
+
+      if (user) {
+        const token = Cookies.get("token");
+        const res = await fetch(`${API_URL}/auth/history/clear-all`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (res.ok) {
+          setUser((prev) => {
+            if (!prev) return null;
+            return { ...prev, watchHistory: [] };
+          });
+          return true;
+        }
+      } else {
+        setUser((prev) => {
+          if (!prev) return null;
+          return { ...prev, watchHistory: [] };
+        });
+        return true;
+      }
+    } catch (e) {
+      console.error("Lỗi xóa toàn bộ lịch sử:", e);
+    }
+    return false;
+  };
+
+  const fetchUnreadNotificationsCount = async (passedToken?: string) => {
+    const token = passedToken || Cookies.get("token");
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_URL}/notifications/user?limit=1`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUnreadNotificationsCount(data.unreadCount || 0);
+      }
+    } catch (e) {
+      console.error("Lỗi lấy số lượng thông báo chưa đọc:", e);
+    }
+  };
+
+  const getUserNotifications = async (page = 1, limit = 15) => {
+    const token = Cookies.get("token");
+    if (!token) return { items: [], total: 0, unreadCount: 0 };
+    try {
+      const res = await fetch(`${API_URL}/notifications/user?page=${page}&limit=${limit}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUnreadNotificationsCount(data.unreadCount || 0);
+        return data;
+      }
+    } catch (e) {
+      console.error("Lỗi lấy danh sách thông báo:", e);
+    }
+    return { items: [], total: 0, unreadCount: 0 };
+  };
+
+  const readAllNotifications = async (): Promise<boolean> => {
+    const token = Cookies.get("token");
+    if (!token) return false;
+    try {
+      const res = await fetch(`${API_URL}/notifications/user/read-all`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        setUnreadNotificationsCount(0);
+        return true;
+      }
+    } catch (e) {
+      console.error("Lỗi đọc tất cả thông báo:", e);
+    }
+    return false;
+  };
+
+  const readSingleNotification = async (id: string): Promise<boolean> => {
+    const token = Cookies.get("token");
+    if (!token) return false;
+    try {
+      const res = await fetch(`${API_URL}/notifications/user/${id}/read`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        setUnreadNotificationsCount((prev) => Math.max(0, prev - 1));
+        return true;
+      }
+    } catch (e) {
+      console.error("Lỗi đọc thông báo:", e);
+    }
+    return false;
+  };
+
+  const clearAllNotifications = async (): Promise<boolean> => {
+    const token = Cookies.get("token");
+    if (!token) return false;
+    try {
+      const res = await fetch(`${API_URL}/notifications/user/clear`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        setUnreadNotificationsCount(0);
+        return true;
+      }
+    } catch (e) {
+      console.error("Lỗi xóa toàn bộ thông báo:", e);
+    }
+    return false;
+  };
+
+  useEffect(() => {
+    const token = Cookies.get("token");
+    if (token && user) {
+      fetchUnreadNotificationsCount(token);
+      
+      // Auto-refresh every 2 minutes
+      const interval = setInterval(() => {
+        fetchUnreadNotificationsCount();
+      }, 120000);
+      return () => clearInterval(interval);
+    }
+  }, [user?.id]);
+
   const refreshUser = async () => {
     const token = Cookies.get("token");
     if (token) {
@@ -440,6 +632,15 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
         deletePlaylist,
         updatePlaylistName,
         toggleMovieInPlaylist,
+        deleteHistoryItem,
+        clearAllHistory,
+        unreadNotificationsCount,
+        setUnreadNotificationsCount,
+        fetchUnreadNotificationsCount,
+        getUserNotifications,
+        readAllNotifications,
+        readSingleNotification,
+        clearAllNotifications,
       }}
     >
       {children}

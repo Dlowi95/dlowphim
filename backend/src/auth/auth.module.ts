@@ -5,11 +5,15 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { User, UserSchema } from './schemas/user.schema';
+import { UserNotification, UserNotificationSchema } from '../notifications/schemas/user-notification.schema';
 import { AuthGuard } from './guards/auth.guard';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
+    MongooseModule.forFeature([
+      { name: User.name, schema: UserSchema },
+      { name: UserNotification.name, schema: UserNotificationSchema },
+    ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({

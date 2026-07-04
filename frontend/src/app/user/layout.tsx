@@ -127,12 +127,12 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
             {/* Profile Avatar and Information */}
             <div className="border-t border-zinc-800/60 mt-8 pt-6 flex flex-col gap-4">
               <div className="flex items-center gap-3.5">
-                <div className="w-12 h-12 rounded-full bg-[#da251d] flex items-center justify-center shrink-0 border border-[#da251d]/40 shadow-lg select-none">
+                <div className="w-12 h-12 rounded-full bg-zinc-900 flex items-center justify-center shrink-0 border border-zinc-800 shadow-lg select-none">
                   {user.avatar ? (
                     <img 
                       src={user.avatar} 
                       alt={user.displayName}
-                      className="w-full h-full rounded-full object-cover"
+                      className="w-full h-full rounded-full object-cover avatar-smooth"
                       referrerPolicy="no-referrer"
                     />
                   ) : (

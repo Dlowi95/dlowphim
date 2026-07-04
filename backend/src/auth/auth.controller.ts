@@ -138,4 +138,18 @@ export class AuthController {
     const userId = req['user']?.sub;
     return this.authService.toggleMovieInPlaylist(userId, playlistId, movieSlug);
   }
+
+  @Delete('history/clear/:slug')
+  @UseGuards(AuthGuard)
+  async clearHistoryItem(@Req() req: express.Request, @Param('slug') movieSlug: string) {
+    const userId = req['user']?.sub;
+    return this.authService.clearHistoryItem(userId, movieSlug);
+  }
+
+  @Delete('history/clear-all')
+  @UseGuards(AuthGuard)
+  async clearAllHistory(@Req() req: express.Request) {
+    const userId = req['user']?.sub;
+    return this.authService.clearAllHistory(userId);
+  }
 }

@@ -297,6 +297,27 @@ function WatchContent({ slug }: { slug: string }) {
     fetchMovieDetail();
   }, [slug]);
 
+  // Tự động cuộn xuống khu vực bình luận nếu URL chứa hash #movie-comments
+  useEffect(() => {
+    if (!loading && movie) {
+      const handleScrollToComments = () => {
+        if (window.location.hash === "#movie-comments") {
+          setTimeout(() => {
+            const el = document.getElementById("movie-comments");
+            if (el) {
+              el.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+          }, 300);
+        }
+      };
+      
+      handleScrollToComments();
+      // Lắng nghe sự kiện đổi hash
+      window.addEventListener("hashchange", handleScrollToComments);
+      return () => window.removeEventListener("hashchange", handleScrollToComments);
+    }
+  }, [loading, movie]);
+
   // Fetch thêm nguồn từ KKPhim song song
   useEffect(() => {
     if (!slug || movie?.isCustom) return;

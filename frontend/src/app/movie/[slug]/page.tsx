@@ -209,6 +209,27 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
     fetchMovieDetail();
   }, [slug]);
 
+  // Tự động cuộn xuống khu vực bình luận nếu URL chứa hash #movie-comments
+  useEffect(() => {
+    if (!loading && movie) {
+      const handleScrollToComments = () => {
+        if (window.location.hash === "#movie-comments") {
+          setTimeout(() => {
+            const el = document.getElementById("movie-comments");
+            if (el) {
+              el.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+          }, 300);
+        }
+      };
+      
+      handleScrollToComments();
+      // Lắng nghe sự kiện đổi hash
+      window.addEventListener("hashchange", handleScrollToComments);
+      return () => window.removeEventListener("hashchange", handleScrollToComments);
+    }
+  }, [loading, movie]);
+
   // 2. Fetch phim liên quan dựa trên thể loại đầu tiên của phim hiện tại
   useEffect(() => {
     if (!movie || !movie.category || movie.category.length === 0) return;

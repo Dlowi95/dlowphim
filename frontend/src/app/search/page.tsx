@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 import MovieCard from "@/components/MovieCard";
 import { cleanSlug } from "@/utils/movieUtils";
 import Pagination from "@/components/Pagination";
+import { getProxyUrl } from "@/utils/api";
 
 function SearchContent() {
   const searchParams = useSearchParams();
@@ -31,7 +32,11 @@ function SearchContent() {
         if (keyword) {
           url = `https://ophim1.com/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&page=${pageUrl}`;
         } else if (genre) {
-          url = `https://ophim1.com/v1/api/the-loai/${genre}?page=${pageUrl}`;
+          if (genre === "hoat-hinh" || genre === "phim-chieu-rap") {
+            url = `https://ophim1.com/v1/api/danh-sach/${genre}?page=${pageUrl}`;
+          } else {
+            url = `https://ophim1.com/v1/api/the-loai/${genre}?page=${pageUrl}`;
+          }
         } else if (country) {
           url = `https://ophim1.com/v1/api/quoc-gia/${country}?page=${pageUrl}`;
         } else if (type) {
@@ -46,7 +51,7 @@ function SearchContent() {
           controller.abort();
         }, 6000); // 6 seconds timeout
 
-        const res = await fetch(url, { signal: controller.signal });
+        const res = await fetch(getProxyUrl(url), { signal: controller.signal });
         clearTimeout(timeoutId);
         const data = await res.json();
 

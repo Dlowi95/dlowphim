@@ -139,6 +139,19 @@ export default function CommentRatingSection({
     return () => clearInterval(interval);
   }, [slug, API_URL, showTabs]);
 
+  // Tự động cuộn xuống khu vực bình luận nếu URL chứa hash #movie-comments
+  useEffect(() => {
+    if (comments.length > 0 && typeof window !== "undefined" && window.location.hash === "#movie-comments") {
+      const timer = setTimeout(() => {
+        const el = document.getElementById("movie-comments");
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [comments]);
+
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   const handleSubmitComment = async (e: React.FormEvent) => {

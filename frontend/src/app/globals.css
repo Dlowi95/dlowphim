@@ -175,3 +175,11 @@ input[type="range"].volume-slider::-moz-range-thumb:hover {
   transform: scale(1.4);
   background: #ec4899;
 }
+
+/* Làm mịn ảnh co nhỏ chống răng cưa và vỡ nét */
+.avatar-smooth {
+  image-rendering: auto;
+  clip-path: circle(50%);
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}

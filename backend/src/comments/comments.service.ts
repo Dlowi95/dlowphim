@@ -96,6 +96,25 @@ export class CommentsService {
     });
 
     const saved = await newComment.save();
+
+    // Tự động tạo thông báo cho người viết bình luận cha khi có người reply
+    if (createDto.parentId) {
+      try {
+        const parentComment = await this.commentModel.findById(createDto.parentId).exec();
+        if (parentComment && parentComment.userId && parentComment.userId.toString() !== userId) {
+          await this.notificationsService.createUserNotification({
+            userId: parentComment.userId,
+            type: 'reply',
+            title: 'Phản hồi bình luận mới',
+            content: `${user.displayName} đã trả lời bình luận của bạn.`,
+            link: `/movie/${movieSlug}#movie-comments`,
+          });
+        }
+      } catch (err) {
+        console.error('Lỗi tạo thông báo khi reply comment:', err);
+      }
+    }
+
     return {
       id: saved._id.toString(),
       userId: saved.userId.toString(),

@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Heart, ChevronLeft, ChevronRight, X, Loader2, Play } from "lucide-react";
+import { Heart, X, Loader2, Play } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { cleanMovieName } from "@/utils/movieUtils";
 import Link from "next/link";
+import Pagination from "@/components/Pagination";
 
 interface MovieDetails {
   slug: string;
@@ -213,37 +214,12 @@ export default function UserFavoritePage() {
 
             {/* PAGINATION */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-center gap-4 pt-4 select-none">
-                <button
-                  onClick={handlePrevPage}
-                  disabled={currentPage === 1}
-                  className={`w-10 h-10 rounded-full border border-zinc-800 bg-zinc-900/60 text-zinc-400 flex items-center justify-center transition-all ${
-                    currentPage === 1
-                      ? "opacity-40 cursor-not-allowed"
-                      : "hover:border-zinc-700 hover:text-white hover:bg-zinc-800 cursor-pointer active:scale-95"
-                  }`}
-                >
-                  <ChevronLeft size={18} />
-                </button>
-
-                <div className="flex items-center gap-2 text-zinc-400 font-bold text-xs">
-                  <span>Trang</span>
-                  <span className="bg-[#12131b] border border-zinc-800 text-white font-extrabold w-10 h-8 flex items-center justify-center rounded-lg">{currentPage}</span>
-                  <span>/</span>
-                  <span>{totalPages}</span>
-                </div>
-
-                <button
-                  onClick={handleNextPage}
-                  disabled={currentPage === totalPages}
-                  className={`w-10 h-10 rounded-full border border-zinc-800 bg-zinc-900/60 text-zinc-400 flex items-center justify-center transition-all ${
-                    currentPage === totalPages
-                      ? "opacity-40 cursor-not-allowed"
-                      : "hover:border-zinc-700 hover:text-white hover:bg-zinc-800 cursor-pointer active:scale-95"
-                  }`}
-                >
-                  <ChevronRight size={18} />
-                </button>
+              <div className="pt-8 flex justify-center">
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={(page) => setCurrentPage(page)}
+                />
               </div>
             )}
           </div>
