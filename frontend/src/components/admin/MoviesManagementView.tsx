@@ -23,6 +23,7 @@ import {
 import { createPortal } from "react-dom";
 import { useAuth } from "@/context/AuthContext";
 import Pagination from "./Pagination";
+import MoviesOverrideView from "./MoviesOverrideView";
 
 interface BlockedMovie {
   slug: string;
@@ -66,7 +67,7 @@ export default function MoviesManagementView() {
   }, []);
 
   // Sub-tabs state
-  const [subTab, setSubTab] = useState<"custom" | "blocked" | "ratings">("custom");
+  const [subTab, setSubTab] = useState<"custom" | "blocked" | "ratings" | "override">("custom");
 
   // Loading states
   const [loading, setLoading] = useState(false);
@@ -528,6 +529,7 @@ export default function MoviesManagementView() {
           { id: "custom", label: "Phim tự đăng", count: customMovies.length },
           { id: "blocked", label: "Phim bị ẩn", count: blockedMovies.length },
           { id: "ratings", label: "Quản lý Đánh giá", count: ratingStats.length },
+          { id: "override", label: "Sửa mô tả", count: null },
         ].map((tab) => {
           const isActive = subTab === tab.id;
           return (
@@ -539,12 +541,14 @@ export default function MoviesManagementView() {
             >
               <span className="flex items-center gap-2">
                 {tab.label}
-                <span
-                  className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ${isActive ? "bg-pink-500/10 text-pink-400" : "bg-zinc-900 text-zinc-600"
-                    }`}
-                >
-                  {tab.count}
-                </span>
+                {tab.count !== null && (
+                  <span
+                    className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ${isActive ? "bg-pink-500/10 text-pink-400" : "bg-zinc-900 text-zinc-600"
+                      }`}
+                  >
+                    {tab.count}
+                  </span>
+                )}
               </span>
               {isActive && (
                 <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-pink-500 rounded-t-full shadow-[0_-2px_6px_rgba(236,72,153,0.4)]" />
@@ -876,6 +880,11 @@ export default function MoviesManagementView() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ─── TAB 4: MOVIE OVERRIDES (SỬA ĐÈ OPHIM) ─── */}
+      {!loading && subTab === "override" && (
+        <MoviesOverrideView showToast={showToast} />
       )}
 
       {/* ─── MODAL: ĐĂNG / SỬA PHIM TỰ ĐĂNG ─── */}

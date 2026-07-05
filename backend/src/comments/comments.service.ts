@@ -52,6 +52,18 @@ export class CommentsService {
       const finalAvatarUrl = userObj?.avatar || c.avatar;
       const finalRole = userObj?.role || c.role || 'member';
 
+      const summaryMap: Record<string, number> = {};
+      c.reactions?.forEach((r) => {
+        summaryMap[r.type] = (summaryMap[r.type] || 0) + 1;
+      });
+      const reactionsSummary = Object.keys(summaryMap).map((type) => ({
+        type,
+        count: summaryMap[type],
+      }));
+      const userReaction = currentUserId
+        ? c.reactions?.find((r) => r.userId.toString() === currentUserId.toString())?.type || null
+        : null;
+
       return {
         id: c._id.toString(),
         userId: userObj?._id?.toString() || c.userId.toString(),
@@ -62,11 +74,15 @@ export class CommentsService {
         content: c.content,
         time: getFormattedDate((c as any).createdAt || new Date()),
         likes: upvotesCount - downvotesCount,
+        upvotes: upvotesCount,
+        downvotes: downvotesCount,
         liked: userVote === 'up',
         userVote,
         isSpoiler: c.isSpoiler,
         episodeLabel: c.episodeLabel,
         parentId: c.parentId ? c.parentId.toString() : null,
+        reactionsSummary,
+        userReaction,
       };
     });
   }
@@ -125,11 +141,15 @@ export class CommentsService {
       content: saved.content,
       time: getFormattedDate((saved as any).createdAt || new Date()),
       likes: 0,
+      upvotes: 0,
+      downvotes: 0,
       liked: false,
       userVote: null,
       isSpoiler: saved.isSpoiler,
       episodeLabel: saved.episodeLabel,
       parentId: saved.parentId ? saved.parentId.toString() : null,
+      reactionsSummary: [],
+      userReaction: null,
     };
   }
 
@@ -180,6 +200,55 @@ export class CommentsService {
       likes: upvotesCount - downvotesCount,
       liked: userVote === 'up',
       userVote,
+      upvotes: upvotesCount,
+      downvotes: downvotesCount,
+    };
+  }
+
+  async toggleReaction(commentId: string, userId: string, reactionType: string) {
+    const comment = await this.commentModel.findById(commentId).exec();
+    if (!comment) {
+      throw new NotFoundException('Không tìm thấy bình luận');
+    }
+
+    const userIdObj = new Types.ObjectId(userId);
+    if (!comment.reactions) {
+      comment.reactions = [];
+    }
+
+    const existingIndex = comment.reactions.findIndex((r) => r.userId.toString() === userId);
+
+    if (existingIndex > -1) {
+      const existingReaction = comment.reactions[existingIndex];
+      if (existingReaction.type === reactionType) {
+        // Hủy react nếu cùng loại
+        comment.reactions.splice(existingIndex, 1);
+      } else {
+        // Thay thế bằng loại mới
+        comment.reactions[existingIndex].type = reactionType;
+      }
+    } else {
+      // Thêm react mới
+      comment.reactions.push({ userId: userIdObj, type: reactionType });
+    }
+
+    const saved = await comment.save();
+
+    const summaryMap: Record<string, number> = {};
+    saved.reactions.forEach((r) => {
+      summaryMap[r.type] = (summaryMap[r.type] || 0) + 1;
+    });
+
+    const reactionsSummary = Object.keys(summaryMap).map((type) => ({
+      type,
+      count: summaryMap[type],
+    }));
+
+    const userReaction = saved.reactions.find((r) => r.userId.toString() === userId)?.type || null;
+
+    return {
+      reactionsSummary,
+      userReaction,
     };
   }
 

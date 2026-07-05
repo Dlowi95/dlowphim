@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { BlockedMovie, BlockedMovieDocument } from './schemas/blocked-movie.schema';
 import { CustomMovie, CustomMovieDocument } from './schemas/custom-movie.schema';
 import { MovieLogo, MovieLogoDocument } from './schemas/movie-logo.schema';
+import { MovieOverride, MovieOverrideDocument } from './schemas/movie-override.schema';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 
 @Injectable()
@@ -12,6 +13,7 @@ export class MoviesService {
     @InjectModel(BlockedMovie.name) private blockedModel: Model<BlockedMovieDocument>,
     @InjectModel(CustomMovie.name) private customModel: Model<CustomMovieDocument>,
     @InjectModel(MovieLogo.name) private movieLogoModel: Model<MovieLogoDocument>,
+    @InjectModel(MovieOverride.name) private overrideModel: Model<MovieOverrideDocument>,
     private readonly settingsService: SystemSettingsService,
   ) {}
 
@@ -232,43 +234,125 @@ export class MoviesService {
 
   async fetchOphimProxy(path: string): Promise<any> {
     const now = Date.now();
+    let data: any = null;
     const cached = this.ophimCache.get(path);
+
     if (cached && cached.expiry > now) {
-      return cached.data;
-    }
-
-    // Lấy domain nguồn cào từ Settings
-    let baseDomain = 'https://ophim1.com';
-    try {
-      const settings = await this.settingsService.getSettings();
-      if (settings.movieCrawlSource) {
-        const url = new URL(settings.movieCrawlSource);
-        baseDomain = url.origin;
-      }
-    } catch (e) {
-      // url không hợp lệ hoặc lỗi settings
-    }
-
-    const targetUrl = `${baseDomain}${path}`;
-    try {
-      const res = await fetch(targetUrl);
-      if (!res.ok) {
-        // Fallback về cache cũ đã hết hạn nếu có
-        if (cached) return cached.data;
-        throw new Error(`Failed to fetch from source: ${res.statusText}`);
+      data = JSON.parse(JSON.stringify(cached.data));
+    } else {
+      // Lấy domain nguồn cào từ Settings
+      let baseDomain = 'https://ophim1.com';
+      try {
+        const settings = await this.settingsService.getSettings();
+        if (settings.movieCrawlSource) {
+          const url = new URL(settings.movieCrawlSource);
+          baseDomain = url.origin;
+        }
+      } catch (e) {
+        // url không hợp lệ hoặc lỗi settings
       }
 
+      const targetUrl = `${baseDomain}${path}`;
+      try {
+        const res = await fetch(targetUrl);
+        if (!res.ok) {
+          if (cached) {
+            data = JSON.parse(JSON.stringify(cached.data));
+          } else {
+            throw new Error(`Failed to fetch from source: ${res.statusText}`);
+          }
+        } else {
+          data = await res.json();
+          this.ophimCache.set(path, {
+            data: JSON.parse(JSON.stringify(data)),
+            expiry: now + 10 * 60 * 1000,
+          });
+        }
+      } catch (error) {
+        if (cached) {
+          data = JSON.parse(JSON.stringify(cached.data));
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    // ─── TRANSLATION & OVERRIDE INTERCEPTOR ───
+    if (data) {
+      const isDetailMatch = path.match(/^\/v1\/api\/phim\/([^/?#]+)/);
+      if (isDetailMatch) {
+        const slug = isDetailMatch[1].trim().toLowerCase();
+        const movie = data.data?.item || data.movie;
+        if (movie) {
+          // 1. Kiểm tra bản dịch/chỉnh sửa trong DB
+          const override = await this.overrideModel.findOne({ slug }).exec();
+          if (override) {
+            if (override.customContent) movie.content = override.customContent;
+            if (override.customName) movie.name = override.customName;
+          } else {
+            // 2. Nếu chưa có override trong DB, tự động dịch nếu là Tiếng Anh
+            const content = movie.content || '';
+            const hasVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(content);
+            if (!hasVietnamese && content.trim().length > 10) {
+              const translated = await this.translateText(content);
+              if (translated && translated !== content) {
+                try {
+                  const newOverride = new this.overrideModel({
+                    slug,
+                    customContent: translated,
+                  });
+                  await newOverride.save();
+                } catch (saveErr) {
+                  // Bỏ qua lỗi duplicate key nếu trùng tiến trình chạy song song
+                }
+                movie.content = translated;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return data;
+  }
+
+  // Helper dịch tự động bằng Google Translate API miễn phí
+  async translateText(text: string, to = 'vi'): Promise<string> {
+    if (!text || text.trim().length === 0) return '';
+    try {
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${to}&dt=t&q=${encodeURIComponent(text)}`;
+      const res = await fetch(url);
+      if (!res.ok) return text;
       const data = await res.json();
-      // Cache trong 10 phút (600,000 ms)
-      this.ophimCache.set(path, {
-        data,
-        expiry: now + 10 * 60 * 1000,
-      });
+      if (data && data[0]) {
+        return data[0].map((item: any) => item[0]).join('');
+      }
+    } catch (err) {
+      console.error('Lỗi dịch thuật mô tả phim:', err);
+    }
+    return text;
+  }
 
-      return data;
-    } catch (error) {
-      if (cached) return cached.data;
-      throw error;
+  // ─── MOVIE OVERRIDES (ADMIN CONTROLS) ───
+  async getOverrideBySlug(slug: string): Promise<any> {
+    const trimmedSlug = slug.trim().toLowerCase();
+    return this.overrideModel.findOne({ slug: trimmedSlug }).exec();
+  }
+
+  async createOrUpdateOverride(slug: string, data: { customContent?: string; customName?: string }): Promise<any> {
+    const trimmedSlug = slug.trim().toLowerCase();
+    let found = await this.overrideModel.findOne({ slug: trimmedSlug }).exec();
+    if (found) {
+      if (data.customContent !== undefined) found.customContent = data.customContent;
+      if (data.customName !== undefined) found.customName = data.customName;
+      return found.save();
+    } else {
+      const created = new this.overrideModel({
+        slug: trimmedSlug,
+        customContent: data.customContent || '',
+        customName: data.customName || '',
+      });
+      return created.save();
     }
   }
 }

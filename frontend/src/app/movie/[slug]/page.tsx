@@ -58,6 +58,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tmdbImages, setTmdbImages] = useState<{ backdrop?: string; poster?: string } | null>(null);
+  const [averageRating, setAverageRating] = useState<number | null>(null);
 
   // States tương tác
   const isFavorite = user?.favorites?.includes(movie?.slug || "") || false;
@@ -129,7 +130,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
 
         if (ophimDetail) {
           setMovie(ophimDetail);
-          
+
           // Cào thêm ảnh nét từ TMDB cho phim chi tiết
           const tmdbId = ophimDetail.tmdb?.id;
           const tmdbType = ophimDetail.tmdb?.type || "movie";
@@ -209,6 +210,26 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
     fetchMovieDetail();
   }, [slug]);
 
+  // Fetch điểm đánh giá trung bình của phim
+  useEffect(() => {
+    if (!slug) return;
+    async function fetchAverageRating() {
+      try {
+        const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+        const res = await fetch(`${API_URL}/ratings/${slug}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && typeof data.average === "number") {
+            setAverageRating(data.average);
+          }
+        }
+      } catch (err) {
+        console.error("Lỗi fetch điểm đánh giá:", err);
+      }
+    }
+    fetchAverageRating();
+  }, [slug]);
+
   // Tự động cuộn xuống khu vực bình luận nếu URL chứa hash #movie-comments
   useEffect(() => {
     if (!loading && movie) {
@@ -222,7 +243,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
           }, 300);
         }
       };
-      
+
       handleScrollToComments();
       // Lắng nghe sự kiện đổi hash
       window.addEventListener("hashchange", handleScrollToComments);
@@ -233,14 +254,14 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
   // 2. Fetch phim liên quan dựa trên thể loại đầu tiên của phim hiện tại
   useEffect(() => {
     if (!movie || !movie.category || movie.category.length === 0) return;
-    
+
     async function fetchRelated() {
       try {
         setLoadingRelated(true);
         const genreSlug = movie!.category[0].slug;
         const res = await fetch(getProxyUrl(`https://ophim1.com/v1/api/the-loai/${genreSlug}?page=1`));
         const data = await res.json();
-        
+
         if (data.status === true || data.status === "success") {
           const items = data.data?.items || data.items || [];
           // Lọc bỏ phim hiện tại
@@ -253,7 +274,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
         setLoadingRelated(false);
       }
     }
-    
+
     fetchRelated();
   }, [movie]);
 
@@ -322,7 +343,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
     const firstServer = movie.episodes[0];
     if (!firstServer || !firstServer.server_data || firstServer.server_data.length === 0) return;
     const firstEp = firstServer.server_data[0];
-    
+
     router.push(`/watch/${movie.slug}?ep=${encodeURIComponent(firstEp.name)}`);
   };
 
@@ -370,7 +391,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
 
   return (
     <div className="w-full flex-grow flex flex-col bg-[#07070a] text-white pb-16 relative overflow-hidden">
-      
+
       {/* 1. CINEMATIC LARGE BANNER AT TOP - BRIGHTER AND TALLER */}
       <div className="relative w-full h-[400px] lg:h-[480px] bg-zinc-950 overflow-hidden flex items-end pt-24 select-none">
         {/* Background Backdrop image */}
@@ -391,7 +412,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
           <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-8 md:gap-10 items-end">
             {/* Left column placeholder (leaves space for overlap poster) */}
             <div className="hidden lg:block h-[1px]" />
-            
+
             {/* Right column: Buttons, Tabs */}
             <div className="text-left space-y-5">
               {/* Row of interaction buttons - vertical icon layout like cobephim */}
@@ -437,8 +458,8 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                   {showPlaylistDropdown && (
                     <>
                       {/* Lớp phủ overlay trong suốt để bấm ngoài tắt dropdown */}
-                      <div 
-                        className="fixed inset-0 z-40 bg-transparent cursor-default" 
+                      <div
+                        className="fixed inset-0 z-40 bg-transparent cursor-default"
                         onClick={() => {
                           setShowPlaylistDropdown(false);
                           setIsCreatingPlaylist(false);
@@ -447,7 +468,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                       />
                       <div className="absolute bottom-16 left-0 z-50 w-56 bg-[#12131b]/95 border border-zinc-800 rounded-2xl p-3 shadow-2xl space-y-2.5 text-left animate-in fade-in slide-in-from-bottom-2 duration-150">
                         <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Thêm vào danh sách</p>
-                        
+
                         <div className="max-h-40 overflow-y-auto no-scrollbar space-y-1">
                           {user?.playlists && user.playlists.length > 0 ? (
                             user.playlists.map((playlist) => {
@@ -471,7 +492,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                             <p className="text-[11px] text-zinc-550 px-1 py-2 font-medium">Chưa có danh sách phát nào</p>
                           )}
                         </div>
-                        
+
                         <div className="border-t border-zinc-850 pt-2.5">
                           {isCreatingPlaylist ? (
                             <form onSubmit={handleQuickCreatePlaylist} className="flex gap-1.5 w-full min-w-0 items-center">
@@ -527,10 +548,18 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                 </button>
 
                 {/* Rating button - blue background pill on the right side */}
-                <div className="ml-auto flex items-center gap-1 bg-blue-600/90 hover:bg-blue-700 text-white text-[11px] font-extrabold px-3.5 py-1.5 rounded-full shadow-md select-none transition-all cursor-pointer">
-                  <Star size={12} className="fill-white" />
-                  <span>0 Đánh giá</span>
-                </div>
+                {!isTrailerOnly && (
+                  <div
+                    onClick={() => {
+                      document.getElementById("movie-comments")?.scrollIntoView({ behavior: "smooth" });
+                      window.dispatchEvent(new Event("dlowphim_switch_rating_tab"));
+                    }}
+                    className="ml-auto flex items-center gap-1 bg-blue-600/90 hover:bg-blue-700 text-white text-[11px] font-extrabold px-3.5 py-1.5 rounded-full shadow-md select-none transition-all cursor-pointer active:scale-95"
+                  >
+                    <Star size={12} className="fill-white animate-pulse" />
+                    <span>{averageRating && averageRating > 0 ? `${averageRating.toFixed(1)} Điểm` : "0.0 Điểm"}</span>
+                  </div>
+                )}
               </div>
 
               {/* Tab menu selector - smaller text and cleaner style */}
@@ -546,11 +575,10 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                     <button
                       key={tab.id}
                       onClick={() => setActiveTab(tab.id as any)}
-                      className={`pb-2.5 font-extrabold uppercase tracking-wider relative transition-all cursor-pointer ${
-                        isActive
-                          ? "text-pink-500"
-                          : "text-zinc-400 hover:text-white"
-                      }`}
+                      className={`pb-2.5 font-extrabold uppercase tracking-wider relative transition-all cursor-pointer ${isActive
+                        ? "text-pink-500"
+                        : "text-zinc-400 hover:text-white"
+                        }`}
                     >
                       {tab.label}
                       {isActive && (
@@ -568,10 +596,10 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
 
       {/* 2. MAIN CONTENT AREA: TWO COLUMNS (LEFT COLUMN 320PX WITH RIGHT PADDING FOR BETTER BALANCE) */}
       <div className="container mx-auto px-4 md:px-6 max-w-7xl grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-8 md:gap-10 pb-8 relative z-20">
-        
+
         {/* CỘT TRÁI: Poster nổi đè banner, TIÊU ĐỀ DƯỚI POSTER, badges, chi tiết phụ */}
         <div className="-mt-[120px] md:-mt-[150px] lg:-mt-[180px] relative z-30 flex flex-col gap-5 text-left px-4 lg:px-0 lg:pr-12">
-          
+
           {/* Poster chính thu nhỏ tỷ lệ */}
           <div className="w-[110px] md:w-[130px] lg:w-[150px] mx-auto lg:mx-0 relative aspect-[2/3] rounded-2xl overflow-hidden shadow-[0_15px_40px_rgba(0,0,0,0.85)] bg-zinc-950 select-none">
             <img
@@ -678,7 +706,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
 
         {/* CỘT PHẢI: Tab Content & Bình luận dưới cùng */}
         <div id="right-tabs-area" className="space-y-6 text-left mt-6 lg:mt-0">
-          
+
           {/* TAB 1: TẬP PHIM / TRAILER */}
           {activeTab === "episodes" && (
             <div className="space-y-5">
@@ -702,7 +730,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                       <HelpCircle size={36} className="text-zinc-650 animate-pulse" />
                       <h4 className="font-extrabold text-xs text-zinc-300">Trailer đang được cập nhật</h4>
                       <p className="text-[11px] text-zinc-500 max-w-sm">
-                        Hiện phim này chưa có video trailer từ máy chủ. Bồ có thể tự tìm kiếm trên YouTube nhé!
+                        Hiện phim này chưa có video trailer từ máy chủ. Bạn có thể tìm kiếm trên YouTube nhé!
                       </p>
                       <a
                         href={`https://www.youtube.com/results?search_query=${encodeURIComponent(cleanedName + " trailer")}`}
@@ -720,7 +748,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                   <h3 className="text-base font-bold uppercase tracking-tight flex items-center gap-2">
                     <Tv size={16} className="text-pink-500" /> Các bản chiếu
                   </h3>
-                  
+
                   {movie.episodes?.map((server, sIdx) => {
                     const epList = server.server_data || [];
                     return (
@@ -737,7 +765,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                               <h4 className="font-extrabold text-xs text-white mt-1">{cleanedName}</h4>
                             </div>
                           </div>
-                          
+
                           <button
                             onClick={handleWatchNow}
                             className="px-3.5 py-2 bg-pink-500 hover:bg-pink-600 text-white text-[11px] font-black rounded-lg transition-all hover:scale-103 active:scale-97 uppercase tracking-wider shadow shadow-pink-500/10 cursor-pointer"
@@ -750,7 +778,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                         {epList.length > 1 && (
                           <div className="space-y-3">
                             <span className="block text-[9px] font-black text-zinc-550 uppercase tracking-widest">Chọn tập phim:</span>
-                            
+
                             {/* Phân nhóm tập phim nếu số lượng tập > 100 y hệt cobephim */}
                             {epList.length > 100 && (
                               <div className="flex flex-wrap gap-1.5 pb-2.5 border-b border-zinc-900/30">
@@ -762,11 +790,10 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                                     <button
                                       key={`batch-${bIdx}`}
                                       onClick={() => setSelectedEpisodeBatch(bIdx)}
-                                      className={`px-3 py-1.5 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer border-none ${
-                                        isActive
-                                          ? "bg-pink-500 text-white shadow-sm shadow-pink-500/15"
-                                          : "bg-[#1b1d2a] text-zinc-400 hover:text-white hover:bg-[#23263a]"
-                                      }`}
+                                      className={`px-3 py-1.5 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer border-none ${isActive
+                                        ? "bg-pink-500 text-white shadow-sm shadow-pink-500/15"
+                                        : "bg-[#1b1d2a] text-zinc-400 hover:text-white hover:bg-[#23263a]"
+                                        }`}
                                     >
                                       Tập {start} - {end}
                                     </button>
@@ -869,7 +896,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
           )}
 
           {/* 4. BÌNH LUẬN & ĐÁNH GIÁ - Component dùng chung */}
-          <CommentRatingSection slug={slug} />
+          <CommentRatingSection slug={slug} isTrailerOnly={isTrailerOnly} />
         </div>
       </div>
     </div>

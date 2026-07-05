@@ -44,6 +44,22 @@ export class MoviesController {
     return this.moviesService.fetchOphimProxy(path);
   }
 
+  @Get('override/:slug')
+  async getOverrideBySlug(@Param('slug') slug: string) {
+    const override = await this.moviesService.getOverrideBySlug(slug);
+    return override || { slug, customContent: '', customName: '' };
+  }
+
+  @Post('override')
+  @UseGuards(AuthGuard, RolesGuard)
+  async createOrUpdateOverride(
+    @Body('slug') slug: string,
+    @Body('customContent') customContent: string,
+    @Body('customName') customName?: string,
+  ) {
+    return this.moviesService.createOrUpdateOverride(slug, { customContent, customName });
+  }
+
   // ─── ADMIN ENDPOINTS (REQUIRES ADMIN ROLE) ───
   @Post('blocked')
   @UseGuards(AuthGuard, RolesGuard)

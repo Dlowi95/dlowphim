@@ -20,6 +20,7 @@ import {
 import { createPortal } from "react-dom";
 import { useAuth } from "@/context/AuthContext";
 import { getTmdbApiKey } from "@/utils/tmdb";
+import { getProxyUrl } from "@/utils/api";
 
 interface Banner {
   _id?: string;
@@ -84,48 +85,111 @@ export default function BannersManagementView() {
         dbBanners = await res.json();
       }
 
-      // 3. Fetch OPhim fallback movies (5 items)
-      let fallbackMovies: any[] = [];
+      // 3. Fetch OPhim fallback movies (20 items to filter like home page)
+      let ophimMovies: any[] = [];
       try {
-        const ophimRes = await fetch("https://ophim1.com/danh-sach/phim-moi-cap-nhat?page=1");
+        const ophimRes = await fetch(getProxyUrl("https://ophim1.com/danh-sach/phim-moi-cap-nhat?page=1"));
         if (ophimRes.ok) {
           const ophimData = await ophimRes.json();
-          fallbackMovies = ophimData.items ? ophimData.items.slice(0, 5) : [];
+          ophimMovies = ophimData.items || [];
         }
       } catch (err) {
         console.error("Lỗi fetch OPhim fallback:", err);
       }
 
-      // 4. Merge to create exactly 5 slots (using TMDB for high-quality fallback backdrops)
-      const merged: Banner[] = [];
-      
-      const fallbackImages = await Promise.all(
-        fallbackMovies.map(async (movie) => {
-          try {
-            const query = movie.origin_name || movie.name;
-            const searchRes = await fetch(
-              `https://api.themoviedb.org/3/search/movie?api_key=${tmdbApiKey}&query=${encodeURIComponent(query)}&language=vi`
-            );
-            if (searchRes.ok) {
-              const searchData = await searchRes.json();
-              const tmdbMovie = searchData.results?.[0];
-              if (tmdbMovie) {
-                if (tmdbMovie.backdrop_path) {
-                  return `https://image.tmdb.org/t/p/w1280${tmdbMovie.backdrop_path}`;
-                }
-                if (tmdbMovie.poster_path) {
-                  return `https://image.tmdb.org/t/p/w1280${tmdbMovie.poster_path}`;
+      let finalFallbackMovies: any[] = [];
+      const fallbackImages: string[] = [];
+
+      if (ophimMovies.length > 0) {
+        try {
+          const detailPromises = ophimMovies.slice(0, 20).map(async (movie) => {
+            try {
+              const detailRes = await fetch(getProxyUrl(`https://ophim1.com/v1/api/phim/${movie.slug}`));
+              if (detailRes.ok) {
+                const detailData = await detailRes.json();
+                const detail = detailData.data?.item || detailData.movie || null;
+
+                if (detail) {
+                  const tmdbId = detail.tmdb?.id;
+                  const tmdbType = detail.tmdb?.type || "movie";
+                  const movieTitleQuery = detail.origin_name || detail.name;
+
+                  try {
+                    const tmdbRes = await fetch(
+                      `${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movieTitleQuery)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`
+                    );
+                    if (tmdbRes.ok) {
+                      const tmdbData = await tmdbRes.json();
+                      return { movie, detail, tmdbData };
+                    }
+                  } catch (tmdbErr) {
+                    // Bỏ qua
+                  }
+                  return { movie, detail, tmdbData: null };
                 }
               }
+            } catch (e) {
+              // Bỏ qua
             }
-          } catch (e) {
-            console.error("Lỗi fetch TMDB image cho fallback:", movie.name, e);
-          }
-          const fileName = movie.thumb_url.split("/").pop();
-          return `https://img.ophim.live/uploads/movies/${fileName}`;
-        })
-      );
+            return { movie, detail: null, tmdbData: null };
+          });
 
+          const results = await Promise.all(detailPromises);
+
+          let nonTrailerMovies: any[] = [];
+          let trailerOrNoLogoMovies: any[] = [];
+          const imageCache: Record<string, string> = {};
+
+          for (const item of results) {
+            if (item.movie) {
+              const currentEpisode = (item.detail?.episode_current || "").toLowerCase();
+              const isTrailer = currentEpisode.includes("trailer");
+              const hasLogo = item.tmdbData && item.tmdbData.logoUrl;
+
+              let backdrop = "";
+              if (item.tmdbData) {
+                if (item.tmdbData.backdropUrl) {
+                  backdrop = item.tmdbData.backdropUrl;
+                } else if (item.tmdbData.posterUrl) {
+                  backdrop = item.tmdbData.posterUrl;
+                }
+              }
+              if (!backdrop) {
+                const fileName = item.movie.thumb_url.split("/").pop();
+                backdrop = `https://img.ophim.live/uploads/movies/${fileName}`;
+              }
+              imageCache[item.movie.slug] = backdrop;
+
+              if (!isTrailer && hasLogo) {
+                nonTrailerMovies.push(item.movie);
+              } else if (!isTrailer) {
+                trailerOrNoLogoMovies.push(item.movie);
+              }
+            }
+          }
+
+          finalFallbackMovies = [...nonTrailerMovies];
+          if (finalFallbackMovies.length < 5) {
+            const needed = 5 - finalFallbackMovies.length;
+            finalFallbackMovies = [...finalFallbackMovies, ...trailerOrNoLogoMovies.slice(0, needed)];
+          }
+
+          finalFallbackMovies.slice(0, 5).forEach((movie) => {
+            fallbackImages.push(imageCache[movie.slug] || "");
+          });
+
+        } catch (e) {
+          console.error("Lỗi cào song song ở admin:", e);
+          finalFallbackMovies = ophimMovies.slice(0, 5);
+          finalFallbackMovies.forEach((movie) => {
+            const fileName = movie.thumb_url.split("/").pop();
+            fallbackImages.push(`https://img.ophim.live/uploads/movies/${fileName}`);
+          });
+        }
+      }
+
+      // 4. Merge to create exactly 5 slots
+      const merged: Banner[] = [];
       for (let i = 1; i <= 5; i++) {
         const custom = dbBanners.find((b) => b.order === i);
         if (custom) {
@@ -134,7 +198,7 @@ export default function BannersManagementView() {
             isFallback: false
           });
         } else {
-          const movie = fallbackMovies[i - 1];
+          const movie = finalFallbackMovies[i - 1];
           if (movie) {
             merged.push({
               title: movie.name,

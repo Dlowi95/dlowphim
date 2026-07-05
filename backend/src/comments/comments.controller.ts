@@ -51,6 +51,17 @@ export class CommentsController {
     return this.commentsService.toggleVote(commentId, userId, voteType);
   }
 
+  @Post(':id/reaction')
+  @UseGuards(AuthGuard)
+  async toggleReaction(
+    @Param('id') commentId: string,
+    @Req() req: any,
+    @Body('type') reactionType: string,
+  ) {
+    const userId = req.user.sub;
+    return this.commentsService.toggleReaction(commentId, userId, reactionType);
+  }
+
   @Delete(':id')
   @UseGuards(AuthGuard)
   async deleteComment(

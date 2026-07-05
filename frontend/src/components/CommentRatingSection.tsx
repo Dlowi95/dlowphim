@@ -10,9 +10,11 @@ import {
   CornerDownLeft,
   MoreHorizontal,
   ShieldAlert,
+  ThumbsUp,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
+import { ReactionsSummary, ReactTriggerButton } from "./comment/CommentReactions";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -31,6 +33,8 @@ interface Comment {
   isSpoiler?: boolean;
   episodeLabel?: string;
   parentId?: string | null;
+  reactionsSummary?: { type: string; count: number }[];
+  userReaction?: string | null;
 }
 
 interface RatingData {
@@ -50,6 +54,7 @@ interface CommentRatingSectionProps {
   title?: string;
   /** Show rating tab switcher buttons */
   showTabs?: boolean;
+  isTrailerOnly?: boolean;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -59,6 +64,7 @@ export default function CommentRatingSection({
   episodeLabel,
   title = "Bình luận",
   showTabs = true,
+  isTrailerOnly = false,
 }: CommentRatingSectionProps) {
   const { user, showToast } = useAuth();
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -84,6 +90,7 @@ export default function CommentRatingSection({
 
   // Action menu state
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [activeEmojiMenuId, setActiveEmojiMenuId] = useState<string | null>(null);
 
   interface ReportModalState {
     isOpen: boolean;
@@ -130,7 +137,7 @@ export default function CommentRatingSection({
     }
 
     fetchComments();
-    if (showTabs) {
+    if (showTabs && !isTrailerOnly) {
       fetchRating();
     }
 
@@ -151,6 +158,24 @@ export default function CommentRatingSection({
       return () => clearTimeout(timer);
     }
   }, [comments]);
+
+  // Đảm bảo không ở tab đánh giá nếu phim là trailer chỉ xem
+  useEffect(() => {
+    if (isTrailerOnly && activeTab === "rating") {
+      setActiveTab("comment");
+    }
+  }, [isTrailerOnly, activeTab]);
+
+  // Lắng nghe sự kiện click từ nút rating trên banner để tự chuyển tab
+  useEffect(() => {
+    const handleSwitchTab = () => {
+      if (!isTrailerOnly) {
+        setActiveTab("rating");
+      }
+    };
+    window.addEventListener("dlowphim_switch_rating_tab", handleSwitchTab);
+    return () => window.removeEventListener("dlowphim_switch_rating_tab", handleSwitchTab);
+  }, [isTrailerOnly]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -314,6 +339,36 @@ export default function CommentRatingSection({
     }
   };
 
+  const handleReaction = async (commentId: string, reactionType: string) => {
+    if (!user) {
+      window.dispatchEvent(new Event("dlowphim_open_auth"));
+      return;
+    }
+    try {
+      const token = Cookies.get("token");
+      const res = await fetch(`${API_URL}/comments/${commentId}/reaction`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ type: reactionType }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setComments((prev: Comment[]) =>
+          prev.map((c: Comment) =>
+            c.id === commentId
+              ? { ...c, reactionsSummary: data.reactionsSummary, userReaction: data.userReaction }
+              : c
+          )
+        );
+      }
+    } catch (err) {
+      console.error("Lỗi thả react:", err);
+    }
+  };
+
   const handleSubmitRating = async (score: number) => {
     if (!user) {
       window.dispatchEvent(new Event("dlowphim_open_auth"));
@@ -351,7 +406,7 @@ export default function CommentRatingSection({
           </h3>
         </div>
 
-        {showTabs && (
+        {showTabs && !isTrailerOnly && (
           <div className="flex bg-zinc-900/60 p-0.5 rounded-lg border border-zinc-800/80 text-[10px] font-extrabold select-none">
             <button
               type="button"
@@ -610,41 +665,27 @@ export default function CommentRatingSection({
                             </p>
                           )}
 
+                          {/* Reactions Summary display */}
+                          <ReactionsSummary
+                            commentId={comment.id}
+                            reactionsSummary={comment.reactionsSummary}
+                            userReaction={comment.userReaction}
+                            handleReaction={handleReaction}
+                            isReply={false}
+                          />
+
                           {/* Footer actions */}
                           <div className="flex items-center gap-4 pt-1.5 select-none text-zinc-500 font-bold text-[10px]">
-                            {/* Upvote */}
-                            <div className="flex items-center">
-                              <button
-                                onClick={() => handleVote(comment.id, "up")}
-                                className={`w-6 h-6 rounded-full flex items-center justify-center transition-all border-none cursor-pointer ${comment.userVote === "up"
-                                  ? "bg-emerald-500/10 text-emerald-500"
-                                  : "bg-[#1b1d2a]/60 text-zinc-500 hover:text-white"
-                                  }`}
-                                title="Thích"
-                              >
-                                <ArrowUp size={11} className={comment.userVote === "up" ? "stroke-[2.5]" : ""} />
-                              </button>
-                              {comment.likes > 0 && (
-                                <span
-                                  className={`text-[10px] font-extrabold ml-1.5 ${comment.userVote === "up" ? "text-emerald-500" : "text-zinc-400"
-                                    }`}
-                                >
-                                  {comment.likes}
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Downvote */}
-                            <button
-                              onClick={() => handleVote(comment.id, "down")}
-                              className={`w-6 h-6 rounded-full flex items-center justify-center transition-all border-none cursor-pointer ${comment.userVote === "down"
-                                ? "bg-[#ef4444]/10 text-red-500"
-                                : "bg-[#1b1d2a]/60 text-zinc-500 hover:text-white"
-                                }`}
-                              title="Không thích"
-                            >
-                              <ArrowDown size={11} className={comment.userVote === "down" ? "stroke-[2.5]" : ""} />
-                            </button>
+                            {/* React Emoji Button */}
+                            <ReactTriggerButton
+                              commentId={comment.id}
+                              userReaction={comment.userReaction}
+                              activeEmojiMenuId={activeEmojiMenuId}
+                              setActiveEmojiMenuId={setActiveEmojiMenuId}
+                              handleReaction={handleReaction}
+                              user={user}
+                              size={11}
+                            />
 
                             {/* Reply Button */}
                             <button
@@ -859,29 +900,27 @@ export default function CommentRatingSection({
                                     </p>
                                   )}
 
+                                  {/* Reactions Summary display */}
+                                  <ReactionsSummary
+                                    commentId={reply.id}
+                                    reactionsSummary={reply.reactionsSummary}
+                                    userReaction={reply.userReaction}
+                                    handleReaction={handleReaction}
+                                    isReply={true}
+                                  />
+
                                   {/* Reply actions */}
                                   <div className="flex items-center gap-3 pt-1 select-none text-zinc-500 font-bold text-[9px]">
-                                    <div className="flex items-center">
-                                      <button
-                                        onClick={() => handleVote(reply.id, "up")}
-                                        className={`w-5.5 h-5.5 rounded-full flex items-center justify-center transition-all border-none cursor-pointer ${reply.userVote === "up"
-                                          ? "bg-emerald-500/10 text-emerald-500"
-                                          : "bg-[#1b1d2a]/60 text-zinc-500 hover:text-white"
-                                          }`}
-                                      >
-                                        <ArrowUp size={9} />
-                                      </button>
-                                      {reply.likes > 0 && <span className="ml-1 text-zinc-400 font-extrabold">{reply.likes}</span>}
-                                    </div>
-                                    <button
-                                      onClick={() => handleVote(reply.id, "down")}
-                                      className={`w-5.5 h-5.5 rounded-full flex items-center justify-center transition-all border-none cursor-pointer ${reply.userVote === "down"
-                                        ? "bg-[#ef4444]/10 text-red-500"
-                                        : "bg-[#1b1d2a]/60 text-zinc-500 hover:text-white"
-                                        }`}
-                                    >
-                                      <ArrowDown size={9} />
-                                    </button>
+                                    {/* React Emoji Button */}
+                                    <ReactTriggerButton
+                                      commentId={reply.id}
+                                      userReaction={reply.userReaction}
+                                      activeEmojiMenuId={activeEmojiMenuId}
+                                      setActiveEmojiMenuId={setActiveEmojiMenuId}
+                                      handleReaction={handleReaction}
+                                      user={user}
+                                      size={10}
+                                    />
 
                                     {/* More (Report/Delete) */}
                                     <div className="relative">

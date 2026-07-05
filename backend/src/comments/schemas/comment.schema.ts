@@ -35,6 +35,15 @@ export class Comment {
   @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: [] })
   downvotes: Types.ObjectId[];
 
+  @Prop({
+    type: [{
+      userId: { type: Types.ObjectId, ref: 'User', required: true },
+      type: { type: String, required: true }
+    }],
+    default: []
+  })
+  reactions: { userId: Types.ObjectId; type: string }[];
+
   @Prop({ type: Types.ObjectId, ref: 'Comment', default: null, index: true })
   parentId?: Types.ObjectId | null;
 }
