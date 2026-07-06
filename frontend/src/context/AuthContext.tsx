@@ -32,6 +32,7 @@ interface AuthContextType {
   updatePlaylistName: (playlistId: string, name: string) => Promise<boolean>;
   toggleMovieInPlaylist: (playlistId: string, movieSlug: string) => Promise<boolean>;
   deleteHistoryItem: (movieSlug: string) => Promise<boolean>;
+  updateWatchHistory: (historyItem: any) => void;
   clearAllHistory: () => Promise<boolean>;
   unreadNotificationsCount: number;
   setUnreadNotificationsCount: React.Dispatch<React.SetStateAction<number>>;
@@ -428,6 +429,24 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     return false;
   };
 
+  const updateWatchHistory = (historyItem: any) => {
+    setUser((prev) => {
+      if (!prev) return null;
+      const filtered = (prev.watchHistory || []).filter((item: any) => item.movieSlug !== historyItem.movieSlug);
+      return {
+        ...prev,
+        watchHistory: [historyItem, ...filtered].slice(0, 50),
+      };
+    });
+    try {
+      const localHist = JSON.parse(localStorage.getItem("dlowphim_history") || "[]");
+      const filteredLocal = localHist.filter((item: any) => item.movieSlug !== historyItem.movieSlug);
+      localStorage.setItem("dlowphim_history", JSON.stringify([historyItem, ...filteredLocal].slice(0, 50)));
+    } catch (e) {
+      console.error("Lỗi cập nhật localStorage history:", e);
+    }
+  };
+
   const deleteHistoryItem = async (movieSlug: string): Promise<boolean> => {
     try {
       const localHist = JSON.parse(localStorage.getItem("dlowphim_history") || "[]");
@@ -633,6 +652,7 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
         updatePlaylistName,
         toggleMovieInPlaylist,
         deleteHistoryItem,
+        updateWatchHistory,
         clearAllHistory,
         unreadNotificationsCount,
         setUnreadNotificationsCount,

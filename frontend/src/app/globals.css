@@ -183,3 +183,54 @@ input[type="range"].volume-slider::-moz-range-thumb:hover {
   transform: translateZ(0);
   backface-visibility: hidden;
 }
+
+/* Custom Plyr.io Theme Colors to Neon Pink */
+:root {
+  --plyr-color-main: #ec4899 !important; /* Neon Pink */
+  --plyr-video-control-color-hover: #ffffff !important;
+  --plyr-control-radius: 12px !important;
+  --plyr-tooltip-background: rgba(15, 17, 23, 0.9) !important;
+  --plyr-tooltip-color: #ffffff !important;
+  --plyr-tooltip-radius: 8px !important;
+}
+
+.plyr--full-ui input[type=range] {
+  color: #ec4899 !important;
+}
+
+.plyr__control--overlaid {
+  background: rgba(236, 72, 153, 0.95) !important;
+  box-shadow: 0 0 35px rgba(236, 72, 153, 0.6) !important;
+  border: 4px solid rgba(255, 255, 255, 0.2) !important;
+  width: 60px !important;
+  height: 60px !important;
+  border-radius: 50% !important;
+}
+
+.plyr__control--overlaid svg {
+  width: 22px !important;
+  height: 22px !important;
+  fill: #ffffff !important;
+}
+
+.plyr__control--overlaid:hover {
+  background: #ec4899 !important;
+  transform: translate(-50%, -50%) scale(1.08) !important;
+}
+
+/* Custom rounded card player frame for Plyr */
+.plyr {
+  font-family: inherit !important;
+  border-radius: 20px !important;
+  overflow: hidden !important;
+  height: 100% !important;
+  width: 100% !important;
+}
+
+.plyr__video-wrapper {
+  height: 100% !important;
+  width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}

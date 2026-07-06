@@ -50,11 +50,27 @@ export default function UserHistoryPage() {
         console.error(e);
       }
       
-      if (user && user.watchHistory && user.watchHistory.length > 0) {
-        setHistoryItems(user.watchHistory);
-      } else {
-        setHistoryItems(localHist);
-      }
+      const serverHist = (user && user.watchHistory) ? user.watchHistory : [];
+      const historyMap = new Map<string, HistoryItem>();
+      
+      // Add server items first
+      serverHist.forEach((item) => {
+        historyMap.set(item.movieSlug, item);
+      });
+      
+      // Add local items (if local item is newer, overwrite)
+      localHist.forEach((item) => {
+        const existing = historyMap.get(item.movieSlug);
+        if (!existing || new Date(item.updatedAt) > new Date(existing.updatedAt)) {
+          historyMap.set(item.movieSlug, item);
+        }
+      });
+      
+      const mergedList = Array.from(historyMap.values()).sort((a, b) => {
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      });
+      
+      setHistoryItems(mergedList);
     };
 
     loadHistory();

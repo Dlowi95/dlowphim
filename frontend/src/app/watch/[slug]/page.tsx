@@ -11,6 +11,7 @@ import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { getTmdbApiKey } from "@/utils/tmdb";
 import { getProxyUrl } from "@/utils/api";
+import "plyr/dist/plyr.css";
 
 interface Episode {
   name: string;
@@ -65,7 +66,7 @@ function WatchContent({ slug }: { slug: string }) {
   const [error, setError] = useState<string | null>(null);
   const [tmdbBackdrop, setTmdbBackdrop] = useState<string | null>(null);
 
-  const { user, toggleFavorite: toggleFavoriteCtx, showToast, createPlaylist, toggleMovieInPlaylist } = useAuth();
+  const { user, toggleFavorite: toggleFavoriteCtx, showToast, createPlaylist, toggleMovieInPlaylist, updateWatchHistory } = useAuth();
 
   // States phát phim
   const [activeServerIndex, setActiveServerIndex] = useState(0);
@@ -94,6 +95,8 @@ function WatchContent({ slug }: { slug: string }) {
     }
   };
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
+  const plyrRef = React.useRef<any>(null);
+  const hlsRef = React.useRef<any>(null);
   const hasSkippedIntro = React.useRef(false);
   const lastHistorySavedTime = React.useRef<number>(0);
   const [kkServers, setKkServers] = useState<Server[]>([]);
@@ -185,7 +188,7 @@ function WatchContent({ slug }: { slug: string }) {
       try {
         setLoading(true);
         setError(null);
-        
+
         // a. Kiểm tra xem phim có bị Block (Ẩn) hay không
         try {
           const blockRes = await fetch(`${API_URL}/movies/check-blocked/${slug}`);
@@ -218,7 +221,7 @@ function WatchContent({ slug }: { slug: string }) {
 
         if (ophimDetail) {
           setMovie(ophimDetail);
-          
+
           // Cào thêm ảnh nét từ TMDB cho watch page
           const tmdbId = ophimDetail.tmdb?.id;
           const tmdbType = ophimDetail.tmdb?.type || "movie";
@@ -293,7 +296,7 @@ function WatchContent({ slug }: { slug: string }) {
         setSelectedEpisodeBatch(0);
       }
     }
-    
+
     fetchMovieDetail();
   }, [slug]);
 
@@ -310,7 +313,7 @@ function WatchContent({ slug }: { slug: string }) {
           }, 300);
         }
       };
-      
+
       handleScrollToComments();
       // Lắng nghe sự kiện đổi hash
       window.addEventListener("hashchange", handleScrollToComments);
@@ -349,12 +352,6 @@ function WatchContent({ slug }: { slug: string }) {
     fetchKKPhimDetail();
   }, [slug, movie?.isCustom]);
 
-  // Tự động chuyển kiểu player sang HLS nếu là phim tự đăng
-  useEffect(() => {
-    if (movie?.isCustom) {
-      setPlayerType("hls");
-    }
-  }, [movie]);
 
   const cleanedName = movie ? cleanMovieName(movie.name) : "";
 
@@ -385,7 +382,7 @@ function WatchContent({ slug }: { slug: string }) {
       } else if (nameLower.includes("lồng tiếng") || nameLower.includes("long tieng")) {
         typeLabel = "Lồng tiếng";
       }
-      
+
       counts[typeLabel] = (counts[typeLabel] || 0) + 1;
       return `${typeLabel} #${counts[typeLabel]}`;
     });
@@ -411,10 +408,21 @@ function WatchContent({ slug }: { slug: string }) {
   const activeEpisode = episodesData[activeEpisodeIndex];
   const activeEmbed = activeEpisode?.link_embed || null;
 
+  // Tự động chuyển kiểu player sang HLS nếu tập phim có link m3u8 (ưu tiên HLS Player xịn)
+  useEffect(() => {
+    if (activeEpisode) {
+      if (activeEpisode.link_m3u8) {
+        setPlayerType("hls");
+      } else {
+        setPlayerType("embed");
+      }
+    }
+  }, [activeEpisode]);
+
   // 1.7. Đồng bộ đánh giá theo phim qua Backend
   useEffect(() => {
     if (!movie) return;
-    
+
     async function fetchRating() {
       try {
         const token = Cookies.get("token");
@@ -430,7 +438,7 @@ function WatchContent({ slug }: { slug: string }) {
         console.error("Lỗi lấy đánh giá:", err);
       }
     }
-    
+
     fetchRating();
   }, [movie, slug, API_URL]);
 
@@ -466,19 +474,151 @@ function WatchContent({ slug }: { slug: string }) {
     }
   }, [activeEpisodeIndex]);
 
-  // 2.5. HLS Player dynamic initialization
+  // 2.5. HLS + Plyr.io dynamic initialization
   useEffect(() => {
+    let active = true;
+
     if (playerType === "hls" && activeEpisode?.link_m3u8) {
       const scriptId = "dlowphim-hls-script";
       let script = document.getElementById(scriptId) as HTMLScriptElement;
 
-      const initPlayer = () => {
+      const initPlayer = async () => {
+        if (!active) return;
         const Hls = (window as any).Hls;
         const video = document.getElementById("dlow-hls-video") as HTMLVideoElement;
-        if (video && Hls && Hls.isSupported()) {
+        if (!video) return;
+
+        // Cleanup previous instances before creating new ones
+        if (plyrRef.current) {
+          try { plyrRef.current.destroy(); } catch (e) { }
+          plyrRef.current = null;
+        }
+        if (hlsRef.current) {
+          try { hlsRef.current.destroy(); } catch (e) { }
+          hlsRef.current = null;
+        }
+
+        // Import động Plyr ở Client-side để tránh lỗi SSR "document is not defined"
+        const PlyrClass = (await import("plyr")).default;
+
+        if (Hls && Hls.isSupported()) {
           const hls = new Hls();
           hls.loadSource(activeEpisode.link_m3u8);
           hls.attachMedia(video);
+          hlsRef.current = hls;
+
+          hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            if (!active) return;
+
+            // Đọc vị trí xem trước đó
+            let savedTime = 0;
+            try {
+              let savedItem = null;
+              if (user && user.watchHistory) {
+                savedItem = user.watchHistory.find((item: any) => item.movieSlug === slug);
+              } else {
+                const localHist = JSON.parse(localStorage.getItem("dlowphim_history") || "[]");
+                savedItem = localHist.find((item: any) => item.movieSlug === slug);
+              }
+              if (savedItem && savedItem.currentTime > 5) {
+                savedTime = savedItem.currentTime;
+              }
+            } catch (e) {
+              console.error(e);
+            }
+
+            // Định nghĩa hàm setup event dùng chung
+            const setupEvents = (plyrInstance: any, oldTime: number) => {
+              if (oldTime > 0) {
+                // Sự kiện "canplay" đảm bảo metadata đã sẵn sàng để tua chính xác
+                plyrInstance.once("canplay", () => {
+                  const duration = plyrInstance.duration || video.duration || 0;
+                  if (duration === 0 || oldTime < duration - 10) {
+                    plyrInstance.currentTime = oldTime;
+                    console.log(`[Plyr] Resumed watch progress from ${oldTime}s`);
+                  }
+                });
+              }
+
+              plyrInstance.on("timeupdate", () => {
+                const now = Date.now();
+                if (now - lastHistorySavedTime.current > 7000) {
+                  saveWatchHistory(plyrInstance.currentTime, plyrInstance.duration);
+                  lastHistorySavedTime.current = now;
+                }
+              });
+
+              plyrInstance.on("pause", () => {
+                saveWatchHistory(plyrInstance.currentTime, plyrInstance.duration);
+              });
+            };
+
+            // Khởi tạo trình phát Plyr
+            const player = new PlyrClass(video, {
+              controls: [
+                "play-large", "play", "progress", "current-time",
+                "duration", "mute", "volume", "settings", "pip", "fullscreen"
+              ],
+              settings: ["quality", "speed"],
+              speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+              quality: { default: 1080, options: [1080, 720, 480, 360] },
+              i18n: {
+                play: "Phát",
+                pause: "Tạm dừng",
+                mute: "Tắt tiếng",
+                unmute: "Bật tiếng",
+                settings: "Cài đặt",
+                speed: "Tốc độ",
+                normal: "Bình thường",
+                quality: "Chất lượng"
+              }
+            });
+
+            plyrRef.current = player;
+            setupEvents(player, savedTime);
+          });
+        } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+          // Dành cho Safari gốc
+          video.src = activeEpisode.link_m3u8;
+
+          let savedTime = 0;
+          try {
+            let savedItem = null;
+            if (user && user.watchHistory) {
+              savedItem = user.watchHistory.find((item: any) => item.movieSlug === slug);
+            } else {
+              const localHist = JSON.parse(localStorage.getItem("dlowphim_history") || "[]");
+              savedItem = localHist.find((item: any) => item.movieSlug === slug);
+            }
+            if (savedItem && savedItem.currentTime > 5) {
+              savedTime = savedItem.currentTime;
+            }
+          } catch (e) { }
+
+          const player = new PlyrClass(video, {
+            controls: [
+              "play-large", "play", "progress", "current-time",
+              "duration", "mute", "volume", "settings", "pip", "fullscreen"
+            ]
+          });
+          plyrRef.current = player;
+
+          // Lắng nghe sự kiện để lưu lịch sử cho Safari
+          if (savedTime > 0) {
+            player.once("canplay", () => {
+              player.currentTime = savedTime;
+            });
+          }
+          player.on("timeupdate", () => {
+            const now = Date.now();
+            if (now - lastHistorySavedTime.current > 7000) {
+              saveWatchHistory(player.currentTime, player.duration);
+              lastHistorySavedTime.current = now;
+            }
+          });
+          player.on("pause", () => {
+            saveWatchHistory(player.currentTime, player.duration);
+          });
         }
       };
 
@@ -493,12 +633,24 @@ function WatchContent({ slug }: { slug: string }) {
         document.body.appendChild(script);
       }
     }
-  }, [playerType, activeEpisode]);
+
+    return () => {
+      active = false;
+      if (plyrRef.current) {
+        try { plyrRef.current.destroy(); } catch (e) { }
+        plyrRef.current = null;
+      }
+      if (hlsRef.current) {
+        try { hlsRef.current.destroy(); } catch (e) { }
+        hlsRef.current = null;
+      }
+    };
+  }, [playerType, activeEpisode?.name, movie?.slug]);
 
   // 3. Fetch phim liên quan
   useEffect(() => {
     if (!movie || !movie.category || movie.category.length === 0) return;
-    
+
     const movieSlug = movie.slug;
     const genreSlug = movie.category[0].slug;
 
@@ -507,7 +659,7 @@ function WatchContent({ slug }: { slug: string }) {
         setLoadingRelated(true);
         const res = await fetch(getProxyUrl(`https://ophim1.com/v1/api/the-loai/${genreSlug}?page=1`));
         const data = await res.json();
-        
+
         if (data.status === true || data.status === "success") {
           const items = data.data?.items || data.items || [];
           const filtered = items.filter((item: any) => item.slug !== movieSlug).slice(0, 7);
@@ -519,7 +671,7 @@ function WatchContent({ slug }: { slug: string }) {
         setLoadingRelated(false);
       }
     }
-    
+
     fetchRelated();
   }, [movie]);
 
@@ -601,17 +753,10 @@ function WatchContent({ slug }: { slug: string }) {
       updatedAt: new Date().toISOString(),
     };
 
-    // 1. Save to local storage first
-    try {
-      const localHist = JSON.parse(localStorage.getItem("dlowphim_history") || "[]");
-      const filtered = localHist.filter((item: any) => item.movieSlug !== movie.slug);
-      filtered.unshift(historyItem);
-      localStorage.setItem("dlowphim_history", JSON.stringify(filtered.slice(0, 50)));
-    } catch (e) {
-      console.error(e);
-    }
+    // Cập nhật state runtime (cả user.watchHistory và localStorage) thông qua AuthContext
+    updateWatchHistory(historyItem);
 
-    // 2. Save to database if user is logged in
+    // Gửi đồng bộ lên Database nếu người dùng đã đăng nhập
     if (user) {
       try {
         const token = Cookies.get("token");
@@ -629,6 +774,41 @@ function WatchContent({ slug }: { slug: string }) {
       }
     }
   };
+
+  // Giả lập lưu lịch sử xem cho các tập phim phát qua Embed Player (Iframe)
+  const embedProgressRef = React.useRef<number>(0);
+  useEffect(() => {
+    if (playerType !== "embed" || !movie || !activeEpisode) return;
+
+    // Đọc vị trí xem trước đó để làm điểm xuất phát đếm tiếp
+    let savedTime = 0;
+    try {
+      let savedItem = null;
+      if (user && user.watchHistory) {
+        savedItem = user.watchHistory.find((item: any) => item.movieSlug === slug);
+      } else {
+        const localHist = JSON.parse(localStorage.getItem("dlowphim_history") || "[]");
+        savedItem = localHist.find((item: any) => item.movieSlug === slug);
+      }
+      if (savedItem && savedItem.currentTime > 5) {
+        savedTime = savedItem.currentTime;
+      }
+    } catch (e) {
+      console.error("Lỗi đọc lịch sử cũ cho embed:", e);
+    }
+
+    embedProgressRef.current = savedTime;
+
+    const interval = setInterval(() => {
+      // Chỉ tăng tiến trình nếu tab đang active (để tránh người dùng bỏ tab đi chơi mà vẫn lưu)
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        embedProgressRef.current += 8;
+        saveWatchHistory(embedProgressRef.current, 7200); // Giả định thời lượng phim lẻ là 120 phút
+      }
+    }, 8000);
+
+    return () => clearInterval(interval);
+  }, [playerType, activeEpisode?.name, movie?.slug, user?.watchHistory]);
 
   const handleHlsPause = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     setIsHlsPlaying(false);
@@ -729,13 +909,12 @@ function WatchContent({ slug }: { slug: string }) {
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#07070a]/60 to-[#07070a] z-10" />
       </div>
 
-      <div className={`container mx-auto px-4 md:px-6 relative z-10 space-y-8 transition-all duration-300 ${
-        cinemaMode ? "max-w-none w-full" : "max-w-7xl"
-      }`}>
-        
+      <div className={`container mx-auto px-4 md:px-6 relative z-10 space-y-8 transition-all duration-300 ${cinemaMode ? "max-w-none w-full" : "max-w-7xl"
+        }`}>
+
         {/* Nút Quay lại trang Chi tiết */}
         <div className="flex items-center justify-between select-none">
-          <button 
+          <button
             onClick={() => router.push(`/movie/${movie.slug}`)}
             className="flex items-center gap-1.5 text-zinc-500 hover:text-white text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer bg-transparent border-none"
           >
@@ -748,12 +927,12 @@ function WatchContent({ slug }: { slug: string }) {
         </div>
 
         {/* 1. TRÌNH PHÁT VIDEO CHÍNH (VIDEO PLAYER SECTION) */}
-        <div 
+        <div
           id="watch-player-section"
           className={`space-y-4 transition-all duration-300 ${cinemaMode ? "relative z-50 w-full" : ""}`}
         >
           {cinemaMode && (
-            <div 
+            <div
               onClick={() => setCinemaMode(false)}
               className="fixed inset-0 bg-black/95 z-40 transition-all duration-300"
             />
@@ -766,33 +945,30 @@ function WatchContent({ slug }: { slug: string }) {
                 Đang phát: {cleanedName} {activeEpisode ? `(Tập ${activeEpisode.name})` : ""}
               </h3>
             </div>
-            
+
             <button
               onClick={() => setCinemaMode(!cinemaMode)}
-              className={`text-xs font-bold px-3 py-1.5 rounded-lg border-none transition-all cursor-pointer flex items-center gap-1.5 ${
-                cinemaMode
+              className={`text-xs font-bold px-3 py-1.5 rounded-lg border-none transition-all cursor-pointer flex items-center gap-1.5 ${cinemaMode
                   ? "bg-pink-500 text-white shadow-md shadow-pink-500/20 z-50"
                   : "bg-[#1b1d2a] text-zinc-400 hover:text-white"
-              }`}
+                }`}
             >
               <span>Chế Độ Rạp Chiếu</span>
-              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded leading-none transition-all ${
-                cinemaMode 
-                  ? "text-white bg-white/20" 
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded leading-none transition-all ${cinemaMode
+                  ? "text-white bg-white/20"
                   : "text-zinc-500 bg-[#252839]"
-              }`}>
+                }`}>
                 {cinemaMode ? "ON" : "OFF"}
               </span>
             </button>
           </div>
 
           {/* Unified Movie Player Frame + Action Bar Container with soft shadow, no border */}
-          <div 
-            className={`w-full overflow-hidden bg-black rounded-2xl md:rounded-3xl shadow-[0_15px_45px_rgba(0,0,0,0.85)] transition-all duration-300 ${
-              cinemaMode 
-                ? "relative z-50 shadow-pink-500/10 w-full max-w-[92vw] mx-auto" 
+          <div
+            className={`w-full overflow-hidden bg-black rounded-2xl md:rounded-3xl shadow-[0_15px_45px_rgba(0,0,0,0.85)] transition-all duration-300 ${cinemaMode
+                ? "relative z-50 shadow-pink-500/10 w-full max-w-[92vw] mx-auto"
                 : "relative"
-            }`}
+              }`}
           >
             {/* Player Container */}
             <div className="relative w-full aspect-video bg-black overflow-hidden group">
@@ -819,32 +995,11 @@ function WatchContent({ slug }: { slug: string }) {
                     <video
                       id="dlow-hls-video"
                       ref={videoRef}
+                      playsInline
                       controls
-                      onPlay={handleHlsPlay}
-                      onPause={handleHlsPause}
-                      onEnded={handleHlsVideoEnded}
-                      onTimeUpdate={handleHlsTimeUpdate}
-                      onLoadedMetadata={handleHlsLoadedMetadata}
-                      className="w-full h-full bg-black animate-fadeIn"
+                      className="w-full h-full bg-black"
                       title="DlowPhim HLS Video Player"
                     />
-                    
-                    {/* Pulsing Play Overlay button when HLS is paused */}
-                    <div 
-                      onClick={() => {
-                        if (videoRef.current) {
-                          videoRef.current.play();
-                          setIsHlsPlaying(true);
-                        }
-                      }}
-                      className={`absolute inset-0 flex items-center justify-center bg-black/45 cursor-pointer z-10 transition-all duration-300 ease-in-out ${
-                        isHlsPlaying ? "opacity-0 pointer-events-none scale-95" : "opacity-100 scale-100"
-                      }`}
-                    >
-                      <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-pink-500 hover:bg-pink-600 text-white flex items-center justify-center shadow-lg shadow-pink-500/40 transition-all duration-300 hover:scale-110 active:scale-95">
-                        <Play size={16} className="fill-current text-white translate-x-0.5" />
-                      </div>
-                    </div>
                   </>
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-zinc-900">
@@ -880,10 +1035,9 @@ function WatchContent({ slug }: { slug: string }) {
 
               {/* Episode Drawer Panel (Right Side Overlay) */}
               {episodesData.length > 1 && (
-                <div 
-                  className={`absolute top-0 right-0 bottom-0 w-80 bg-[#13141f]/95 border-l border-zinc-900 z-40 flex flex-col transition-transform duration-300 ease-in-out shadow-2xl select-none ${
-                    showEpisodeDrawer ? "translate-x-0" : "translate-x-full"
-                  }`}
+                <div
+                  className={`absolute top-0 right-0 bottom-0 w-80 bg-[#13141f]/95 border-l border-zinc-900 z-40 flex flex-col transition-transform duration-300 ease-in-out shadow-2xl select-none ${showEpisodeDrawer ? "translate-x-0" : "translate-x-full"
+                    }`}
                 >
                   {/* Drawer Header */}
                   <div className="p-4 border-b border-zinc-900 flex items-center justify-between">
@@ -920,7 +1074,7 @@ function WatchContent({ slug }: { slug: string }) {
                   </div>
 
                   {/* Scrollable list area (Infinite scroll feel, scrollbar hidden) */}
-                  <div 
+                  <div
                     className="flex-1 overflow-y-auto space-y-3.5 p-4 scrollbar-none"
                     style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
                   >
@@ -935,18 +1089,16 @@ function WatchContent({ slug }: { slug: string }) {
                           onClick={() => {
                             handleSelectEpisode(ep.name);
                           }}
-                          className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer hover:bg-zinc-800/35 transition-colors border ${
-                            isEpActive 
-                              ? "bg-[#1b1d2a]/60 border-pink-500 shadow-md shadow-pink-500/5 text-pink-500" 
+                          className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer hover:bg-zinc-800/35 transition-colors border ${isEpActive
+                              ? "bg-[#1b1d2a]/60 border-pink-500 shadow-md shadow-pink-500/5 text-pink-500"
                               : "border-transparent text-zinc-300 hover:text-white"
-                          }`}
+                            }`}
                         >
                           {/* Thumbnail representation */}
-                          <div className={`w-20 aspect-video rounded overflow-hidden bg-zinc-900 border shrink-0 relative transition-all ${
-                            isEpActive ? "border-pink-500" : "border-zinc-800"
-                          }`}>
-                            <img 
-                              src={getImageUrl(movie.thumb_url || movie.poster_url)} 
+                          <div className={`w-20 aspect-video rounded overflow-hidden bg-zinc-900 border shrink-0 relative transition-all ${isEpActive ? "border-pink-500" : "border-zinc-800"
+                            }`}>
+                            <img
+                              src={getImageUrl(movie.thumb_url || movie.poster_url)}
                               alt={ep.name}
                               className="w-full h-full object-cover opacity-70"
                               referrerPolicy="no-referrer"
@@ -987,9 +1139,8 @@ function WatchContent({ slug }: { slug: string }) {
                 <div className="flex flex-wrap items-center gap-3">
                   <button
                     onClick={handleToggleFavorite}
-                    className={`flex items-center gap-1 transition-all cursor-pointer bg-transparent border-none hover:bg-zinc-800/30 px-2 py-1 rounded-lg ${
-                      isFavorite ? "text-pink-500" : "text-zinc-400 hover:text-white"
-                    }`}
+                    className={`flex items-center gap-1 transition-all cursor-pointer bg-transparent border-none hover:bg-zinc-800/30 px-2 py-1 rounded-lg ${isFavorite ? "text-pink-500" : "text-zinc-400 hover:text-white"
+                      }`}
                   >
                     <Heart size={14} className={isFavorite ? "fill-pink-500 text-pink-500" : ""} />
                     <span>Yêu thích</span>
@@ -1007,8 +1158,8 @@ function WatchContent({ slug }: { slug: string }) {
                     {/* Dropdown list các danh sách phát */}
                     {showPlaylistDropdown && (
                       <>
-                        <div 
-                          className="fixed inset-0 z-40 bg-transparent cursor-default" 
+                        <div
+                          className="fixed inset-0 z-40 bg-transparent cursor-default"
                           onClick={() => {
                             setShowPlaylistDropdown(false);
                             setIsCreatingPlaylist(false);
@@ -1017,7 +1168,7 @@ function WatchContent({ slug }: { slug: string }) {
                         />
                         <div className="absolute bottom-9 left-0 z-50 w-56 bg-[#12131b]/95 border border-zinc-800 rounded-2xl p-3 shadow-2xl space-y-2.5 text-left animate-in fade-in slide-in-from-bottom-2 duration-150">
                           <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Thêm vào danh sách</p>
-                          
+
                           <div className="max-h-40 overflow-y-auto no-scrollbar space-y-1">
                             {user?.playlists && user.playlists.length > 0 ? (
                               user.playlists.map((playlist) => {
@@ -1041,7 +1192,7 @@ function WatchContent({ slug }: { slug: string }) {
                               <p className="text-[11px] text-zinc-550 px-1 py-2 font-medium">Chưa có danh sách phát nào</p>
                             )}
                           </div>
-                          
+
                           <div className="border-t border-zinc-850 pt-2.5">
                             {isCreatingPlaylist ? (
                               <form onSubmit={handleQuickCreatePlaylist} className="flex gap-1.5 w-full min-w-0 items-center">
@@ -1083,28 +1234,14 @@ function WatchContent({ slug }: { slug: string }) {
                     className="flex items-center gap-1 text-zinc-400 hover:text-white transition-all cursor-pointer bg-transparent border-none hover:bg-zinc-800/30 px-2 py-1 rounded-lg"
                   >
                     <span>Chuyển tập</span>
-                    <span className={`text-[8px] font-bold ml-1 px-1 py-0.2 rounded border leading-none transition-colors ${
-                      autoplayNext 
-                        ? "border-pink-500 text-pink-500 bg-pink-500/5 shadow-[0_0_8px_rgba(236,72,153,0.2)]" 
+                    <span className={`text-[8px] font-bold ml-1 px-1 py-0.2 rounded border leading-none transition-colors ${autoplayNext
+                        ? "border-pink-500 text-pink-500 bg-pink-500/5 shadow-[0_0_8px_rgba(236,72,153,0.2)]"
                         : "border-zinc-700 text-zinc-500 bg-transparent"
-                    }`}>
+                      }`}>
                       {autoplayNext ? "ON" : "OFF"}
                     </span>
                   </button>
 
-                  <button
-                    onClick={() => setSkipIntro(!skipIntro)}
-                    className="flex items-center gap-1 text-zinc-400 hover:text-white transition-all cursor-pointer bg-transparent border-none hover:bg-zinc-800/30 px-2 py-1 rounded-lg"
-                  >
-                    <span>Bỏ qua giới thiệu</span>
-                    <span className={`text-[8px] font-bold ml-1 px-1 py-0.2 rounded border leading-none transition-colors ${
-                      skipIntro 
-                        ? "border-pink-500 text-pink-500 bg-pink-500/5 shadow-[0_0_8px_rgba(236,72,153,0.2)]" 
-                        : "border-zinc-700 text-zinc-500 bg-transparent"
-                    }`}>
-                      {skipIntro ? "ON" : "OFF"}
-                    </span>
-                  </button>
 
                   <button
                     onClick={handleShare}
@@ -1136,22 +1273,22 @@ function WatchContent({ slug }: { slug: string }) {
 
         {/* 2. THÔNG TIN CHI TIẾT PHIM, DIỄN VIÊN, NGUỒN PHÁT VÀ SERVER PHÂN TRANG */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start pt-6 border-t border-zinc-900/60 text-left">
-          
+
           {/* CỘT TRÁI: THÔNG TIN PHIM, BẢN CHIẾU, DANH SÁCH TẬP */}
           <div className="lg:col-span-2 space-y-6">
-            
+
             {/* Thẻ thông tin nhanh của phim */}
             <div className="flex flex-col sm:flex-row gap-5 bg-[#0d0e13]/30 p-5 rounded-2xl">
               {/* Poster */}
               <div className="w-24 sm:w-28 aspect-[2/3] shrink-0 rounded-xl overflow-hidden shadow-md bg-zinc-900">
-                <img 
-                  src={getImageUrl(movie.poster_url || movie.thumb_url)} 
-                  alt={cleanedName} 
+                <img
+                  src={getImageUrl(movie.poster_url || movie.thumb_url)}
+                  alt={cleanedName}
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
                 />
               </div>
-              
+
               {/* Chi tiết */}
               <div className="flex-1 space-y-3">
                 <div>
@@ -1164,7 +1301,7 @@ function WatchContent({ slug }: { slug: string }) {
                     </h3>
                   )}
                 </div>
-                
+
                 {/* Badges thông số */}
                 <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-extrabold select-none">
                   <span className="bg-amber-400 text-black border border-amber-400 font-black px-2 py-0.5 rounded flex items-center gap-0.5 shadow-sm">
@@ -1193,7 +1330,7 @@ function WatchContent({ slug }: { slug: string }) {
                     ))}
                   </div>
                 )}
-                
+
                 {/* Đoạn mô tả tóm tắt */}
                 <p className="text-zinc-400 text-xs leading-relaxed font-semibold">
                   {movie.content ? (() => {
@@ -1201,7 +1338,7 @@ function WatchContent({ slug }: { slug: string }) {
                     return cleanDesc.length > 160 ? cleanDesc.slice(0, 160) + "..." : cleanDesc;
                   })() : "Chưa có mô tả chi tiết của phim này."}
                 </p>
-                
+
                 {/* Link xem thông tin phim quay về trang chi tiết */}
                 <div>
                   <button
@@ -1216,20 +1353,20 @@ function WatchContent({ slug }: { slug: string }) {
 
             {/* Unified Sources & Episodes Selection Panel */}
             <div className="bg-[#0d0e13]/30 p-5 rounded-2xl border border-zinc-900/60 space-y-5">
-              
+
               {/* Row 1: Chọn Nguồn Phát */}
               {servers.length > 0 && (
                 <div className="space-y-3">
                   <span className="block text-xs font-black text-zinc-455 uppercase tracking-wider">
                     Chọn Nguồn Phát:
                   </span>
-                  
+
                   <div className="flex flex-wrap gap-2.5">
                     {servers.map((server, sIdx) => {
                       const hasHls = server.server_data.some((ep) => ep.link_m3u8);
                       const isServerActive = sIdx === activeServerIndex;
                       const serverLabel = friendlyLabels[sIdx] || server.server_name;
-                      
+
                       return (
                         <React.Fragment key={`combined-source-${sIdx}`}>
                           {/* VIP (Embed) Source Button */}
@@ -1239,15 +1376,14 @@ function WatchContent({ slug }: { slug: string }) {
                               setPlayerType("embed");
                               scrollToPlayer();
                             }}
-                            className={`px-4 py-2 text-xs font-black rounded-lg transition-all border-none cursor-pointer uppercase ${
-                              isServerActive && playerType === "embed"
+                            className={`px-4 py-2 text-xs font-black rounded-lg transition-all border-none cursor-pointer uppercase ${isServerActive && playerType === "embed"
                                 ? "bg-pink-500 text-white font-extrabold shadow-md shadow-pink-500/20"
                                 : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-zinc-800 hover:text-white"
-                            }`}
+                              }`}
                           >
                             {serverLabel} (Embed)
                           </button>
-                          
+
                           {/* HLS (m3u8) Source Button */}
                           {hasHls && (
                             <button
@@ -1256,11 +1392,10 @@ function WatchContent({ slug }: { slug: string }) {
                                 setPlayerType("hls");
                                 scrollToPlayer();
                               }}
-                              className={`px-4 py-2 text-xs font-black rounded-lg transition-all border-none cursor-pointer uppercase ${
-                                isServerActive && playerType === "hls"
+                              className={`px-4 py-2 text-xs font-black rounded-lg transition-all border-none cursor-pointer uppercase ${isServerActive && playerType === "hls"
                                   ? "bg-pink-500 text-white font-extrabold shadow-md shadow-pink-500/20"
                                   : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-zinc-800 hover:text-white"
-                              }`}
+                                }`}
                             >
                               {serverLabel} (HLS)
                             </button>
@@ -1278,7 +1413,7 @@ function WatchContent({ slug }: { slug: string }) {
                   <span className="block text-xs font-black text-zinc-455 uppercase tracking-wider">
                     {episodesData.length <= 1 ? "Bản phát sóng:" : "Danh sách tập phim:"}
                   </span>
-                  
+
                   {/* Phân nhóm tập phim nếu số lượng tập > 100 */}
                   {episodesData.length > 100 && (
                     <div className="flex flex-wrap gap-1.5 pb-2">
@@ -1290,11 +1425,10 @@ function WatchContent({ slug }: { slug: string }) {
                           <button
                             key={`batch-${bIdx}`}
                             onClick={() => setSelectedEpisodeBatch(bIdx)}
-                            className={`px-3 py-1.5 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer border-none ${
-                              isActive
+                            className={`px-3 py-1.5 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer border-none ${isActive
                                 ? "bg-pink-500 text-white shadow-sm shadow-pink-500/15"
                                 : "bg-[#1b1d2a] text-[#a0a5c0] hover:text-white hover:bg-[#23263a]"
-                            }`}
+                              }`}
                           >
                             Tập {start} - {end}
                           </button>
@@ -1317,11 +1451,10 @@ function WatchContent({ slug }: { slug: string }) {
                             handleSelectEpisode(ep.name);
                             scrollToPlayer();
                           }}
-                          className={`h-10 rounded-xl font-extrabold text-xs flex items-center justify-center transition-all cursor-pointer border-none ${
-                            isEpActive
+                          className={`h-10 rounded-xl font-extrabold text-xs flex items-center justify-center transition-all cursor-pointer border-none ${isEpActive
                               ? "bg-pink-500 text-white shadow-lg shadow-pink-500/25"
                               : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-pink-500 hover:text-white"
-                          }`}
+                            }`}
                         >
                           <Play size={10} className="fill-current mr-1.5 shrink-0" />
                           {ep.name.toLowerCase().includes("tập") ? ep.name : `Tập ${ep.name}`}
@@ -1345,7 +1478,7 @@ function WatchContent({ slug }: { slug: string }) {
 
           {/* CỘT PHẢI: INTERACTION, DISCORD BANNER, DIỄN VIÊN */}
           <div className="space-y-6">
-            
+
             {/* Bộ tương tác nhanh + Rating */}
             <div className="bg-[#0d0e13]/30 p-4 rounded-xl space-y-4">
               {/* Action row */}
@@ -1389,11 +1522,10 @@ function WatchContent({ slug }: { slug: string }) {
                           disabled={submittingRating}
                           onMouseEnter={() => setHoverStar(val)}
                           onClick={() => handleSubmitRating(val)}
-                          className={`w-8 h-8 rounded-lg font-black text-xs transition-all border-none cursor-pointer select-none ${
-                            isHighlighted
+                          className={`w-8 h-8 rounded-lg font-black text-xs transition-all border-none cursor-pointer select-none ${isHighlighted
                               ? 'bg-pink-500 text-white shadow-md shadow-pink-500/20'
                               : 'bg-[#1b1d2a] text-zinc-500 hover:bg-pink-500/20 hover:text-pink-400'
-                          } ${submittingRating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            } ${submittingRating ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                           {val}
                         </button>
@@ -1518,11 +1650,10 @@ function WatchContent({ slug }: { slug: string }) {
                     ].map((item) => (
                       <label
                         key={item.value}
-                        className={`p-2.5 rounded-xl border text-[10px] font-bold flex items-center justify-center text-center cursor-pointer transition-all ${
-                          reportErrorType === item.value
+                        className={`p-2.5 rounded-xl border text-[10px] font-bold flex items-center justify-center text-center cursor-pointer transition-all ${reportErrorType === item.value
                             ? "bg-pink-500/10 border-pink-500/50 text-pink-400"
                             : "bg-zinc-900/40 border-zinc-900 text-zinc-400 hover:border-zinc-800"
-                        }`}
+                          }`}
                       >
                         <input
                           type="radio"

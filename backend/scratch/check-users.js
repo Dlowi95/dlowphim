@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
-const mongoUri = 'mongodb+srv://dailoi:dailoi0905@dailoi.f7gntdr.mongodb.net/dlowphim?appName=dailoi';
+const mongoUri = process.env.MONGO_URI;
 
 async function run() {
   try {
