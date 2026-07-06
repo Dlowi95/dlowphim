@@ -1252,6 +1252,13 @@ function WatchContent({ slug }: { slug: string }) {
                   </button>
 
                   <button
+                    onClick={() => {
+                      if (!user) {
+                        window.dispatchEvent(new Event("dlowphim_open_auth"));
+                        return;
+                      }
+                      router.push(`/watch-together/create/${movie.slug}`);
+                    }}
                     className="flex items-center gap-1 text-zinc-400 hover:text-white transition-all cursor-pointer bg-transparent border-none hover:bg-zinc-800/30 px-2 py-1 rounded-lg"
                   >
                     <Users size={14} />

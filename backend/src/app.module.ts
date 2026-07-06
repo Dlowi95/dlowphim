@@ -11,6 +11,7 @@ import { BannersModule } from './banners/banners.module';
 import { MovieReportsModule } from './movie-reports/movie-reports.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { SystemSettingsModule } from './system-settings/system-settings.module';
+import { RoomsModule } from './rooms/rooms.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { SystemSettingsModule } from './system-settings/system-settings.module';
     MovieReportsModule,
     NotificationsModule,
     SystemSettingsModule,
+    RoomsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
