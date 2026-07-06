@@ -1,10 +1,9 @@
 export const EMOJIS = [
-  { type: "like", label: "👍", text: "Thích", color: "text-blue-400" },
-  { type: "love", label: "❤️", text: "Yêu thích", color: "text-red-500" },
-  { type: "haha", label: "😂", text: "Haha", color: "text-yellow-400" },
-  { type: "wow", label: "😮", text: "Wow", color: "text-yellow-400" },
-  { type: "sad", label: "😢", text: "Buồn", color: "text-blue-300" },
-  { type: "angry", label: "😡", text: "Phẫn nộ", color: "text-orange-500" },
+  { type: "heart", label: "❤️", imageUrl: "/images/emoji/1.png", text: "Tim", color: "text-red-500" },
+  { type: "haha", label: "😆", imageUrl: "/images/emoji/2.png", text: "Haha", color: "text-yellow-400" },
+  { type: "sad", label: "🥺", imageUrl: "/images/emoji/3.png", text: "Thương thương", color: "text-blue-300" },
+  { type: "wow", label: "😳", imageUrl: "/images/emoji/4.png", text: "Kinh ngạc", color: "text-orange-400" },
+  { type: "pig", label: "🐽", imageUrl: "/images/emoji/5.png", text: "Heo con", color: "text-pink-400" },
 ];
 
 export interface CommentReaction {

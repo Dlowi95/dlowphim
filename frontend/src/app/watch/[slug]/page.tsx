@@ -669,8 +669,14 @@ function WatchContent({ slug }: { slug: string }) {
   const handleHlsLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = e.currentTarget;
     try {
-      const localHist = JSON.parse(localStorage.getItem("dlowphim_history") || "[]");
-      const savedItem = localHist.find((item: any) => item.movieSlug === slug);
+      let savedItem = null;
+      if (user && user.watchHistory) {
+        savedItem = user.watchHistory.find((item: any) => item.movieSlug === slug);
+      } else {
+        const localHist = JSON.parse(localStorage.getItem("dlowphim_history") || "[]");
+        savedItem = localHist.find((item: any) => item.movieSlug === slug);
+      }
+
       if (savedItem && savedItem.currentTime > 5 && savedItem.currentTime < video.duration - 10) {
         video.currentTime = savedItem.currentTime;
         hasSkippedIntro.current = true; // Mark as skipped to prevent auto-skipping again on resume
@@ -1346,7 +1352,9 @@ function WatchContent({ slug }: { slug: string }) {
               <div className="flex items-center justify-between gap-4">
                 <div className="flex gap-4">
                   <button
-                    onClick={() => {
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
                       document.getElementById("movie-comments")?.scrollIntoView({ behavior: "smooth" });
                     }}
                     className="flex flex-col items-center gap-1 bg-transparent border-none text-zinc-400 hover:text-white cursor-pointer select-none"

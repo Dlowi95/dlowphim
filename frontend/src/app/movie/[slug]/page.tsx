@@ -530,6 +530,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                 </div>
 
                 <button
+                  type="button"
                   onClick={handleShare}
                   className="flex flex-col items-center gap-1 text-[10px] md:text-[11px] font-bold text-zinc-400 hover:text-white transition-colors cursor-pointer select-none"
                 >
@@ -538,7 +539,9 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                 </button>
 
                 <button
-                  onClick={() => {
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
                     document.getElementById("movie-comments")?.scrollIntoView({ behavior: "smooth" });
                   }}
                   className="flex flex-col items-center gap-1 text-[10px] md:text-[11px] font-bold text-zinc-400 hover:text-white transition-colors cursor-pointer select-none"
@@ -550,7 +553,8 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                 {/* Rating button - blue background pill on the right side */}
                 {!isTrailerOnly && (
                   <div
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.preventDefault();
                       document.getElementById("movie-comments")?.scrollIntoView({ behavior: "smooth" });
                       window.dispatchEvent(new Event("dlowphim_switch_rating_tab"));
                     }}

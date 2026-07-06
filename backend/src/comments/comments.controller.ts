@@ -40,17 +40,6 @@ export class CommentsController {
     return this.commentsService.createComment(userId, movieSlug, createDto);
   }
 
-  @Post(':id/vote')
-  @UseGuards(AuthGuard)
-  async toggleVote(
-    @Param('id') commentId: string,
-    @Req() req: any,
-    @Body('type') voteType: 'up' | 'down',
-  ) {
-    const userId = req.user.sub;
-    return this.commentsService.toggleVote(commentId, userId, voteType);
-  }
-
   @Post(':id/reaction')
   @UseGuards(AuthGuard)
   async toggleReaction(

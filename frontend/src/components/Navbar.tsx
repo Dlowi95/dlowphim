@@ -453,23 +453,34 @@ export default function NavbarComponent() {
                 {/* Nút Chuông Thông Báo Popover (Tối ưu hóa bằng Popover để hiển thị hoàn hảo) */}
                 <Popover
                   placement="bottom-end"
+                  offset={12}
+                  showArrow
                   onOpenChange={(isOpen) => isOpen && loadRecentNotifs()}
                 >
-                  <PopoverTrigger>
-                    <Button
-                      isIconOnly
-                      radius="full"
-                      variant="light"
-                      className="bg-[#1c203e]/60 hover:bg-[#23284e] border border-zinc-800/60 w-10 h-10 flex items-center justify-center transition-all duration-200 relative cursor-pointer select-none"
-                    >
-                      <Bell size={18} className="text-white fill-white" />
-                      {unreadNotificationsCount > 0 && (
-                        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-pink-500 text-white text-[9px] font-black rounded-full flex items-center justify-center px-1 border-2 border-[#12131b] z-50 animate-bounce">
-                          {unreadNotificationsCount > 9 ? "9+" : unreadNotificationsCount}
-                        </span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
+                    <PopoverTrigger>
+                      <button
+                        type="button"
+                        className={
+                          unreadNotificationsCount > 0
+                            ? "bg-pink-500/10 hover:bg-pink-500/20 border border-pink-500/30 w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 relative cursor-pointer select-none animate-pulse text-pink-500"
+                            : "bg-[#1c203e]/60 hover:bg-[#23284e] border border-zinc-800/60 w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 relative cursor-pointer select-none text-white"
+                        }
+                      >
+                        <Bell
+                          size={18}
+                          className={
+                            unreadNotificationsCount > 0
+                              ? "text-pink-500 fill-pink-500"
+                              : "text-white fill-white"
+                          }
+                        />
+                        {unreadNotificationsCount > 0 && (
+                          <div className="absolute -top-0.5 -right-0.5 bg-red-600 text-white text-[8px] font-black h-3.5 min-w-[14px] px-0.5 rounded-full flex items-center justify-center border border-black shadow-md select-none z-10">
+                            {unreadNotificationsCount}
+                          </div>
+                        )}
+                      </button>
+                    </PopoverTrigger>
                   <PopoverContent className="bg-[#161a33] text-white border border-zinc-800 rounded-3xl p-4 w-[340px] shadow-[0_25px_60px_rgba(0,0,0,0.8)] block text-left">
                     {/* Header */}
                     <div className="flex items-center justify-between w-full border-b border-zinc-800/50 pb-2.5 mb-3">

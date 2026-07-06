@@ -32,21 +32,7 @@ export class CommentsService {
       .sort({ createdAt: -1 })
       .exec();
 
-    const userIdObj = currentUserId ? new Types.ObjectId(currentUserId) : null;
-
     return comments.map((c) => {
-      const upvotesCount = c.upvotes ? c.upvotes.length : 0;
-      const downvotesCount = c.downvotes ? c.downvotes.length : 0;
-
-      let userVote: 'up' | 'down' | null = null;
-      if (userIdObj) {
-        if (c.upvotes?.some((id) => id.toString() === userIdObj.toString())) {
-          userVote = 'up';
-        } else if (c.downvotes?.some((id) => id.toString() === userIdObj.toString())) {
-          userVote = 'down';
-        }
-      }
-
       const userObj = c.userId as any;
       const finalDisplayName = userObj?.displayName || c.displayName;
       const finalAvatarUrl = userObj?.avatar || c.avatar;
@@ -73,11 +59,6 @@ export class CommentsService {
         role: finalRole,
         content: c.content,
         time: getFormattedDate((c as any).createdAt || new Date()),
-        likes: upvotesCount - downvotesCount,
-        upvotes: upvotesCount,
-        downvotes: downvotesCount,
-        liked: userVote === 'up',
-        userVote,
         isSpoiler: c.isSpoiler,
         episodeLabel: c.episodeLabel,
         parentId: c.parentId ? c.parentId.toString() : null,
@@ -90,7 +71,7 @@ export class CommentsService {
   async createComment(
     userId: string,
     movieSlug: string,
-    createDto: { content: string; isSpoiler?: boolean; episodeLabel?: string; parentId?: string },
+    createDto: { content: string; isSpoiler?: boolean; episodeLabel?: string; parentId?: string; replyToUserId?: string },
   ) {
     const user = await this.userModel.findById(userId).exec();
     if (!user) {
@@ -107,24 +88,27 @@ export class CommentsService {
       isSpoiler: !!createDto.isSpoiler,
       episodeLabel: createDto.episodeLabel,
       parentId: createDto.parentId ? new Types.ObjectId(createDto.parentId) : null,
-      upvotes: [],
-      downvotes: [],
     });
 
     const saved = await newComment.save();
 
-    // Tự động tạo thông báo cho người viết bình luận cha khi có người reply
+    // Tự động tạo thông báo cho người viết bình luận cha hoặc người được reply khi có người reply
     if (createDto.parentId) {
       try {
         const parentComment = await this.commentModel.findById(createDto.parentId).exec();
-        if (parentComment && parentComment.userId && parentComment.userId.toString() !== userId) {
-          await this.notificationsService.createUserNotification({
-            userId: parentComment.userId,
-            type: 'reply',
-            title: 'Phản hồi bình luận mới',
-            content: `${user.displayName} đã trả lời bình luận của bạn.`,
-            link: `/movie/${movieSlug}#movie-comments`,
-          });
+        if (parentComment) {
+          // Ưu tiên targetUserId gửi từ Frontend, nếu không có thì fallback về chủ bình luận cha
+          const targetUserIdStr = createDto.replyToUserId || parentComment.userId?.toString();
+
+          if (targetUserIdStr && targetUserIdStr !== userId) {
+            await this.notificationsService.createUserNotification({
+              userId: new Types.ObjectId(targetUserIdStr),
+              type: 'reply',
+              title: 'Phản hồi bình luận mới',
+              content: `${user.displayName} đã trả lời bình luận của bạn.`,
+              link: `/movie/${movieSlug}#movie-comments`,
+            });
+          }
         }
       } catch (err) {
         console.error('Lỗi tạo thông báo khi reply comment:', err);
@@ -140,11 +124,6 @@ export class CommentsService {
       role: saved.role,
       content: saved.content,
       time: getFormattedDate((saved as any).createdAt || new Date()),
-      likes: 0,
-      upvotes: 0,
-      downvotes: 0,
-      liked: false,
-      userVote: null,
       isSpoiler: saved.isSpoiler,
       episodeLabel: saved.episodeLabel,
       parentId: saved.parentId ? saved.parentId.toString() : null,
@@ -152,59 +131,6 @@ export class CommentsService {
       userReaction: null,
     };
   }
-
-  async toggleVote(commentId: string, userId: string, voteType: 'up' | 'down') {
-    const comment = await this.commentModel.findById(commentId).exec();
-    if (!comment) {
-      throw new NotFoundException('Không tìm thấy bình luận');
-    }
-
-    const userIdObj = new Types.ObjectId(userId);
-
-    const hasUpvoted = comment.upvotes?.some((id) => id.toString() === userId);
-    const hasDownvoted = comment.downvotes?.some((id) => id.toString() === userId);
-
-    if (voteType === 'up') {
-      if (hasUpvoted) {
-        // Toggle off
-        comment.upvotes = comment.upvotes.filter((id) => id.toString() !== userId);
-      } else {
-        // Toggle on upvote, remove from downvote
-        comment.upvotes = [...(comment.upvotes || []), userIdObj];
-        comment.downvotes = (comment.downvotes || []).filter((id) => id.toString() !== userId);
-      }
-    } else {
-      if (hasDownvoted) {
-        // Toggle off
-        comment.downvotes = comment.downvotes.filter((id) => id.toString() !== userId);
-      } else {
-        // Toggle on downvote, remove from upvote
-        comment.downvotes = [...(comment.downvotes || []), userIdObj];
-        comment.upvotes = (comment.upvotes || []).filter((id) => id.toString() !== userId);
-      }
-    }
-
-    const saved = await comment.save();
-
-    const upvotesCount = saved.upvotes ? saved.upvotes.length : 0;
-    const downvotesCount = saved.downvotes ? saved.downvotes.length : 0;
-
-    let userVote: 'up' | 'down' | null = null;
-    if (saved.upvotes?.some((id) => id.toString() === userId)) {
-      userVote = 'up';
-    } else if (saved.downvotes?.some((id) => id.toString() === userId)) {
-      userVote = 'down';
-    }
-
-    return {
-      likes: upvotesCount - downvotesCount,
-      liked: userVote === 'up',
-      userVote,
-      upvotes: upvotesCount,
-      downvotes: downvotesCount,
-    };
-  }
-
   async toggleReaction(commentId: string, userId: string, reactionType: string) {
     const comment = await this.commentModel.findById(commentId).exec();
     if (!comment) {

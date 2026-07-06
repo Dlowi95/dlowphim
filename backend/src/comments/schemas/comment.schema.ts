@@ -29,12 +29,6 @@ export class Comment {
   @Prop()
   episodeLabel?: string;
 
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: [] })
-  upvotes: Types.ObjectId[];
-
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: [] })
-  downvotes: Types.ObjectId[];
-
   @Prop({
     type: [{
       userId: { type: Types.ObjectId, ref: 'User', required: true },

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   Star,
   Send,
@@ -85,12 +85,15 @@ export default function CommentRatingSection({
 
   // Reply states
   const [replyToId, setReplyToId] = useState<string | null>(null);
+  const [activeReplyTargetId, setActiveReplyTargetId] = useState<string | null>(null);
+  const [replyToUserId, setReplyToUserId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
   const [replyIsSpoiler, setReplyIsSpoiler] = useState(false);
 
   // Action menu state
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [activeEmojiMenuId, setActiveEmojiMenuId] = useState<string | null>(null);
+  const hasScrolledRef = useRef(false);
 
   interface ReportModalState {
     isOpen: boolean;
@@ -148,14 +151,29 @@ export default function CommentRatingSection({
 
   // Tự động cuộn xuống khu vực bình luận nếu URL chứa hash #movie-comments
   useEffect(() => {
-    if (comments.length > 0 && typeof window !== "undefined" && window.location.hash === "#movie-comments") {
-      const timer = setTimeout(() => {
-        const el = document.getElementById("movie-comments");
-        if (el) {
-          el.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      }, 500);
-      return () => clearTimeout(timer);
+    if (comments.length > 0 && typeof window !== "undefined" && window.location.hash === "#movie-comments" && !hasScrolledRef.current) {
+      hasScrolledRef.current = true;
+
+      // Kiểm tra xem trang có phải là reload hay không
+      const navigationEntries = window.performance?.getEntriesByType("navigation");
+      const isReload = navigationEntries && 
+        navigationEntries[0] && 
+        (navigationEntries[0] as PerformanceNavigationTiming).type === "reload";
+
+      if (!isReload) {
+        const timer = setTimeout(() => {
+          const el = document.getElementById("movie-comments");
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+          // Xóa hash để reload không bị cuộn lại
+          window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        }, 500);
+        return () => clearTimeout(timer);
+      } else {
+        // Nếu là reload, xóa hash ngay lập tức để giữ nguyên scroll của trình duyệt
+        window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      }
     }
   }, [comments]);
 
@@ -223,6 +241,7 @@ export default function CommentRatingSection({
           isSpoiler: replyIsSpoiler,
           episodeLabel: episodeLabel || undefined,
           parentId,
+          replyToUserId: replyToUserId || undefined,
         }),
       });
       if (res.ok) {
@@ -230,6 +249,8 @@ export default function CommentRatingSection({
         setComments((prev: Comment[]) => [...prev, newReply]);
         setReplyText("");
         setReplyToId(null);
+        setActiveReplyTargetId(null);
+        setReplyToUserId(null);
         setReplyIsSpoiler(false);
       }
     } catch (err) {
@@ -439,22 +460,20 @@ export default function CommentRatingSection({
                   <img
                     src={user.avatar}
                     alt={user.displayName}
-                    className={`w-10 h-10 rounded-full object-cover shrink-0 shadow-sm border border-zinc-800 ${
-                      user.role === "admin"
+                    className={`w-10 h-10 rounded-full object-cover shrink-0 shadow-sm border border-zinc-800 ${user.role === "admin"
                         ? "ring-2 ring-pink-500 ring-offset-2 ring-offset-[#0d0e13] shadow-[0_0_10px_rgba(236,72,153,0.5)]"
                         : ""
-                    }`}
+                      }`}
                     referrerPolicy="no-referrer"
                   />
                 ) : (
                   <img
                     src="/images/avatars/default.png"
                     alt={user.displayName}
-                    className={`w-10 h-10 rounded-full object-cover shrink-0 shadow-sm border border-zinc-800 ${
-                      user.role === "admin"
+                    className={`w-10 h-10 rounded-full object-cover shrink-0 shadow-sm border border-zinc-800 ${user.role === "admin"
                         ? "ring-2 ring-pink-500 ring-offset-2 ring-offset-[#0d0e13] shadow-[0_0_10px_rgba(236,72,153,0.5)]"
                         : ""
-                    }`}
+                      }`}
                   />
                 )}
                 <div className="flex flex-col text-left">
@@ -584,22 +603,20 @@ export default function CommentRatingSection({
                           <img
                             src={comment.avatarUrl}
                             alt={comment.name}
-                            className={`w-9 h-9 rounded-full object-cover shrink-0 shadow-sm border border-zinc-800 ${
-                              isAdmin
+                            className={`w-9 h-9 rounded-full object-cover shrink-0 shadow-sm border border-zinc-800 ${isAdmin
                                 ? "ring-2 ring-pink-500 ring-offset-[1.5px] ring-offset-[#0d0e13] shadow-[0_0_8px_rgba(236,72,153,0.45)]"
                                 : ""
-                            }`}
+                              }`}
                             referrerPolicy="no-referrer"
                           />
                         ) : (
                           <img
                             src="/images/avatars/default.png"
                             alt={comment.name}
-                            className={`w-9 h-9 rounded-full object-cover shrink-0 shadow-sm border border-zinc-800 ${
-                              isAdmin
+                            className={`w-9 h-9 rounded-full object-cover shrink-0 shadow-sm border border-zinc-800 ${isAdmin
                                 ? "ring-2 ring-pink-500 ring-offset-[1.5px] ring-offset-[#0d0e13] shadow-[0_0_8px_rgba(236,72,153,0.45)]"
                                 : ""
-                            }`}
+                              }`}
                           />
                         )}
 
@@ -695,10 +712,13 @@ export default function CommentRatingSection({
                                   window.dispatchEvent(new Event("dlowphim_open_auth"));
                                   return;
                                 }
-                                setReplyToId(replyToId === comment.id ? null : comment.id);
+                                const targetId = activeReplyTargetId === comment.id ? null : comment.id;
+                                setReplyToId(targetId);
+                                setActiveReplyTargetId(targetId);
+                                setReplyToUserId(targetId ? comment.userId : null);
                                 setReplyText("");
                               }}
-                              className={`flex items-center gap-1 hover:text-zinc-300 transition-colors cursor-pointer bg-transparent border-none text-[10px] font-bold ${replyToId === comment.id ? "text-pink-500" : "text-zinc-500"
+                              className={`flex items-center gap-1 hover:text-zinc-300 transition-colors cursor-pointer bg-transparent border-none text-[10px] font-bold ${activeReplyTargetId === comment.id ? "text-pink-500" : "text-zinc-500"
                                 }`}
                             >
                               <CornerDownLeft size={11} />
@@ -764,67 +784,11 @@ export default function CommentRatingSection({
                         </div>
                       </div>
 
-                      {/* Reply Input Box (Neon Pink styling) */}
-                      {replyToId === comment.id && (
-                        <div className="ml-12 pl-1 animate-fadeIn">
-                          <form onSubmit={(e) => handleSubmitReply(e, comment.id)}>
-                            <div className="bg-[#13141d] border border-pink-500/20 focus-within:!border-pink-500 rounded-xl p-3 transition-all relative">
-                              <div className="relative">
-                                <textarea
-                                  value={replyText}
-                                  onChange={(e) => setReplyText(e.target.value.slice(0, 1000))}
-                                  placeholder="Trả lời bình luận này..."
-                                  className="w-full min-h-[70px] bg-transparent text-xs text-zinc-200 placeholder-zinc-550 focus:outline-none resize-none pr-16 font-medium leading-relaxed"
-                                />
-                                <span className="absolute top-0 right-0 text-[9px] font-bold text-zinc-650 select-none">
-                                  {replyText.length} / 1000
-                                </span>
-                              </div>
 
-                              <div className="flex items-center justify-between pt-2.5 border-t border-zinc-900/50">
-                                {/* Spoiler toggle */}
-                                <div
-                                  onClick={() => setReplyIsSpoiler(!replyIsSpoiler)}
-                                  className="flex items-center gap-2 select-none cursor-pointer"
-                                >
-                                  <div
-                                    className={`w-7 h-4 rounded-full p-0.5 transition-colors duration-200 flex items-center ${replyIsSpoiler ? "bg-pink-500" : "bg-zinc-800"
-                                      }`}
-                                  >
-                                    <div
-                                      className={`w-3 h-3 rounded-full bg-white transition-transform duration-200 ${replyIsSpoiler ? "translate-x-3" : "translate-x-0"
-                                        }`}
-                                    />
-                                  </div>
-                                  <span className="text-[10px] font-extrabold text-zinc-400">Tiết lộ?</span>
-                                </div>
-
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => setReplyToId(null)}
-                                    className="bg-transparent border-none text-zinc-400 hover:text-white font-extrabold text-[10px] cursor-pointer"
-                                  >
-                                    Hủy
-                                  </button>
-                                  <button
-                                    type="submit"
-                                    disabled={!replyText.trim()}
-                                    className="flex items-center gap-1.5 bg-transparent border-none text-pink-500 hover:text-pink-400 font-extrabold text-[10px] cursor-pointer disabled:opacity-40"
-                                  >
-                                    <span>Gửi</span>
-                                    <Send size={11} className="text-pink-500 fill-pink-500/10 rotate-45 -translate-y-0.5" />
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          </form>
-                        </div>
-                      )}
 
                       {/* Nested Replies List (Indented under parent) */}
                       {replies.length > 0 && (
-                        <div className="ml-12 pl-3 border-l border-zinc-900/80 space-y-4.5 mt-2">
+                        <div className="ml-12 pl-3 border-l border-zinc-900/80 space-y-5.5">
                           {replies.map((reply: Comment) => {
                             const isReplyAdmin = reply.role === "admin";
                             const isReplySpoiler = reply.isSpoiler;
@@ -832,7 +796,7 @@ export default function CommentRatingSection({
                             const repliesOfReply = comments.filter(r => r.parentId === reply.id).sort((a, b) => a.id.localeCompare(b.id)); // not used yet but for safety
 
                             return (
-                              <div key={reply.id} className="flex gap-3">
+                              <div key={reply.id} className="flex gap-3 pb-3">
                                 {/* Reply Avatar */}
                                 {reply.avatarUrl === "vietnam-flag" ? (
                                   <div className={`w-7 h-7 rounded-full bg-red-600 flex items-center justify-center shrink-0 border border-red-500 select-none ${isReplyAdmin ? "ring-2 ring-pink-500 ring-offset-1 ring-offset-[#0d0e13] shadow-[0_0_8px_rgba(236,72,153,0.45)]" : ""}`}>
@@ -842,22 +806,20 @@ export default function CommentRatingSection({
                                   <img
                                     src={reply.avatarUrl}
                                     alt={reply.name}
-                                    className={`w-7 h-7 rounded-full object-cover shrink-0 border border-zinc-800 ${
-                                      isReplyAdmin
+                                    className={`w-7 h-7 rounded-full object-cover shrink-0 border border-zinc-800 ${isReplyAdmin
                                         ? "ring-2 ring-pink-500 ring-offset-1 ring-offset-[#0d0e13] shadow-[0_0_8px_rgba(236,72,153,0.45)]"
                                         : ""
-                                    }`}
+                                      }`}
                                     referrerPolicy="no-referrer"
                                   />
                                 ) : (
                                   <img
                                     src="/images/avatars/default.png"
                                     alt={reply.name}
-                                    className={`w-7 h-7 rounded-full object-cover shrink-0 border border-zinc-800 ${
-                                      isReplyAdmin
+                                    className={`w-7 h-7 rounded-full object-cover shrink-0 border border-zinc-800 ${isReplyAdmin
                                         ? "ring-2 ring-pink-500 ring-offset-1 ring-offset-[#0d0e13] shadow-[0_0_8px_rgba(236,72,153,0.45)]"
                                         : ""
-                                    }`}
+                                      }`}
                                   />
                                 )}
 
@@ -922,6 +884,38 @@ export default function CommentRatingSection({
                                       size={10}
                                     />
 
+                                    {/* Trả lời (Reply of Reply) */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (!user) {
+                                          window.dispatchEvent(new Event("dlowphim_open_auth"));
+                                          return;
+                                        }
+                                        if (activeReplyTargetId === reply.id) {
+                                          setReplyToId(null);
+                                          setActiveReplyTargetId(null);
+                                          setReplyToUserId(null);
+                                        } else {
+                                          setReplyToId(comment.id);
+                                          setActiveReplyTargetId(reply.id);
+                                          setReplyToUserId(reply.userId);
+                                          setReplyText("");
+                                          setTimeout(() => {
+                                            const textarea = document.getElementById(`reply-input-${comment.id}`);
+                                            if (textarea) {
+                                              textarea.focus();
+                                            }
+                                          }, 100);
+                                        }
+                                      }}
+                                      className={`flex items-center gap-1 hover:text-zinc-300 transition-colors cursor-pointer bg-transparent border-none text-[9px] font-bold ${activeReplyTargetId === reply.id ? "text-pink-500" : "text-zinc-500"
+                                        }`}
+                                    >
+                                      <CornerDownLeft size={10} />
+                                      <span>Trả lời</span>
+                                    </button>
+
                                     {/* More (Report/Delete) */}
                                     <div className="relative">
                                       <button
@@ -982,6 +976,69 @@ export default function CommentRatingSection({
                               </div>
                             );
                           })}
+                        </div>
+                      )}
+
+                      {/* Reply Input Box (Neon Pink styling) - Dời xuống dưới cùng của thread comment */}
+                      {replyToId === comment.id && (
+                        <div className="ml-12 pl-1 animate-fadeIn mt-5.5">
+                          <form onSubmit={(e) => handleSubmitReply(e, comment.id)}>
+                            <div className="bg-[#13141d] border border-pink-500/20 focus-within:!border-pink-500 rounded-xl p-3 transition-all relative">
+                              <div className="relative">
+                                <textarea
+                                  id={`reply-input-${comment.id}`}
+                                  value={replyText}
+                                  onChange={(e) => setReplyText(e.target.value.slice(0, 1000))}
+                                  placeholder="Trả lời bình luận này..."
+                                  className="w-full min-h-[70px] bg-transparent text-xs text-zinc-200 placeholder-zinc-550 focus:outline-none resize-none pr-16 font-medium leading-relaxed"
+                                />
+                                <span className="absolute top-0 right-0 text-[9px] font-bold text-zinc-650 select-none">
+                                  {replyText.length} / 1000
+                                </span>
+                              </div>
+
+                              <div className="flex items-center justify-between pt-2.5 border-t border-zinc-900/50">
+                                {/* Spoiler toggle */}
+                                <div
+                                  onClick={() => setReplyIsSpoiler(!replyIsSpoiler)}
+                                  className="flex items-center gap-2 select-none cursor-pointer"
+                                >
+                                  <div
+                                    className={`w-7 h-4 rounded-full p-0.5 transition-colors duration-200 flex items-center ${replyIsSpoiler ? "bg-pink-500" : "bg-zinc-800"
+                                      }`}
+                                  >
+                                    <div
+                                      className={`w-3 h-3 rounded-full bg-white transition-transform duration-200 ${replyIsSpoiler ? "translate-x-3" : "translate-x-0"
+                                        }`}
+                                    />
+                                  </div>
+                                  <span className="text-[10px] font-extrabold text-zinc-400">Tiết lộ?</span>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setReplyToId(null);
+                                      setActiveReplyTargetId(null);
+                                      setReplyToUserId(null);
+                                    }}
+                                    className="bg-transparent border-none text-zinc-400 hover:text-white font-extrabold text-[10px] cursor-pointer"
+                                  >
+                                    Hủy
+                                  </button>
+                                  <button
+                                    type="submit"
+                                    disabled={!replyText.trim()}
+                                    className="flex items-center gap-1.5 bg-transparent border-none text-pink-500 hover:text-pink-400 font-extrabold text-[10px] cursor-pointer disabled:opacity-40"
+                                  >
+                                    <span>Gửi</span>
+                                    <Send size={11} className="text-pink-500 fill-pink-500/10 rotate-45 -translate-y-0.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </form>
                         </div>
                       )}
                     </div>

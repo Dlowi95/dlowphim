@@ -1,5 +1,5 @@
 import React from "react";
-import { ThumbsUp } from "lucide-react";
+import { Heart } from "lucide-react";
 import { EMOJIS } from "./ReactionEmojis";
 
 interface ReactionsSummaryProps {
@@ -38,8 +38,18 @@ export function ReactionsSummary({
                 : "bg-[#1b1d2a]/40 border-zinc-800/80 text-zinc-400 hover:border-zinc-700 hover:text-white"
             }`}
           >
-            {/* Tăng kích thước emoji trong viên pill theo yêu cầu */}
-            <span className={isReply ? "text-xs" : "text-sm"}>{emojiObj?.label}</span>
+            {emojiObj?.imageUrl ? (
+              <img
+                src={emojiObj.imageUrl}
+                alt={emojiObj.text}
+                width={isReply ? 10 : 13}
+                height={isReply ? 10 : 13}
+                style={{ width: isReply ? 10 : 13, height: isReply ? 10 : 13 }}
+                className="object-contain select-none pointer-events-none shrink-0"
+              />
+            ) : (
+              <span className={isReply ? "text-xs" : "text-sm"}>{emojiObj?.label}</span>
+            )}
             <span className="font-extrabold">{react.count}</span>
           </div>
         );
@@ -77,24 +87,31 @@ export function ReactTriggerButton({
     >
       <button
         type="button"
-        onClick={() => handleReaction(commentId, userReaction || "like")}
-        className={`flex items-center gap-1 hover:text-zinc-300 transition-all cursor-pointer bg-transparent border-none font-bold`}
+        onClick={() => handleReaction(commentId, userReaction || "heart")}
+        className={`flex items-center gap-1.5 hover:text-zinc-300 transition-all cursor-pointer bg-transparent border-none font-bold`}
         style={{ fontSize: size === 11 ? "10px" : "9px" }}
       >
-        {userReaction ? (
-          <span className="text-xs">{currentEmoji?.label}</span>
+        {userReaction && currentEmoji?.imageUrl ? (
+          <img
+            src={currentEmoji.imageUrl}
+            alt={currentEmoji.text}
+            width={16}
+            height={16}
+            style={{ width: 16, height: 16 }}
+            className="object-contain select-none pointer-events-none shrink-0"
+          />
         ) : (
-          <ThumbsUp size={size} className="stroke-[2.5]" />
+          <Heart size={size} className="stroke-[2.5]" />
         )}
         <span className={currentEmoji ? currentEmoji.color : "text-zinc-500"}>
-          {currentEmoji ? currentEmoji.text : "Thích"}
+          {currentEmoji ? currentEmoji.text : "Tim"}
         </span>
       </button>
 
       {/* Emoji Bubble Panel on hover */}
       {activeEmojiMenuId === commentId && (
         <div className="absolute bottom-full left-0 pb-2.5 z-50 animate-in fade-in zoom-in-95 duration-100">
-          <div className="bg-[#0d0e13]/95 backdrop-blur-md border border-zinc-800/80 rounded-full px-3 py-2 flex gap-3 shadow-2xl items-center">
+          <div className="bg-[#0d0e13]/95 backdrop-blur-md border border-zinc-800/80 rounded-full px-3.5 py-2 flex gap-3.5 shadow-2xl items-center w-max">
             {EMOJIS.map((emoji) => (
               <button
                 key={emoji.type}
@@ -103,10 +120,21 @@ export function ReactTriggerButton({
                   handleReaction(commentId, emoji.type);
                   setActiveEmojiMenuId(null);
                 }}
-                className="hover:scale-130 active:scale-95 transition-transform duration-100 cursor-pointer text-xl bg-transparent border-none p-0.5 select-none"
+                className="hover:scale-130 active:scale-95 transition-transform duration-100 cursor-pointer bg-transparent border-none p-0.5 select-none"
                 title={emoji.text}
               >
-                {emoji.label}
+                {emoji.imageUrl ? (
+                  <img
+                    src={emoji.imageUrl}
+                    alt={emoji.text}
+                    width={26}
+                    height={26}
+                    style={{ width: 26, height: 26 }}
+                    className="object-contain pointer-events-none shrink-0"
+                  />
+                ) : (
+                  emoji.label
+                )}
               </button>
             ))}
           </div>
