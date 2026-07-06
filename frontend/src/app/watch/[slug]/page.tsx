@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Send, Sparkles, Tv, HelpCircle, Plus, Users, Flag, X, Check } from "lucide-react";
 import CommentRatingSection from "@/components/CommentRatingSection";
+import EpisodeSelector from "@/components/EpisodeSelector";
 import { cleanMovieName } from "@/utils/movieUtils";
 import MovieCard from "@/components/MovieCard";
 import { useAuth } from "@/context/AuthContext";
@@ -1420,55 +1421,15 @@ function WatchContent({ slug }: { slug: string }) {
                   <span className="block text-xs font-black text-zinc-455 uppercase tracking-wider">
                     {episodesData.length <= 1 ? "Bản phát sóng:" : "Danh sách tập phim:"}
                   </span>
-
-                  {/* Phân nhóm tập phim nếu số lượng tập > 100 */}
-                  {episodesData.length > 100 && (
-                    <div className="flex flex-wrap gap-1.5 pb-2">
-                      {Array.from({ length: Math.ceil(episodesData.length / 100) }).map((_, bIdx) => {
-                        const start = bIdx * 100 + 1;
-                        const end = Math.min((bIdx + 1) * 100, episodesData.length);
-                        const isActive = selectedEpisodeBatch === bIdx;
-                        return (
-                          <button
-                            key={`batch-${bIdx}`}
-                            onClick={() => setSelectedEpisodeBatch(bIdx)}
-                            className={`px-3 py-1.5 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer border-none ${isActive
-                                ? "bg-pink-500 text-white shadow-sm shadow-pink-500/15"
-                                : "bg-[#1b1d2a] text-[#a0a5c0] hover:text-white hover:bg-[#23263a]"
-                              }`}
-                          >
-                            Tập {start} - {end}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2 max-h-[220px] overflow-y-auto pr-1">
-                    {(episodesData.length > 100
-                      ? episodesData.slice(selectedEpisodeBatch * 100, (selectedEpisodeBatch + 1) * 100)
-                      : episodesData
-                    ).map((ep, eIdx) => {
-                      const globalIdx = episodesData.length > 100 ? selectedEpisodeBatch * 100 + eIdx : eIdx;
-                      const isEpActive = globalIdx === activeEpisodeIndex;
-                      return (
-                        <button
-                          key={`ep-${globalIdx}`}
-                          onClick={() => {
-                            handleSelectEpisode(ep.name);
-                            scrollToPlayer();
-                          }}
-                          className={`h-10 rounded-xl font-extrabold text-xs flex items-center justify-center transition-all cursor-pointer border-none ${isEpActive
-                              ? "bg-pink-500 text-white shadow-lg shadow-pink-500/25"
-                              : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-pink-500 hover:text-white"
-                            }`}
-                        >
-                          <Play size={10} className="fill-current mr-1.5 shrink-0" />
-                          {ep.name.toLowerCase().includes("tập") ? ep.name : `Tập ${ep.name}`}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <EpisodeSelector
+                    episodes={episodesData}
+                    activeEpisodeIndex={activeEpisodeIndex}
+                    onSelectEpisode={(idx) => {
+                      handleSelectEpisode(episodesData[idx].name);
+                      scrollToPlayer();
+                    }}
+                    batchSize={40}
+                  />
                 </div>
               )}
 

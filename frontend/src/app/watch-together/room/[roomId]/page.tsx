@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { cleanMovieName } from "@/utils/movieUtils";
 import { getProxyUrl } from "@/utils/api";
+import EpisodeSelector from "@/components/EpisodeSelector";
 
 // Import dynamic Plyr
 import "plyr/dist/plyr.css";
@@ -118,19 +119,27 @@ export default function RoomPage() {
     fetchRoomAndMovie();
   }, [roomId]);
 
+  // Lưu link m3u8 đang phát hiện tại để tránh khởi tạo lại nhiều lần gây lỗi blob URL
+  const currentM3u8Ref = useRef<string>("");
+
   // Khởi tạo trình phát Plyr + HLS.js
   useEffect(() => {
     let active = true;
     const activeEp = episodes[activeEpisodeIndex];
 
     if (playerType === "hls" && activeEp?.link_m3u8) {
+      if (currentM3u8Ref.current === activeEp.link_m3u8) {
+        return; // Đã load nguồn phát này rồi, không khởi tạo lại nữa
+      }
+      currentM3u8Ref.current = activeEp.link_m3u8;
+
       const scriptId = "dlowphim-hls-script";
       let script = document.getElementById(scriptId) as HTMLScriptElement;
 
       const initPlayer = async () => {
         if (!active) return;
         const Hls = (window as any).Hls;
-        const video = document.getElementById("dlow-room-video") as HTMLVideoElement;
+        const video = videoRef.current;
         if (!video) return;
 
         // Dọn dẹp các instance cũ
@@ -165,6 +174,19 @@ export default function RoomPage() {
             });
             plyrRef.current = player;
           });
+        } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+          // Hỗ trợ HLS native cho Safari / iOS
+          video.src = activeEp.link_m3u8;
+          const player = new PlyrClass(video, {
+            controls: [
+              "play-large", "play", "progress", "current-time",
+              "duration", "mute", "volume", "settings", "pip", "fullscreen"
+            ],
+            settings: ["quality", "speed"],
+            speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+            quality: { default: 1080, options: [1080, 720, 480, 360] },
+          });
+          plyrRef.current = player;
         }
       };
 
@@ -182,6 +204,12 @@ export default function RoomPage() {
 
     return () => {
       active = false;
+    };
+  }, [playerType, activeEpisodeIndex, episodes]);
+
+  // Dọn dẹp tài nguyên khi unmount khỏi phòng
+  useEffect(() => {
+    return () => {
       if (plyrRef.current) {
         try { plyrRef.current.destroy(); } catch (e) {}
         plyrRef.current = null;
@@ -190,8 +218,9 @@ export default function RoomPage() {
         try { hlsRef.current.destroy(); } catch (e) {}
         hlsRef.current = null;
       }
+      currentM3u8Ref.current = "";
     };
-  }, [playerType, activeEpisodeIndex, episodes]);
+  }, []);
 
   // Tự động cuộn xuống đáy tin nhắn
   useEffect(() => {
@@ -334,10 +363,10 @@ export default function RoomPage() {
         </div>
 
         {/* Layout 2 cột: Trình phát & Chatbox */}
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           
           {/* CỘT TRÁI (LỚN): Video Player & Server Episodes */}
-          <div className="xl:col-span-8.5 space-y-6">
+          <div className="lg:col-span-8 space-y-6">
             
             {/* Khung Player */}
             <div className="w-full overflow-hidden bg-black rounded-3xl shadow-[0_15px_45px_rgba(0,0,0,0.85)] relative">
@@ -381,37 +410,22 @@ export default function RoomPage() {
 
             {/* Danh sách tập phim */}
             {episodes.length > 1 && (
-              <div className="bg-[#0e0f17]/40 border border-zinc-900 p-5 rounded-2xl space-y-3.5 text-left">
+              <div className="bg-[#0e0f17]/40 p-5 rounded-2xl space-y-3.5 text-left">
                 <span className="block text-xs font-black text-zinc-455 uppercase tracking-wider select-none">
                   Danh sách tập phim xem chung:
                 </span>
-                
-                <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2">
-                  {episodes.map((ep, idx) => {
-                    const isEpActive = idx === activeEpisodeIndex;
-                    return (
-                      <button
-                        key={`room-ep-${idx}`}
-                        onClick={() => {
-                          setActiveEpisodeIndex(idx);
-                        }}
-                        className={`h-9 rounded-lg font-extrabold text-[11px] flex items-center justify-center transition-all cursor-pointer border-none ${
-                          isEpActive
-                            ? "bg-pink-500 text-white shadow-md shadow-pink-500/25"
-                            : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-zinc-800 hover:text-white"
-                        }`}
-                      >
-                        {ep.name.toLowerCase().includes("tập") ? ep.name : `Tập ${ep.name}`}
-                      </button>
-                    );
-                  })}
-                </div>
+                <EpisodeSelector
+                  episodes={episodes}
+                  activeEpisodeIndex={activeEpisodeIndex}
+                  onSelectEpisode={(idx) => setActiveEpisodeIndex(idx)}
+                  batchSize={40}
+                />
               </div>
             )}
           </div>
 
           {/* CỘT PHẢI (NHỎ): Chatbox Realtime */}
-          <div className="xl:col-span-3.5 bg-[#0e0f17]/40 border border-zinc-900 rounded-3xl h-[650px] flex flex-col overflow-hidden relative shadow-2xl">
+          <div className="lg:col-span-4 bg-[#0e0f17]/40 border border-zinc-900 rounded-3xl h-[650px] flex flex-col overflow-hidden relative shadow-2xl">
             
             {/* Chatbox Header */}
             <div className="p-4 border-b border-zinc-900 bg-zinc-950/45 flex items-center gap-2 select-none">

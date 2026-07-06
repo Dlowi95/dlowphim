@@ -183,7 +183,7 @@ export default function CreateRoomPage() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
           {/* CỘT TRÁI: Card Thông tin Phim */}
-          <div className="lg:col-span-5 bg-[#0e0f17]/40 border border-zinc-900 rounded-3xl overflow-hidden p-6 space-y-5">
+          <div className="lg:col-span-5 bg-[#0e0f17]/40 rounded-3xl overflow-hidden p-6 space-y-5">
             <div className="aspect-[2/3] w-full rounded-2xl overflow-hidden relative shadow-2xl">
               <img
                 src={getImageUrl(movie.poster_url || movie.thumb_url)}
@@ -200,16 +200,16 @@ export default function CreateRoomPage() {
               {/* Badges thông số */}
               <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-extrabold select-none">
                 <span className="bg-amber-400 text-black px-2 py-0.5 rounded shadow-sm">IMDb 7.6</span>
-                <span className="bg-[#1b1d2a] text-[#a0a5c0] px-2 py-0.5 rounded border border-zinc-800">T16</span>
-                <span className="bg-[#1b1d2a] text-[#a0a5c0] px-2 py-0.5 rounded border border-zinc-800">{movie.year}</span>
-                <span className="bg-[#1b1d2a] text-[#a0a5c0] px-2 py-0.5 rounded border border-zinc-800">{movie.time || "120 phút"}</span>
+                <span className="bg-[#1b1d2a] text-[#a0a5c0] px-2 py-0.5 rounded">T16</span>
+                <span className="bg-[#1b1d2a] text-[#a0a5c0] px-2 py-0.5 rounded">{movie.year}</span>
+                <span className="bg-[#1b1d2a] text-[#a0a5c0] px-2 py-0.5 rounded">{movie.time || "120 phút"}</span>
               </div>
 
               {/* Thể loại */}
               {movie.category && movie.category.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {movie.category.slice(0, 3).map((c) => (
-                    <span key={c.slug} className="text-[10px] bg-zinc-900 text-zinc-400 font-extrabold border border-zinc-850 px-2.5 py-0.5 rounded-full">
+                    <span key={c.slug} className="text-[10px] bg-zinc-900 text-zinc-400 font-extrabold px-2.5 py-0.5 rounded-full">
                       {c.name}
                     </span>
                   ))}
@@ -227,7 +227,7 @@ export default function CreateRoomPage() {
           <form onSubmit={handleSubmit} className="lg:col-span-7 space-y-6">
             
             {/* Bước 1: Tên phòng */}
-            <div className="bg-[#0e0f17]/40 border border-zinc-900 rounded-3xl p-6 space-y-3.5 text-left">
+            <div className="bg-[#0e0f17]/40 rounded-3xl p-6 space-y-3.5 text-left">
               <label className="text-xs font-black text-zinc-450 uppercase tracking-widest flex items-center gap-2 select-none">
                 <span className="w-5 h-5 rounded-full bg-pink-500/10 text-pink-500 flex items-center justify-center font-bold text-[10px]">1</span>
                 Tên phòng
@@ -239,12 +239,12 @@ export default function CreateRoomPage() {
                 placeholder="Nhập tên phòng xem chung..."
                 value={roomName}
                 onChange={(e) => setRoomName(e.target.value)}
-                className="w-full h-12 bg-zinc-950 border border-zinc-850 hover:border-zinc-800 focus:border-pink-500 rounded-xl px-4 text-sm text-zinc-200 outline-none font-bold transition-colors"
+                className="w-full h-12 bg-zinc-950 border border-zinc-900/60 hover:border-zinc-800/50 focus:border-pink-500 rounded-xl px-4 text-sm text-zinc-200 outline-none font-bold transition-colors"
               />
             </div>
 
             {/* Bước 2: Chọn poster hiển thị */}
-            <div className="bg-[#0e0f17]/40 border border-zinc-900 rounded-3xl p-6 space-y-4 text-left">
+            <div className="bg-[#0e0f17]/40 rounded-3xl p-6 space-y-4 text-left">
               <label className="text-xs font-black text-zinc-450 uppercase tracking-widest flex items-center gap-2 select-none">
                 <span className="w-5 h-5 rounded-full bg-pink-500/10 text-pink-500 flex items-center justify-center font-bold text-[10px]">2</span>
                 Chọn poster hiển thị
@@ -257,7 +257,7 @@ export default function CreateRoomPage() {
                   className={`aspect-[3/4.2] rounded-2xl overflow-hidden cursor-pointer relative border-3 transition-all ${
                     selectedPoster === movie.poster_url
                       ? "border-pink-500 shadow-lg shadow-pink-500/10"
-                      : "border-zinc-900 hover:border-zinc-800 opacity-60 hover:opacity-90"
+                      : "border-transparent hover:border-zinc-800/40 opacity-60 hover:opacity-90"
                   }`}
                 >
                   <img
@@ -277,7 +277,7 @@ export default function CreateRoomPage() {
                   className={`aspect-[3/4.2] rounded-2xl overflow-hidden cursor-pointer relative border-3 transition-all ${
                     selectedPoster === movie.thumb_url
                       ? "border-pink-500 shadow-lg shadow-pink-500/10"
-                      : "border-zinc-900 hover:border-zinc-800 opacity-60 hover:opacity-90"
+                      : "border-transparent hover:border-zinc-800/40 opacity-60 hover:opacity-90"
                   }`}
                 >
                   <img
@@ -294,7 +294,7 @@ export default function CreateRoomPage() {
             </div>
 
             {/* Bước 3: Cài đặt thời gian */}
-            <div className="bg-[#0e0f17]/40 border border-zinc-900 rounded-3xl p-6 space-y-4 text-left">
+            <div className="bg-[#0e0f17]/40 rounded-3xl p-6 space-y-4 text-left">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-black text-zinc-450 uppercase tracking-widest flex items-center gap-2 select-none">
                   <span className="w-5 h-5 rounded-full bg-pink-500/10 text-pink-500 flex items-center justify-center font-bold text-[10px]">3</span>
@@ -305,13 +305,13 @@ export default function CreateRoomPage() {
                 <button
                   type="button"
                   onClick={() => setIsAutoStart(!isAutoStart)}
-                  className={`w-11 h-6 rounded-full transition-all relative outline-none border-none cursor-pointer ${
+                  className={`w-10 h-6 rounded-full transition-colors duration-250 relative outline-none border-none cursor-pointer flex items-center p-0.5 ${
                     isAutoStart ? "bg-pink-500" : "bg-zinc-800"
                   }`}
                 >
                   <div
-                    className={`w-5 h-5 rounded-full bg-white absolute top-0.5 transition-all ${
-                      isAutoStart ? "left-5.5" : "left-0.5"
+                    className={`w-5 h-5 rounded-full bg-white transition-transform duration-200 ease-in-out ${
+                      isAutoStart ? "translate-x-4" : "translate-x-0"
                     }`}
                   />
                 </button>
@@ -331,14 +331,14 @@ export default function CreateRoomPage() {
                     required={isAutoStart}
                     value={startTime}
                     onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full h-12 bg-zinc-950 border border-zinc-850 hover:border-zinc-800 focus:border-pink-500 rounded-xl px-4 text-sm text-zinc-200 outline-none font-bold transition-colors"
+                    className="w-full h-12 bg-zinc-950 border border-zinc-900/60 hover:border-zinc-800/50 focus:border-pink-500 rounded-xl px-4 text-sm text-zinc-200 outline-none font-bold transition-colors"
                   />
                 </div>
               )}
             </div>
 
             {/* Bước 4: Xem với bạn bè (Ẩn phòng) */}
-            <div className="bg-[#0e0f17]/40 border border-zinc-900 rounded-3xl p-6 space-y-4 text-left">
+            <div className="bg-[#0e0f17]/40 rounded-3xl p-6 space-y-4 text-left">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-black text-zinc-450 uppercase tracking-widest flex items-center gap-2 select-none">
                   <span className="w-5 h-5 rounded-full bg-pink-500/10 text-pink-500 flex items-center justify-center font-bold text-[10px]">4</span>
@@ -348,13 +348,13 @@ export default function CreateRoomPage() {
                 <button
                   type="button"
                   onClick={() => setIsPrivate(!isPrivate)}
-                  className={`w-11 h-6 rounded-full transition-all relative outline-none border-none cursor-pointer ${
+                  className={`w-10 h-6 rounded-full transition-colors duration-250 relative outline-none border-none cursor-pointer flex items-center p-0.5 ${
                     isPrivate ? "bg-pink-500" : "bg-zinc-800"
                   }`}
                 >
                   <div
-                    className={`w-5 h-5 rounded-full bg-white absolute top-0.5 transition-all ${
-                      isPrivate ? "left-5.5" : "left-0.5"
+                    className={`w-5 h-5 rounded-full bg-white transition-transform duration-200 ease-in-out ${
+                      isPrivate ? "translate-x-4" : "translate-x-0"
                     }`}
                   />
                 </button>
@@ -370,7 +370,7 @@ export default function CreateRoomPage() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="flex-1 h-12 bg-amber-450 hover:bg-amber-500 text-black font-extrabold text-sm rounded-xl active:scale-95 hover:shadow-lg hover:shadow-amber-500/10 active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer border-none disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 h-12 bg-pink-500 hover:bg-pink-600 text-white font-extrabold text-sm rounded-xl active:scale-95 shadow-lg shadow-pink-500/20 active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer border-none disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? (
                   <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
@@ -385,7 +385,7 @@ export default function CreateRoomPage() {
               <button
                 type="button"
                 onClick={() => router.push(`/watch/${slug}`)}
-                className="h-12 px-6 border border-zinc-850 hover:border-zinc-700 text-zinc-400 hover:text-white font-extrabold text-sm rounded-xl active:scale-95 transition-all cursor-pointer bg-transparent"
+                className="h-12 px-6 border border-zinc-900/60 bg-[#1b1d2a]/40 hover:bg-zinc-800/40 text-zinc-450 hover:text-white font-extrabold text-sm rounded-xl active:scale-95 transition-all cursor-pointer"
               >
                 Hủy bỏ
               </button>
