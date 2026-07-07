@@ -21,7 +21,8 @@ export const getProxyUrl = (originalUrl: string): string => {
     if (
       url.hostname.includes("ophim") || 
       url.hostname.includes("kkphim") || 
-      url.hostname.includes("phimimg")
+      url.hostname.includes("phimimg") ||
+      url.hostname.includes("phimapi")
     ) {
       const pathWithQuery = url.pathname + url.search;
       return `${API_URL}/movies/ophim-proxy?path=${encodeURIComponent(pathWithQuery)}`;

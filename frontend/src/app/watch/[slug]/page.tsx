@@ -327,7 +327,7 @@ function WatchContent({ slug }: { slug: string }) {
     if (!slug || movie?.isCustom) return;
     async function fetchKKPhimDetail() {
       try {
-        const res = await fetch(`https://phimapi.com/phim/${slug}`);
+        const res = await fetch(getProxyUrl(`https://phimapi.com/phim/${slug}`));
         if (res.ok) {
           const data = await res.json();
           if (data.status === true || data.status === "success") {

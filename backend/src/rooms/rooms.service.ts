@@ -1,12 +1,14 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Room, RoomDocument } from './schemas/room.schema';
+import { Message, MessageDocument } from './schemas/message.schema';
 
 @Injectable()
 export class RoomsService {
   constructor(
     @InjectModel(Room.name) private roomModel: Model<RoomDocument>,
+    @InjectModel(Message.name) private messageModel: Model<MessageDocument>,
   ) {}
 
   // Sinh ID ngẫu nhiên 6 ký tự viết hoa/số
@@ -100,6 +102,50 @@ export class RoomsService {
     }
 
     room.status = 'closed';
+    const closedRoom = await room.save();
+
+    // Tự động xóa sạch tin nhắn của phòng đó khi đóng phòng
+    await this.messageModel.deleteMany({ roomId });
+
+    return closedRoom;
+  }
+
+  // Lưu tin nhắn chat vào database
+  async saveMessage(
+    roomId: string,
+    senderId: string | undefined,
+    senderName: string,
+    senderAvatar: string | undefined,
+    text: string,
+    isSystem = false,
+  ): Promise<MessageDocument> {
+    const createdMessage = new this.messageModel({
+      roomId,
+      sender: senderId ? new Types.ObjectId(senderId) : undefined,
+      senderName,
+      senderAvatar,
+      text,
+      isSystem,
+    });
+    return createdMessage.save();
+  }
+
+  // Lấy danh sách tin nhắn chat của phòng (F5 phục hồi)
+  async getRoomMessages(roomId: string): Promise<MessageDocument[]> {
+    return this.messageModel
+      .find({ roomId })
+      .sort({ createdAt: 1 })
+      .limit(100)
+      .exec();
+  }
+
+  // Cập nhật tập phim đang phát hiện tại
+  async updateCurrentEpisode(roomId: string, episodeSlug: string): Promise<Room> {
+    const room = await this.roomModel.findOne({ roomId, status: 'active' });
+    if (!room) {
+      throw new NotFoundException('Không tìm thấy phòng xem chung hoặc phòng đã đóng.');
+    }
+    room.currentEpisode = episodeSlug;
     return room.save();
   }
 }

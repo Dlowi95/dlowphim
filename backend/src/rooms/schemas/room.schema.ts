@@ -37,6 +37,9 @@ export class Room {
 
   @Prop({ default: 'active' })
   status: string; // active, closed
+
+  @Prop({ default: '' })
+  currentEpisode: string; // Lưu slug của tập phim đang phát (ví dụ: 'tap-1', 'tap-2')
 }
 
 export const RoomSchema = SchemaFactory.createForClass(Room);

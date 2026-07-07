@@ -38,6 +38,12 @@ export class RoomsController {
     return this.roomsService.getRoomDetails(roomId);
   }
 
+  // Lấy lịch sử chat phòng xem chung
+  @Get(':roomId/messages')
+  async getRoomMessages(@Param('roomId') roomId: string) {
+    return this.roomsService.getRoomMessages(roomId);
+  }
+
   // Đóng phòng xem chung (chỉ dành cho host của phòng)
   @Delete(':roomId')
   @UseGuards(AuthGuard)

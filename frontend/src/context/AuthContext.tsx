@@ -144,15 +144,15 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
         }
         fetchUnreadNotificationsCount(token);
       } else {
-        // Token has expired or is invalid
-        if (res.status === 401) {
-          console.warn("Session expired. Logging out...");
+        // Token has expired or is invalid - only logout on explicit auth errors
+        if (res.status === 401 || res.status === 403) {
+          console.warn("Session expired or invalid. Logging out...");
+          logout();
         }
-        logout();
       }
     } catch (err) {
-      console.error("Error verifying auth session:", err);
-      logout();
+      console.error("Error verifying auth session (network or server issue):", err);
+      // Do not logout on network errors to preserve session cookie
     } finally {
       setLoading(false);
     }

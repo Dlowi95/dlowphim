@@ -1,13 +1,16 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import React, { useEffect, useState, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { ArrowLeft, Film, Send, Sparkles, MessageSquare, Users, Trash2, Calendar, Tv, Volume2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Film, Send, Sparkles, MessageSquare, Users, Trash2, Calendar, Tv, Volume2, AlertCircle, Copy, Check, Bot } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { cleanMovieName } from "@/utils/movieUtils";
 import { getProxyUrl } from "@/utils/api";
 import EpisodeSelector from "@/components/EpisodeSelector";
+import { io } from "socket.io-client";
 
 // Import dynamic Plyr
 import "plyr/dist/plyr.css";
@@ -30,6 +33,7 @@ interface RoomDetails {
 interface Message {
   id: string;
   sender: string;
+  senderId?: string;
   avatar?: string;
   text: string;
   time: string;
@@ -47,11 +51,31 @@ interface Episode {
 export default function RoomPage() {
   const router = useRouter();
   const { roomId } = useParams();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   const [room, setRoom] = useState<RoomDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [socketError, setSocketError] = useState<string | null>(null);
+  const [codeCopied, setCodeCopied] = useState(false);
+  const [isAiActive, setIsAiActive] = useState(false);
+
+  const handleToggleAi = () => {
+    if (!socketRef.current || !room) return;
+    const nextState = !isAiActive;
+    socketRef.current.emit("toggle_ai", {
+      roomId: room.roomId,
+      active: nextState,
+      userName: user?.displayName || "Khách",
+    });
+  };
+
+  const handleCopyRoomId = () => {
+    if (!room) return;
+    navigator.clipboard.writeText(room.roomId);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 2000);
+  };
 
   // Movie stream states
   const [episodes, setEpisodes] = useState<Episode[]>([]);
@@ -61,12 +85,14 @@ export default function RoomPage() {
   // Chat/Messages states
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageInput, setMessageInput] = useState("");
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const [viewerCount, setViewerCount] = useState(1);
+  const chatContainerRef = useRef<HTMLDivElement | null>(null);
 
-  // Refs for players
+  // Refs for players and socket
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const plyrRef = useRef<any>(null);
   const hlsRef = useRef<any>(null);
+  const socketRef = useRef<any>(null);
+  const isSyncingRef = useRef<boolean>(false);
 
   // Lấy thông tin phòng và danh sách tập phim
   useEffect(() => {
@@ -83,35 +109,103 @@ export default function RoomPage() {
         const roomData = await roomRes.json();
         setRoom(roomData);
 
-        // 2. Lấy thông tin phim từ OPhim API để load nguồn phát
-        const movieRes = await fetch(getProxyUrl(`https://ophim1.com/v1/api/phim/${roomData.movieSlug}`));
-        if (movieRes.ok) {
-          const movieData = await movieRes.json();
-          if (movieData.status === true || movieData.status === "success") {
-            const episodesList = movieData.data?.item?.episodes?.[0]?.server_data || [];
-            setEpisodes(episodesList);
+        // 2. Khởi tạo tin nhắn chào mừng hệ thống & nạp lịch sử chat từ database
+        const welcomeMsg: Message = {
+          id: "sys-welcome",
+          sender: "Hệ Thống",
+          text: `📢 Chào mừng bạn đến với phòng xem chung "${roomData.roomName}". Cùng xem phim vui vẻ nhé!`,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isSystem: true,
+        };
 
-            // Mặc định chọn HLS player nếu có m3u8
-            const hasHls = episodesList.some((ep: any) => ep.link_m3u8);
-            setPlayerType(hasHls ? "hls" : "embed");
+        try {
+          const messagesRes = await fetch(`${API_URL}/rooms/${roomId}/messages`);
+          if (messagesRes.ok) {
+            const msgsData = await messagesRes.json();
+            const formattedMsgs = msgsData.map((m: any) => ({
+              id: m._id,
+              sender: m.senderName,
+              senderId: m.sender,
+              avatar: m.senderAvatar,
+              text: m.text,
+              isSystem: m.isSystem,
+              time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            }));
+            setMessages([welcomeMsg, ...formattedMsgs]);
+          } else {
+            setMessages([welcomeMsg]);
           }
+        } catch (msgErr) {
+          console.error("Lỗi lấy lịch sử chat:", msgErr);
+          setMessages([welcomeMsg]);
         }
 
-        // 3. Khởi tạo tin nhắn chào mừng hệ thống
-        setMessages([
-          {
-            id: "sys-welcome",
-            sender: "Hệ Thống",
-            text: `Chào mừng bạn đến với phòng xem chung "${roomData.roomName}". Cùng xem phim vui vẻ nhé!`,
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            isSystem: true,
+        // MỞ KHÓA LOADING NGAY TẠI ĐÂY: Cho phép Socket.io kết nối ngay lập tức!
+        setLoading(false);
+
+        const handleLoadEpisodes = (episodesList: any[]) => {
+          setEpisodes(episodesList);
+
+          // Tìm tập phim đang phát đã lưu trên database hoặc trên URL để khôi phục
+          const urlParams = new URLSearchParams(window.location.search);
+          const queryEp = urlParams.get("ep");
+          const epSlug = queryEp || roomData.currentEpisode;
+
+          if (epSlug) {
+            const activeIndex = episodesList.findIndex((ep: any) => ep.slug === epSlug);
+            setActiveEpisodeIndex(activeIndex !== -1 ? activeIndex : 0);
+          } else {
+            setActiveEpisodeIndex(0);
           }
-        ]);
+
+          // Mặc định chọn HLS player nếu có m3u8
+          const hasHls = episodesList.some((ep: any) => ep.link_m3u8);
+          setPlayerType(hasHls ? "hls" : "embed");
+        };
+
+        const fetchCustomMovie = async (slug: string) => {
+          try {
+            const customRes = await fetch(`${API_URL}/movies/custom/${slug}`);
+            if (customRes.ok) {
+              const customData = await customRes.json();
+              const customEpisodes = [
+                {
+                  name: "Full",
+                  slug: "full",
+                  filename: customData.name,
+                  link_embed: "",
+                  link_m3u8: customData.link_m3u8,
+                }
+              ];
+              handleLoadEpisodes(customEpisodes);
+            }
+          } catch (e) {
+            console.error("Lỗi tải thông tin phim Custom:", e);
+          }
+        };
+
+        // 3. Lấy thông tin phim từ OPhim API chạy nền bất đồng bộ (không làm nghẽn socket/chat)
+        fetch(getProxyUrl(`https://ophim1.com/v1/api/phim/${roomData.movieSlug}`))
+          .then(res => {
+            if (res.ok) return res.json();
+            throw new Error("Lỗi API kết nối OPhim");
+          })
+          .then(movieData => {
+            if (movieData.status === true || movieData.status === "success") {
+              const episodesList = movieData.data?.item?.episodes?.[0]?.server_data || [];
+              handleLoadEpisodes(episodesList);
+            } else {
+              fetchCustomMovie(roomData.movieSlug);
+            }
+          })
+          .catch(movieErr => {
+            console.warn("Không tìm thấy trên OPhim, thử tìm phim Custom...", movieErr.message);
+            fetchCustomMovie(roomData.movieSlug);
+          });
 
       } catch (err: any) {
         console.error(err);
         setError(err.message || "Lỗi tải phòng xem chung.");
-      } finally {
         setLoading(false);
       }
     }
@@ -119,10 +213,142 @@ export default function RoomPage() {
     fetchRoomAndMovie();
   }, [roomId]);
 
+  const isHost = user && room && (room.host._id === user.id || room.host._id === (user as any)._id || (room.host as any) === user.id || (room.host as any) === (user as any)._id);
+
+  // Quản lý kết nối Socket.io Realtime
+  useEffect(() => {
+    if (!room || loading || authLoading) return;
+
+    // Khởi tạo socket.io client
+    const socketHost = API_URL.replace("/api", "");
+    const socket = io(socketHost);
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      console.log("[Socket] Connected successfully!");
+      setSocketError(null);
+    });
+
+    socket.on("connect_error", (err) => {
+      console.error("[Socket] Connection error:", err.message);
+      setSocketError(`Mất kết nối máy chủ chat: ${err.message}`);
+    });
+
+    socket.on("disconnect", (reason) => {
+      console.warn("[Socket] Disconnected:", reason);
+      setSocketError(`Mất kết nối: ${reason}`);
+    });
+
+    // Tham gia phòng xem chung
+    socket.emit("join_room", {
+      roomId: room.roomId,
+      userId: user ? (user.id || (user as any)._id) : `guest-${Date.now()}`,
+      name: user ? user.displayName : `Khách ${Math.floor(Math.random() * 1000)}`,
+      avatar: user?.avatar,
+      isHost: !!isHost,
+    });
+
+    // Lắng nghe tin nhắn chat realtime
+    socket.on("message", (msg: any) => {
+      setMessages((prev) => {
+        // Tránh bị trùng lặp tin nhắn
+        if (prev.some((p) => p.id === msg.id)) return prev;
+        return [
+          ...prev,
+          {
+            id: msg.id,
+            sender: msg.senderName,
+            senderId: msg.senderId,
+            avatar: msg.senderAvatar,
+            text: msg.text,
+            isSystem: msg.isSystem,
+            time: msg.time,
+          },
+        ];
+      });
+    });
+
+    // Lắng nghe thay đổi trạng thái AI
+    socket.on("ai_state_changed", (data: { active: boolean }) => {
+      setIsAiActive(data.active);
+    });
+
+    // Lắng nghe tín hiệu chuyển tập phim từ Host
+    socket.on("episode_changed", (data: { episodeSlug: string; episodeIndex: number }) => {
+      console.log("[Socket] Episode changed to index:", data.episodeIndex);
+      setActiveEpisodeIndex(data.episodeIndex);
+    });
+
+    // Lắng nghe số lượng người đang xem thay đổi
+    socket.on("viewer_count", (data: { count: number }) => {
+      setViewerCount(data.count);
+    });
+
+    // Lắng nghe thông báo phòng bị đóng
+    socket.on("room_closed", () => {
+      alert("Phòng xem chung đã bị đóng hoặc Trưởng phòng đã rời đi quá lâu.");
+      router.push(`/watch/${room.movieSlug}`);
+    });
+
+    // Lắng nghe tín hiệu đồng bộ video của Host gửi xuống (chỉ Member mới thực thi)
+    socket.on("video_state", (state: { action: "play" | "pause" | "seek"; currentTime: number }) => {
+      if (isHost) return; // Host không bao giờ bị member điều khiển ngược
+      const video = videoRef.current;
+      if (!video) return;
+
+      isSyncingRef.current = true;
+      if (state.action === "play") {
+        video.play().catch(() => {});
+      } else if (state.action === "pause") {
+        video.pause();
+      } else if (state.action === "seek") {
+        if (Math.abs(video.currentTime - state.currentTime) > 2.5) {
+          video.currentTime = state.currentTime;
+        }
+      }
+      
+      // Mở khóa cờ đồng bộ sau khi lệnh thực thi hoàn tất
+      setTimeout(() => {
+        isSyncingRef.current = false;
+      }, 500);
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [room, user, isHost]);
+
+  // Cuộn trang lên trên cùng khi vừa truy cập phòng
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  // Tự động cuộn khung chat xuống dưới cùng khi có tin nhắn mới
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  // Tự động cập nhật query parameter "ep" trên URL theo tập phim đang phát
+  useEffect(() => {
+    if (episodes.length > 0) {
+      const activeEp = episodes[activeEpisodeIndex];
+      if (activeEp) {
+        const url = new URL(window.location.href);
+        if (url.searchParams.get("ep") !== activeEp.slug) {
+          url.searchParams.set("ep", activeEp.slug);
+          window.history.replaceState(null, "", url.pathname + url.search);
+        }
+      }
+    }
+  }, [activeEpisodeIndex, episodes]);
+
   // Lưu link m3u8 đang phát hiện tại để tránh khởi tạo lại nhiều lần gây lỗi blob URL
   const currentM3u8Ref = useRef<string>("");
 
-  // Khởi tạo trình phát Plyr + HLS.js
+  // Khởi tạo trình phát HLS.js thuần kết hợp video controls của trình duyệt để tránh lỗi DOM Plyr
   useEffect(() => {
     let active = true;
     const activeEp = episodes[activeEpisodeIndex];
@@ -131,7 +357,6 @@ export default function RoomPage() {
       if (currentM3u8Ref.current === activeEp.link_m3u8) {
         return; // Đã load nguồn phát này rồi, không khởi tạo lại nữa
       }
-      currentM3u8Ref.current = activeEp.link_m3u8;
 
       const scriptId = "dlowphim-hls-script";
       let script = document.getElementById(scriptId) as HTMLScriptElement;
@@ -142,17 +367,57 @@ export default function RoomPage() {
         const video = videoRef.current;
         if (!video) return;
 
-        // Dọn dẹp các instance cũ
-        if (plyrRef.current) {
-          try { plyrRef.current.destroy(); } catch (e) {}
-          plyrRef.current = null;
-        }
+        currentM3u8Ref.current = activeEp.link_m3u8;
+
+        // Dọn dẹp Hls instance cũ
         if (hlsRef.current) {
           try { hlsRef.current.destroy(); } catch (e) {}
           hlsRef.current = null;
         }
 
-        const PlyrClass = (await import("plyr")).default;
+        const onPlay = () => {
+          if (isHost && !isSyncingRef.current) {
+            socketRef.current?.emit("video_control", {
+              roomId,
+              action: "play",
+              currentTime: video.currentTime,
+            });
+          }
+        };
+
+        const onPause = () => {
+          if (isHost && !isSyncingRef.current) {
+            socketRef.current?.emit("video_control", {
+              roomId,
+              action: "pause",
+              currentTime: video.currentTime,
+            });
+          }
+        };
+
+        const onSeeked = () => {
+          if (isHost && !isSyncingRef.current) {
+            socketRef.current?.emit("video_control", {
+              roomId,
+              action: "seek",
+              currentTime: video.currentTime,
+            });
+          }
+        };
+
+        // Gỡ các listener cũ nếu có
+        if ((video as any)._dlowListeners) {
+          const old = (video as any)._dlowListeners;
+          video.removeEventListener("play", old.onPlay);
+          video.removeEventListener("pause", old.onPause);
+          video.removeEventListener("seeked", old.onSeeked);
+        }
+
+        // Gắn listener mới
+        video.addEventListener("play", onPlay);
+        video.addEventListener("pause", onPause);
+        video.addEventListener("seeked", onSeeked);
+        (video as any)._dlowListeners = { onPlay, onPause, onSeeked };
 
         if (Hls && Hls.isSupported()) {
           const hls = new Hls();
@@ -162,31 +427,10 @@ export default function RoomPage() {
 
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             if (!active) return;
-
-            const player = new PlyrClass(video, {
-              controls: [
-                "play-large", "play", "progress", "current-time",
-                "duration", "mute", "volume", "settings", "pip", "fullscreen"
-              ],
-              settings: ["quality", "speed"],
-              speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
-              quality: { default: 1080, options: [1080, 720, 480, 360] },
-            });
-            plyrRef.current = player;
           });
         } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
           // Hỗ trợ HLS native cho Safari / iOS
           video.src = activeEp.link_m3u8;
-          const player = new PlyrClass(video, {
-            controls: [
-              "play-large", "play", "progress", "current-time",
-              "duration", "mute", "volume", "settings", "pip", "fullscreen"
-            ],
-            settings: ["quality", "speed"],
-            speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
-            quality: { default: 1080, options: [1080, 720, 480, 360] },
-          });
-          plyrRef.current = player;
         }
       };
 
@@ -204,16 +448,25 @@ export default function RoomPage() {
 
     return () => {
       active = false;
+      const video = videoRef.current;
+      if (video && (video as any)._dlowListeners) {
+        const { onPlay, onPause, onSeeked } = (video as any)._dlowListeners;
+        video.removeEventListener("play", onPlay);
+        video.removeEventListener("pause", onPause);
+        video.removeEventListener("seeked", onSeeked);
+        delete (video as any)._dlowListeners;
+      }
+      if (hlsRef.current) {
+        try { hlsRef.current.destroy(); } catch (e) {}
+        hlsRef.current = null;
+      }
+      currentM3u8Ref.current = "";
     };
   }, [playerType, activeEpisodeIndex, episodes]);
 
   // Dọn dẹp tài nguyên khi unmount khỏi phòng
   useEffect(() => {
     return () => {
-      if (plyrRef.current) {
-        try { plyrRef.current.destroy(); } catch (e) {}
-        plyrRef.current = null;
-      }
       if (hlsRef.current) {
         try { hlsRef.current.destroy(); } catch (e) {}
         hlsRef.current = null;
@@ -222,44 +475,21 @@ export default function RoomPage() {
     };
   }, []);
 
-  // Tự động cuộn xuống đáy tin nhắn
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   // Gửi tin nhắn
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!messageInput.trim()) return;
+    if (!messageInput.trim() || !socketRef.current) return;
 
-    const newMsg: Message = {
-      id: `msg-${Date.now()}-${Math.random()}`,
-      sender: user?.displayName || "Khách",
+    socketRef.current.emit("send_message", {
+      roomId: room?.roomId,
+      userId: user?.id,
+      name: user?.displayName || "Khách",
       avatar: user?.avatar,
       text: messageInput.trim(),
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
+    });
 
-    setMessages((prev) => [...prev, newMsg]);
     setMessageInput("");
-
-    // Bot trả lời tự động giả lập để tạo độ sinh động khi test
-    setTimeout(() => {
-      const responses = [
-        "Phim này hay thật sự!",
-        "Phân cảnh này đẹp quá dã man.",
-        "Nhạc phim hay ghê luôn á.",
-        "Mọi người xem phim mượt không?",
-        "Tập phim đang load ngon lành nha.",
-      ];
-      const botMsg: Message = {
-        id: `msg-bot-${Date.now()}`,
-        sender: "Thành Viên Khác",
-        text: responses[Math.floor(Math.random() * responses.length)],
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      setMessages((prev) => [...prev, botMsg]);
-    }, 2500);
   };
 
   // Đóng phòng
@@ -312,7 +542,6 @@ export default function RoomPage() {
     );
   }
 
-  const isHost = user && room.host._id === user.id;
   const activeEp = episodes[activeEpisodeIndex];
 
   return (
@@ -333,9 +562,20 @@ export default function RoomPage() {
                 <h1 className="text-lg md:text-xl font-black uppercase tracking-tight text-zinc-100">
                   {room.roomName}
                 </h1>
-                <span className="bg-pink-500/10 text-pink-400 font-extrabold text-[9px] px-2 py-0.5 rounded border border-pink-500/20 uppercase tracking-wider shrink-0 select-none">
-                  Mã phòng: {room.roomId}
-                </span>
+                <button
+                  onClick={handleCopyRoomId}
+                  className="bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 font-black text-xs px-3.5 py-1.5 rounded-xl border border-pink-500/20 uppercase tracking-wider shrink-0 select-none transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                  title="Click để sao chép mã phòng"
+                >
+                  <span>Mã phòng: {room.roomId}</span>
+                  {codeCopied ? (
+                    <span className="text-[10px] text-green-400 font-bold bg-green-500/10 px-1.5 py-0.2 rounded flex items-center gap-0.5 border border-green-500/20 animate-in zoom-in-95 duration-150">
+                      <Check size={10} /> Đã chép
+                    </span>
+                  ) : (
+                    <Copy size={12} className="text-pink-400" />
+                  )}
+                </button>
               </div>
               <p className="text-xs text-zinc-500 font-semibold uppercase flex items-center gap-1.5 mt-0.5">
                 <Film size={12} className="text-pink-500" />
@@ -417,7 +657,23 @@ export default function RoomPage() {
                 <EpisodeSelector
                   episodes={episodes}
                   activeEpisodeIndex={activeEpisodeIndex}
-                  onSelectEpisode={(idx) => setActiveEpisodeIndex(idx)}
+                  onSelectEpisode={(idx) => {
+                    if (!isHost) {
+                      alert("Chỉ có Trưởng phòng mới được quyền chuyển tập phim nhé! 🎬");
+                      return;
+                    }
+                    const ep = episodes[idx];
+                    if (!ep) return;
+                    
+                    socketRef.current?.emit("change_episode", {
+                      roomId: room.roomId,
+                      episodeSlug: ep.slug,
+                      episodeIndex: idx,
+                      episodeName: ep.name.toLowerCase().includes("tập") ? ep.name : `Tập ${ep.name}`,
+                      userName: user?.displayName || "Trưởng phòng",
+                    });
+                    setActiveEpisodeIndex(idx);
+                  }}
                   batchSize={40}
                 />
               </div>
@@ -425,26 +681,41 @@ export default function RoomPage() {
           </div>
 
           {/* CỘT PHẢI (NHỎ): Chatbox Realtime */}
-          <div className="lg:col-span-4 bg-[#0e0f17]/40 border border-zinc-900 rounded-3xl h-[650px] flex flex-col overflow-hidden relative shadow-2xl">
+            <div className="lg:col-span-4 bg-[#161622]/95 backdrop-blur-md border border-zinc-800/80 rounded-3xl h-[650px] flex flex-col overflow-hidden relative shadow-2xl shadow-black/80">
             
             {/* Chatbox Header */}
-            <div className="p-4 border-b border-zinc-900 bg-zinc-950/45 flex items-center gap-2 select-none">
+            <div className="p-4 border-b border-zinc-900 bg-gradient-to-b from-zinc-950/60 to-transparent flex items-center gap-2 select-none">
               <MessageSquare size={16} className="text-pink-500" />
               <span className="text-xs font-black text-zinc-300 uppercase tracking-wider">Hộp thoại xem chung</span>
               
-              <div className="ml-auto flex items-center gap-1 text-[10px] text-zinc-500 font-extrabold bg-[#1b1d2a] border border-zinc-850 px-2.5 py-0.5 rounded-full">
-                <Users size={10} className="text-pink-500 shrink-0" />
-                <span>2 Đang xem</span>
+              <div className="ml-auto flex items-center gap-2">
+                {/* Nút Toggle AI Chat */}
+                <button
+                  onClick={handleToggleAi}
+                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer border-none active:scale-90 ${
+                    isAiActive
+                      ? "bg-gradient-to-r from-purple-500/35 to-indigo-500/35 text-purple-300 shadow-lg shadow-purple-500/20 border border-purple-500/40 animate-pulse"
+                      : "bg-zinc-800/60 text-zinc-400 hover:text-zinc-200 border border-zinc-700/40 hover:border-zinc-650/60"
+                  }`}
+                  title={isAiActive ? "Tắt trợ lý ảo DlowAI" : "Bật trợ lý ảo DlowAI"}
+                >
+                  <Bot size={14} className={isAiActive ? "scale-110" : ""} />
+                </button>
+
+                <div className="flex items-center gap-1.5 text-[9px] text-zinc-400 font-extrabold bg-zinc-800/50 px-2.5 py-1 rounded-full">
+                  <Users size={10} className="text-pink-500 shrink-0" />
+                  <span>{viewerCount} Đang xem</span>
+                </div>
               </div>
             </div>
 
             {/* List tin nhắn */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-none text-left">
+            <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 text-left scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
               {messages.map((msg) => {
                 if (msg.isSystem) {
                   return (
                     <div key={msg.id} className="w-full text-center py-2 animate-in fade-in zoom-in-95 duration-200">
-                      <span className="text-[10px] text-zinc-550 font-bold bg-[#131422] border border-zinc-850/50 px-3 py-1 rounded-full leading-normal max-w-full inline-block">
+                      <span className="text-[10px] text-zinc-500 font-extrabold bg-zinc-950/40 border border-zinc-900/30 px-3 py-1 rounded-full leading-normal max-w-[90%] inline-block backdrop-blur-sm italic">
                         📢 {msg.text}
                       </span>
                     </div>
@@ -460,7 +731,11 @@ export default function RoomPage() {
                     }`}
                   >
                     {/* Avatar */}
-                    <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 border border-zinc-800 bg-zinc-900">
+                    <div className={`w-7 h-7 rounded-full overflow-hidden shrink-0 bg-zinc-900 shadow-md border-2 transition-all ${
+                      room && msg.senderId === room.host._id
+                        ? "border-pink-500 shadow-lg shadow-pink-500/25 scale-105"
+                        : "border-zinc-850/30"
+                    }`}>
                       <img
                         src={msg.avatar || "https://img.ophim.live/uploads/movies/default-avatar.png"}
                         alt={msg.sender}
@@ -468,21 +743,28 @@ export default function RoomPage() {
                       />
                     </div>
 
-                    <div className="space-y-1">
+                    <div className={`flex flex-col space-y-1 ${isMe ? "items-end" : "items-start"}`}>
                       {/* Name & Time */}
                       <div className={`flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider select-none ${
-                        isMe ? "justify-end text-pink-400" : "text-zinc-500"
+                        isMe ? "justify-end text-pink-400" : msg.senderId === 'dlow-ai-bot' ? "text-purple-400" : "text-zinc-500"
                       }`}>
                         <span>{msg.sender}</span>
+                        {msg.senderId === 'dlow-ai-bot' && (
+                          <span className="bg-purple-500/10 text-purple-400 px-1 py-0.2 rounded border border-purple-500/20 text-[8px] tracking-wide shrink-0 font-extrabold">
+                            AI Trợ lý
+                          </span>
+                        )}
                         <span>•</span>
                         <span>{msg.time}</span>
                       </div>
 
                       {/* Bubble */}
-                      <div className={`px-3 py-2 rounded-2xl text-[11px] font-bold leading-relaxed whitespace-pre-wrap break-words ${
+                      <div className={`px-3 py-2 rounded-2xl text-[11px] font-bold leading-relaxed whitespace-pre-wrap break-words w-fit max-w-full ${
                         isMe
-                          ? "bg-pink-500 text-white rounded-tr-none shadow-md shadow-pink-500/10"
-                          : "bg-[#181926] text-zinc-200 rounded-tl-none border border-zinc-900/60"
+                          ? "bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-tr-none shadow-md shadow-pink-500/20"
+                          : msg.senderId === 'dlow-ai-bot'
+                            ? "bg-gradient-to-br from-[#2f225e] to-[#1a1438] text-purple-100 rounded-tl-none border border-purple-400/35 shadow-md shadow-purple-500/10"
+                            : "bg-[#25283b]/85 backdrop-blur-sm text-zinc-100 rounded-tl-none border border-zinc-700/50"
                       }`}>
                         {msg.text}
                       </div>
@@ -490,25 +772,31 @@ export default function RoomPage() {
                   </div>
                 );
               })}
-              <div ref={messagesEndRef} />
             </div>
 
+            {socketError && (
+              <div className="bg-red-500/10 border-t border-red-500/20 px-3.5 py-2 text-[10px] text-red-450 font-extrabold flex items-center gap-1.5 select-none animate-in fade-in duration-200">
+                <AlertCircle size={12} className="shrink-0 animate-pulse text-red-500" />
+                <span>{socketError}</span>
+              </div>
+            )}
+
             {/* Input gửi tin nhắn */}
-            <form onSubmit={handleSendMessage} className="p-3 border-t border-zinc-900 bg-zinc-950/45 flex items-center gap-2">
+            <form onSubmit={handleSendMessage} className="p-3.5 border-t border-zinc-900/45 bg-zinc-950/80 backdrop-blur-md flex items-center gap-2">
               <input
                 type="text"
                 required
                 placeholder="Nhập nội dung trò chuyện..."
                 value={messageInput}
                 onChange={(e) => setMessageInput(e.target.value)}
-                className="flex-1 h-9.5 bg-zinc-950 border border-zinc-850 hover:border-zinc-800 focus:border-pink-500 rounded-xl px-3.5 text-xs text-zinc-200 outline-none font-bold transition-colors"
+                className="flex-1 h-10 bg-zinc-900/40 border border-zinc-800/80 focus:border-pink-500 focus:bg-zinc-900/90 rounded-full px-4 text-xs text-zinc-200 outline-none font-bold transition-all placeholder:text-zinc-600 shadow-inner"
                 maxLength={200}
               />
               <button
                 type="submit"
-                className="w-9.5 h-9.5 rounded-xl bg-pink-500 hover:bg-pink-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-pink-500/20 hover:scale-105 active:scale-95 transition-all cursor-pointer border-none"
+                className="w-10 h-10 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-pink-500/20 hover:scale-105 hover:shadow-pink-500/35 active:scale-95 transition-all cursor-pointer border-none"
               >
-                <Send size={14} className="translate-x-0.2 -translate-y-0.2" />
+                <Send size={13} className="translate-x-0.5 -translate-y-0.5" />
               </button>
             </form>
 
