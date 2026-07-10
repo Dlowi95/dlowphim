@@ -28,6 +28,9 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // Quản lý trạng thái AI hoạt động của từng phòng (roomId -> isActive)
   private roomAiStates = new Map<string, boolean>();
 
+  // Snapshot trạng thái video của từng phòng (để đồng bộ cho member mới join / F5)
+  private roomVideoStates = new Map<string, { currentTime: number; episodeIndex: number; episodeSlug: string; action: 'play' | 'pause' }>();
+
   constructor(private readonly roomsService: RoomsService) { }
 
   handleConnection(client: Socket) {
@@ -143,6 +146,15 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // Gửi trạng thái AI hiện tại của phòng cho client vừa join để đồng bộ UI
     const isAiActive = this.roomAiStates.get(roomId) || false;
     client.emit('ai_state_changed', { active: isAiActive });
+
+    // Gửi snapshot trạng thái video hiện tại cho member mới (hoặc host F5) để seek đúng vị trí
+    if (!isHost) {
+      const videoSnapshot = this.roomVideoStates.get(roomId);
+      if (videoSnapshot) {
+        console.log(`[Socket] Sending video snapshot to new member in Room: ${roomId} -> time: ${videoSnapshot.currentTime}, ep: ${videoSnapshot.episodeIndex}`);
+        client.emit('sync_state', videoSnapshot);
+      }
+    }
 
     // Cập nhật số lượng người xem cho cả phòng
     this.broadcastViewerCount(roomId);
@@ -344,6 +356,14 @@ Tin nhắn của người dùng: "${userMessage}"`;
   ) {
     const { roomId, action, currentTime } = data;
 
+    // Cập nhật snapshot trạng thái video của phòng trong RAM
+    const existing = this.roomVideoStates.get(roomId) || { currentTime: 0, episodeIndex: 0, episodeSlug: '', action: 'pause' as const };
+    this.roomVideoStates.set(roomId, {
+      ...existing,
+      currentTime,
+      action: action === 'seek' ? existing.action : action,
+    });
+
     // Chỉ truyền tiếp tín hiệu cho các thành viên khác trong phòng (ngoại trừ Host gửi)
     client.to(roomId).emit('video_state', { action, currentTime });
 
@@ -376,7 +396,17 @@ Tin nhắn của người dùng: "${userMessage}"`;
         time: new Date(savedMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       });
 
-      // 3. Phát tin hiệu đồng bộ chuyển tập cho tất cả các client khác trong phòng
+      // 3. Cập nhật snapshot episode mới vào RAM
+      const existingSnap = this.roomVideoStates.get(roomId) || { currentTime: 0, action: 'pause' as const };
+      this.roomVideoStates.set(roomId, {
+        ...existingSnap,
+        episodeIndex,
+        episodeSlug,
+        currentTime: 0, // Reset về đầu tập khi chuyển tập
+        action: 'pause' as const,
+      });
+
+      // 4. Phát tín hiệu đồng bộ chuyển tập cho tất cả các client khác trong phòng
       client.to(roomId).emit('episode_changed', { episodeSlug, episodeIndex });
 
     } catch (err) {

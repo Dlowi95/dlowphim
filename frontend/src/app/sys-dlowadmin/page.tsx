@@ -249,7 +249,7 @@ export default function AdminDashboardPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#07070a] text-zinc-100 font-sans">
+    <div className="flex min-h-screen bg-[#07070c] text-zinc-100 font-sans">
       {/* ─── SIDEBAR ─── */}
       <AdminSidebar
         activeTab={activeTab}
@@ -284,9 +284,9 @@ export default function AdminDashboardPage() {
         />
 
         {/* ─── CONTENT TAB PANEL ─── */}
-        <div className="flex-grow p-6">
+        <div className="flex-grow p-5">
           {activeTab === "dashboard" && (
-            <DashboardView stats={stats} loading={loadingStats} />
+            <DashboardView stats={stats} loading={loadingStats} setActiveTab={setActiveTab} />
           )}
 
           {activeTab === "comments" && (

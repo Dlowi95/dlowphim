@@ -60,6 +60,11 @@ export default function RoomPage() {
   const [codeCopied, setCodeCopied] = useState(false);
   const [isAiActive, setIsAiActive] = useState(false);
 
+  // Custom modal states (thay thế alert/confirm của trình duyệt)
+  const [roomClosedModal, setRoomClosedModal] = useState(false);
+  const [confirmCloseModal, setConfirmCloseModal] = useState(false);
+  const [errorModal, setErrorModal] = useState<string | null>(null);
+
   const handleToggleAi = () => {
     if (!socketRef.current || !room) return;
     const nextState = !isAiActive;
@@ -284,12 +289,6 @@ export default function RoomPage() {
       setViewerCount(data.count);
     });
 
-    // Lắng nghe thông báo phòng bị đóng
-    socket.on("room_closed", () => {
-      alert("Phòng xem chung đã bị đóng hoặc Trưởng phòng đã rời đi quá lâu.");
-      router.push(`/watch/${room.movieSlug}`);
-    });
-
     // Lắng nghe tín hiệu đồng bộ video của Host gửi xuống (chỉ Member mới thực thi)
     socket.on("video_state", (state: { action: "play" | "pause" | "seek"; currentTime: number }) => {
       if (isHost) return; // Host không bao giờ bị member điều khiển ngược
@@ -311,6 +310,38 @@ export default function RoomPage() {
       setTimeout(() => {
         isSyncingRef.current = false;
       }, 500);
+    });
+
+    // Khi member mới join hoặc F5 → server gửi snapshot để seek đúng vị trí host
+    socket.on("sync_state", (state: { currentTime: number; episodeIndex: number; episodeSlug: string; action: "play" | "pause" }) => {
+      if (isHost) return;
+      console.log("[Socket] Received sync_state snapshot:", state);
+
+      // Chuyển đúng tập trước
+      setActiveEpisodeIndex(state.episodeIndex);
+
+      // Sau khi video element sẵn sàng thì seek tới đúng thời gian
+      const seekWhenReady = () => {
+        const video = videoRef.current;
+        if (!video) return;
+
+        const doSeek = () => {
+          if (state.currentTime > 2) {
+            isSyncingRef.current = true;
+            video.currentTime = state.currentTime;
+            setTimeout(() => { isSyncingRef.current = false; }, 500);
+          }
+        };
+
+        if (video.readyState >= 2) {
+          doSeek();
+        } else {
+          video.addEventListener("canplay", doSeek, { once: true });
+        }
+      };
+
+      // Chờ một chút để player khởi tạo xong sau khi đổi tập
+      setTimeout(seekWhenReady, 1500);
     });
 
     return () => {
@@ -382,6 +413,9 @@ export default function RoomPage() {
               action: "play",
               currentTime: video.currentTime,
             });
+          } else if (!isHost && !isSyncingRef.current) {
+            // Member không được tự play → pause ngay lại
+            video.pause();
           }
         };
 
@@ -495,9 +529,12 @@ export default function RoomPage() {
   // Đóng phòng
   const handleCloseRoom = async () => {
     if (!room || !user || room.host._id !== user.id) return;
-    const confirm = window.confirm("Bạn có chắc chắn muốn đóng phòng xem chung này không? Tất cả mọi người sẽ bị rời khỏi phòng.");
-    if (!confirm) return;
+    setConfirmCloseModal(true);
+  };
 
+  const doCloseRoom = async () => {
+    if (!room) return;
+    setConfirmCloseModal(false);
     try {
       const token = Cookies.get("token");
       const res = await fetch(`${API_URL}/rooms/${room.roomId}`, {
@@ -608,7 +645,7 @@ export default function RoomPage() {
           {/* CỘT TRÁI (LỚN): Video Player & Server Episodes */}
           <div className="lg:col-span-8 space-y-6">
             
-            {/* Khung Player */}
+                          {/* Khung Player */}
             <div className="w-full overflow-hidden bg-black rounded-3xl shadow-[0_15px_45px_rgba(0,0,0,0.85)] relative">
               <div className="relative w-full aspect-video bg-black overflow-hidden group">
                 {playerType === "embed" ? (
@@ -630,14 +667,34 @@ export default function RoomPage() {
                   )
                 ) : (
                   activeEp?.link_m3u8 ? (
-                    <video
-                      id="dlow-room-video"
-                      ref={videoRef}
-                      playsInline
-                      controls
-                      className="w-full h-full bg-black"
-                      title="DlowPhim Watch Together Player"
-                    />
+                    <div className="relative w-full h-full">
+                      <video
+                        id="dlow-room-video"
+                        ref={videoRef}
+                        playsInline
+                        controls={!!isHost}
+                        className="w-full h-full bg-black"
+                        title="DlowPhim Watch Together Player"
+                        onContextMenu={(e) => { if (!isHost) e.preventDefault(); }}
+                      />
+
+                      {/* Overlay chặn member tua/play/pause */}
+                      {!isHost && (
+                        <div
+                          className="absolute inset-0 z-10 cursor-not-allowed"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={(e) => e.preventDefault()}
+                          onDoubleClick={(e) => e.preventDefault()}
+                          title="Chỉ Trưởng phòng mới được điều khiển video"
+                        >
+                          {/* Badge nhỏ góc dưới trái */}
+                          <div className="absolute bottom-3 left-3 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded-lg border border-white/10 select-none opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                            <Volume2 size={11} className="text-zinc-400" />
+                            <span className="text-[10px] font-bold text-zinc-400">Chỉ xem — Trưởng phòng điều khiển</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-zinc-900">
                       <Tv size={44} className="text-zinc-650 animate-pulse" />
