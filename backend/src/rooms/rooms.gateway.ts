@@ -52,6 +52,15 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       );
 
       if (!isHostStillConnected) {
+        // Nếu phòng chưa bắt đầu chiếu (hẹn giờ trong tương lai), cho phép Host rời đi thoải mái mà không đóng phòng
+        try {
+          const room = await this.roomsService.getRoomDetails(info.roomId).catch(() => null);
+          if (room && room.startTime && new Date(room.startTime).getTime() > Date.now()) {
+            console.log(`[Socket] Host disconnected from scheduled room ${info.roomId} before start time. Keeping room active.`);
+            return;
+          }
+        } catch (e) {}
+
         console.log(`[Socket] Host ${info.name} disconnected completely. Starting 60s cooldown for Room: ${info.roomId}`);
 
         // Phát thông báo cảnh báo cho các thành viên trong phòng
@@ -109,6 +118,31 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { roomId: string; userId: string; name: string; avatar?: string; isHost: boolean },
   ) {
     const { roomId, userId, name, avatar, isHost } = data;
+
+    // Nếu là Host, tự động tìm và đóng các phòng khác của Host này nếu có để tránh trùng lặp
+    if (isHost) {
+      const prevHostSessions = Array.from(this.clients.entries()).filter(
+        ([socketId, clientInfo]) =>
+          clientInfo.userId === userId && clientInfo.isHost && clientInfo.roomId !== roomId,
+      );
+
+      for (const [socketId, prevInfo] of prevHostSessions) {
+        console.log(`[Socket] Host is starting a new room. Closing previous room: ${prevInfo.roomId}`);
+        try {
+          await this.roomsService.closeRoom(prevInfo.userId, prevInfo.roomId);
+          this.server.to(prevInfo.roomId).emit('room_closed');
+          
+          const timeout = this.hostDisconnectTimeouts.get(prevInfo.roomId);
+          if (timeout) {
+            clearTimeout(timeout);
+            this.hostDisconnectTimeouts.delete(prevInfo.roomId);
+          }
+        } catch (e) {
+          console.error(`[Socket] Error closing host's previous room:`, e.message);
+        }
+        this.clients.delete(socketId);
+      }
+    }
 
     // Join socket.io room channel
     client.join(roomId);
@@ -191,6 +225,23 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     // Phát số lượng người xem mới (thêm AI)
     this.broadcastViewerCount(roomId);
+  }
+
+  // Sự kiện gửi tín hiệu nhắc nhở chủ phòng (chuông công chiếu)
+  @SubscribeMessage('request_start_movie')
+  async handleRequestStartMovie(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { roomId: string; guestName: string },
+  ) {
+    const { roomId, guestName } = data;
+    console.log(`[Socket] Guest ${guestName} requested start movie for Room: ${roomId}`);
+    try {
+      await this.roomsService.notifyHost(roomId, guestName);
+      // Gửi sự kiện cho toàn bộ phòng (hoặc host) để hiện thông báo realtime
+      this.server.to(roomId).emit('host_reminder', { guestName });
+    } catch (e) {
+      console.error('[Socket] Request start movie error:', e.message);
+    }
   }
 
   // Sự kiện gửi tin nhắn trò chuyện

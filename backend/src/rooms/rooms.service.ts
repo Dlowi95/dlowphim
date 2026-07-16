@@ -1,15 +1,26 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Room, RoomDocument } from './schemas/room.schema';
 import { Message, MessageDocument } from './schemas/message.schema';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
-export class RoomsService {
+export class RoomsService implements OnModuleInit {
   constructor(
     @InjectModel(Room.name) private roomModel: Model<RoomDocument>,
     @InjectModel(Message.name) private messageModel: Model<MessageDocument>,
+    private readonly notificationsService: NotificationsService,
   ) {}
+
+  async onModuleInit() {
+    try {
+      const result = await this.roomModel.updateMany({ status: 'active' }, { status: 'closed' }).exec();
+      console.log(`[Rooms] Cleaned up orphaned active rooms on startup: ${result.modifiedCount} closed.`);
+    } catch (e) {
+      console.error('[Rooms] Failed to clean up orphaned active rooms:', e.message);
+    }
+  }
 
   // Sinh ID ngẫu nhiên 6 ký tự viết hoa/số
   private generateRoomId(): string {
@@ -54,6 +65,16 @@ export class RoomsService {
       throw new ConflictException('Không thể tạo mã phòng độc nhất lúc này. Vui lòng thử lại.');
     }
 
+    // Tự động đóng tất cả các phòng active cũ của Host này để tránh trùng lặp
+    try {
+      await this.roomModel.updateMany(
+        { host: hostId, status: 'active' },
+        { status: 'closed' }
+      ).exec();
+    } catch (e) {
+      console.error('[Rooms] Failed to auto-close previous active rooms of host:', e.message);
+    }
+
     const createdRoom = new this.roomModel({
       roomId,
       movieSlug: createDto.movieSlug,
@@ -75,23 +96,77 @@ export class RoomsService {
   async getRoomDetails(roomId: string): Promise<Room> {
     const room = await this.roomModel
       .findOne({ roomId, status: 'active' })
-      .populate('host', 'name email avatar')
+      .populate('host', 'displayName email avatar')
       .exec();
 
     if (!room) {
       throw new NotFoundException('Không tìm thấy phòng xem chung hoặc phòng đã đóng.');
     }
 
+    // Tự động đóng phòng nếu đã quá 30 phút so với giờ hẹn chiếu mà host không bắt đầu
+    if (room.startTime) {
+      const startTimeMs = new Date(room.startTime).getTime();
+      if (Date.now() > startTimeMs + 30 * 60 * 1000) {
+        room.status = 'closed';
+        await room.save();
+        throw new NotFoundException('Phòng xem chung đã bị tự động đóng do quá hạn 30 phút trưởng phòng không bắt đầu.');
+      }
+    }
+
     return room;
   }
 
-  // Lấy danh sách phòng công khai
+  // Lấy danh sách phòng công khai (cả active và closed)
   async getPublicRooms(): Promise<Room[]> {
+    // Tự động đóng các phòng active đã quá giờ chiếu hẹn quá 30 phút
+    try {
+      const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000);
+      const expiredRooms = await this.roomModel.find({
+        status: 'active',
+        startTime: { $lt: thirtyMinsAgo }
+      }).exec();
+
+      for (const r of expiredRooms) {
+        r.status = 'closed';
+        await r.save();
+      }
+    } catch (e) {
+      console.error('[Rooms] Failed to cleanup expired rooms:', e.message);
+    }
+
     return this.roomModel
-      .find({ isPrivate: false, status: 'active' })
-      .populate('host', 'name email avatar')
+      .find({ isPrivate: false })
+      .populate('host', 'displayName email avatar')
       .sort({ createdAt: -1 })
       .exec();
+  }
+
+  // Nhắc nhở chủ phòng mở chiếu phim
+  async notifyHost(roomId: string, guestName: string): Promise<{ success: boolean }> {
+    const room = await this.roomModel
+      .findOne({ roomId, status: 'active' })
+      .populate('host')
+      .exec();
+
+    if (!room) {
+      throw new NotFoundException('Không tìm thấy phòng xem chung đang mở.');
+    }
+
+    const hostId = room.host?._id || room.host;
+    if (!hostId) {
+      return { success: false };
+    }
+
+    // Tạo thông báo cho chủ phòng
+    await this.notificationsService.createUserNotification({
+      userId: hostId,
+      type: 'info',
+      title: 'Nhắc nhở mở chiếu phim 🔔',
+      content: `${guestName} đang chờ bạn trong phòng xem chung "${room.movieName}". Hãy vào để bắt đầu chiếu phim nhé!`,
+      link: `/watch-together/room/${room.roomId}`,
+    });
+
+    return { success: true };
   }
 
   // Đóng phòng xem chung (chỉ host mới được quyền đóng)

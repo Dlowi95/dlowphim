@@ -51,4 +51,13 @@ export class RoomsController {
     const hostId = req.user.sub;
     return this.roomsService.closeRoom(hostId, roomId);
   }
+
+  // Nhắc nhở chủ phòng mở chiếu phim
+  @Post(':roomId/notify-host')
+  async notifyHost(
+    @Param('roomId') roomId: string,
+    @Body('guestName') guestName?: string,
+  ) {
+    return this.roomsService.notifyHost(roomId, guestName || 'Khán giả');
+  }
 }

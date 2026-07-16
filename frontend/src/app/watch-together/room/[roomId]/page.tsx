@@ -3,14 +3,25 @@
 export const dynamic = "force-dynamic";
 
 import React, { useEffect, useState, useRef } from "react";
+import Image from "next/image";
 import { useRouter, useParams } from "next/navigation";
-import { ArrowLeft, Film, Send, Sparkles, MessageSquare, Users, Trash2, Calendar, Tv, Volume2, AlertCircle, Copy, Check, Bot } from "lucide-react";
+import { ArrowLeft, Film, Send, Sparkles, MessageSquare, Users, Trash2, Calendar, Tv, Volume2, AlertCircle, Copy, Check, Bot, Clock, VideoOff, VolumeX, Maximize } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { cleanMovieName } from "@/utils/movieUtils";
 import { getProxyUrl } from "@/utils/api";
 import EpisodeSelector from "@/components/EpisodeSelector";
 import { io } from "socket.io-client";
+import HalftoneOverlay from "@/components/HalftoneOverlay";
+
+const getImageUrl = (path: string) => {
+  if (!path) return "";
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return path;
+  }
+  const fileName = path.split("/").pop();
+  return `https://img.ophim.live/uploads/movies/${fileName}`;
+};
 
 // Import dynamic Plyr
 import "plyr/dist/plyr.css";
@@ -65,6 +76,56 @@ export default function RoomPage() {
   const [confirmCloseModal, setConfirmCloseModal] = useState(false);
   const [errorModal, setErrorModal] = useState<string | null>(null);
 
+  // States quản lý đếm ngược công chiếu cho member
+  const [hasMovieStarted, setHasMovieStarted] = useState(false);
+  const [countdownText, setCountdownText] = useState("");
+  const [isMuted, setIsMuted] = useState(false);
+
+  // States quản lý nhắc nhở chủ phòng
+  const [reminderToast, setReminderToast] = useState<string | null>(null);
+  const [hasUrgedHost, setHasUrgedHost] = useState(false);
+
+  // Khởi tạo & chạy đồng hồ đếm ngược công chiếu
+  useEffect(() => {
+    if (!room) return;
+    if (!room.startTime) {
+      setHasMovieStarted(true);
+      return;
+    }
+
+    const startTimeMs = new Date(room.startTime).getTime();
+    if (Date.now() >= startTimeMs) {
+      setHasMovieStarted(true);
+    } else {
+      const updateCountdown = () => {
+        const now = Date.now();
+        const diff = startTimeMs - now;
+        if (diff <= 0) {
+          setHasMovieStarted(true);
+          return true; // Dừng
+        }
+        const hrs = Math.floor(diff / 3600000);
+        const mins = Math.floor((diff % 3600000) / 60000);
+        const secs = Math.floor((diff % 60000) / 1000);
+        
+        let text = "";
+        if (hrs > 0) text += `${hrs} giờ `;
+        text += `${mins} phút ${secs} giây`;
+        setCountdownText(text);
+        return false;
+      };
+
+      const ended = updateCountdown();
+      if (!ended) {
+        const interval = setInterval(() => {
+          const stop = updateCountdown();
+          if (stop) clearInterval(interval);
+        }, 1000);
+        return () => clearInterval(interval);
+      }
+    }
+  }, [room]);
+
   const handleToggleAi = () => {
     if (!socketRef.current || !room) return;
     const nextState = !isAiActive;
@@ -98,6 +159,49 @@ export default function RoomPage() {
   const hlsRef = useRef<any>(null);
   const socketRef = useRef<any>(null);
   const isSyncingRef = useRef<boolean>(false);
+  const playerContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // States quản lý chiều cao đồng bộ giữa trình phát và chatbox
+  const [playerHeight, setPlayerHeight] = useState<number>(550);
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    const checkDesktop = () => {
+      setIsDesktop(window.innerWidth >= 1024);
+    };
+    checkDesktop();
+    window.addEventListener("resize", checkDesktop);
+    return () => window.removeEventListener("resize", checkDesktop);
+  }, []);
+
+  useEffect(() => {
+    if (!room) return;
+    const updateHeight = () => {
+      const el = playerContainerRef.current;
+      if (el) {
+        setPlayerHeight(el.clientHeight);
+      }
+    };
+    
+    updateHeight();
+    window.addEventListener("resize", updateHeight);
+
+    let observer: ResizeObserver | null = null;
+    if (typeof window !== "undefined" && "ResizeObserver" in window) {
+      observer = new ResizeObserver(() => {
+        updateHeight();
+      });
+      const el = playerContainerRef.current;
+      if (el) observer.observe(el);
+    }
+
+    const timer = setTimeout(updateHeight, 600);
+    return () => {
+      window.removeEventListener("resize", updateHeight);
+      if (observer) observer.disconnect();
+      clearTimeout(timer);
+    };
+  }, [room, episodes, playerType]);
 
   // Lấy thông tin phòng và danh sách tập phim
   useEffect(() => {
@@ -302,6 +406,10 @@ export default function RoomPage() {
 
       isSyncingRef.current = true;
       if (state.action === "play") {
+        const startTimeMs = room?.startTime ? new Date(room.startTime).getTime() : 0;
+        if (!startTimeMs || Date.now() >= startTimeMs) {
+          setHasMovieStarted(true);
+        }
         video.play().catch(() => {});
       } else if (state.action === "pause") {
         video.pause();
@@ -321,6 +429,11 @@ export default function RoomPage() {
     socket.on("sync_state", (state: { currentTime: number; episodeIndex: number; episodeSlug: string; action: "play" | "pause" }) => {
       if (isHost) return;
       console.log("[Socket] Received sync_state snapshot:", state);
+      
+      const startTimeMs = room?.startTime ? new Date(room.startTime).getTime() : 0;
+      if (!startTimeMs || Date.now() >= startTimeMs) {
+        setHasMovieStarted(true);
+      }
 
       // Chuyển đúng tập trước
       setActiveEpisodeIndex(state.episodeIndex);
@@ -349,11 +462,28 @@ export default function RoomPage() {
       setTimeout(seekWhenReady, 1500);
     });
 
+    // Lắng nghe tín hiệu khán giả hối thúc mở phòng chiếu (chỉ Host mới nhận và hiển thị Toast)
+    socket.on("host_reminder", (data: { guestName: string }) => {
+      if (isHost) {
+        setReminderToast(`🔔 ${data.guestName} đang hối thúc bạn bắt đầu chiếu phim kìa!`);
+      }
+    });
+
     return () => {
       socket.disconnect();
       socketRef.current = null;
     };
   }, [room, user, isHost]);
+
+  // Tự động tắt thông báo nhắc nhở sau 6 giây
+  useEffect(() => {
+    if (reminderToast) {
+      const timer = setTimeout(() => {
+        setReminderToast(null);
+      }, 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [reminderToast]);
 
   // Cuộn trang lên trên cùng khi vừa truy cập phòng
   useEffect(() => {
@@ -585,6 +715,7 @@ export default function RoomPage() {
   }
 
   const activeEp = episodes[activeEpisodeIndex];
+  const posterUrl = room?.posterOption || room?.moviePoster;
 
   return (
     <>
@@ -648,12 +779,86 @@ export default function RoomPage() {
         {/* Layout 2 cột: Trình phát & Chatbox */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           
-          {/* CỘT TRÁI (LỚN): Video Player & Server Episodes */}
-          <div className="lg:col-span-8 space-y-6">
+          {/* CỘT TRÁI (LỚN): Video Player */}
+          <div className="lg:col-span-8">
             
                           {/* Khung Player */}
             <div className="w-full overflow-hidden bg-black rounded-3xl shadow-[0_15px_45px_rgba(0,0,0,0.85)] relative">
-              <div className="relative w-full aspect-video bg-black overflow-hidden group">
+              <div ref={playerContainerRef} className="relative w-full aspect-video bg-black overflow-hidden group">
+                {/* Toast hối thúc của khán giả (chỉ hiển thị cho Host) */}
+                {isHost && reminderToast && (
+                  <div className="absolute top-4 right-4 z-40 bg-[#0e0f17]/95 backdrop-blur-md border border-pink-500/30 text-pink-400 px-4.5 py-3 rounded-2xl shadow-[0_10px_30px_rgba(236,72,153,0.15)] flex items-center gap-2.5 animate-in fade-in slide-in-from-top-3 duration-300 max-w-xs border-l-4 border-l-pink-500">
+                    <span className="relative flex h-2 w-2 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-pink-500"></span>
+                    </span>
+                    <p className="text-xs font-black leading-snug">{reminderToast}</p>
+                  </div>
+                )}
+
+                {/* Countdown/waiting screen overlay for scheduled rooms */}
+                {!isHost && !hasMovieStarted ? (
+                  <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#07070a] px-6 text-center select-none">
+                    {posterUrl && (
+                      <Image
+                        src={getImageUrl(posterUrl)}
+                        alt=""
+                        fill
+                        className="object-cover blur-[25px] opacity-20 pointer-events-none"
+                        unoptimized
+                      />
+                    )}
+                    <HalftoneOverlay />
+                    
+                    <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center mb-6 animate-pulse shadow-[0_0_30px_rgba(245,158,11,0.2)]">
+                      <Clock size={36} className="text-amber-400 animate-[spin_8s_linear_infinite]" />
+                    </div>
+                    
+                    <div className="max-w-md space-y-4">
+                      <span className="inline-flex items-center gap-1.5 bg-amber-500/15 border border-amber-500/35 text-amber-400 text-xs font-black uppercase tracking-widest px-4 py-2 rounded-full">
+                        <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                        Đang Chờ Công Chiếu
+                      </span>
+                      <h2 className="text-2xl md:text-3xl font-black text-zinc-500 uppercase tracking-tight drop-shadow-md">
+                        {room?.movieName ? cleanMovieName(room.movieName) : "Phim sắp chiếu"}
+                      </h2>
+                      <p className="text-sm md:text-base text-zinc-400 font-bold leading-relaxed">
+                        Thời gian chiếu: <span className="text-zinc-100 font-extrabold">{room?.startTime ? new Date(room.startTime).toLocaleString("vi-VN") : "Đang chờ Trưởng phòng"}</span>
+                      </p>
+                      
+                      {countdownText && (
+                        <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl px-7 py-4.5 mt-5 inline-block shadow-lg">
+                          <p className="text-[10px] text-zinc-550 font-black uppercase tracking-wider mb-1">Bắt đầu sau</p>
+                          <p className="text-2xl md:text-3xl font-black text-amber-400 tracking-tight drop-shadow">{countdownText}</p>
+                        </div>
+                      )}
+                      
+                      <p className="text-xs md:text-sm text-zinc-400 mt-4 leading-relaxed max-w-sm mx-auto">
+                        Bạn vẫn có thể gửi tin nhắn trò chuyện ở ô chat bên cạnh trong lúc chờ đợi nhé!
+                      </p>
+
+                      {/* Nút hối thúc chủ phòng */}
+                      <button
+                        disabled={hasUrgedHost}
+                        onClick={() => {
+                          socketRef.current?.emit("request_start_movie", {
+                            roomId: room?.roomId,
+                            guestName: user?.displayName || "Khán giả ẩn danh",
+                          });
+                          setHasUrgedHost(true);
+                        }}
+                        className={`mt-5 px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 cursor-pointer border ${
+                          hasUrgedHost
+                            ? "bg-zinc-900 text-zinc-650 border-zinc-800 cursor-not-allowed shadow-inner"
+                            : "bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white border-pink-500/20 shadow-lg shadow-pink-500/20 hover:shadow-pink-500/35"
+                        }`}
+                      >
+                        {hasUrgedHost ? "🔔 Đã gửi tín hiệu nhắc" : "🔔 Hối thúc Trưởng phòng"}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
                 {playerType === "embed" ? (
                   activeEp?.link_embed ? (
                     <iframe
@@ -684,19 +889,68 @@ export default function RoomPage() {
                         onContextMenu={(e) => { if (!isHost) e.preventDefault(); }}
                       />
 
-                      {/* Overlay chặn member tua/play/pause */}
+                      {/* Overlay chặn member tua/play/pause nhưng cho thao tác volume & full screen */}
                       {!isHost && (
                         <div
-                          className="absolute inset-0 z-10 cursor-not-allowed"
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={(e) => e.preventDefault()}
-                          onDoubleClick={(e) => e.preventDefault()}
-                          title="Chỉ Trưởng phòng mới được điều khiển video"
+                          className="absolute inset-0 z-10"
+                          onMouseDown={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
+                          onClick={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
+                          onDoubleClick={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
                         >
-                          {/* Badge nhỏ góc dưới trái */}
-                          <div className="absolute bottom-3 left-3 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded-lg border border-white/10 select-none opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                            <Volume2 size={11} className="text-zinc-400" />
-                            <span className="text-[10px] font-bold text-zinc-400">Chỉ xem — Trưởng phòng điều khiển</span>
+                          {/* Vùng chặn click chính */}
+                          <div className="absolute inset-0 z-10 cursor-not-allowed" />
+
+                          {/* Dải nút điều khiển phụ ở đáy (vẫn cho tương tác) */}
+                          <div className="absolute bottom-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                            {/* Badge thông báo + Mute button */}
+                            <div className="flex items-center gap-2 pointer-events-auto">
+                              <div className="flex items-center gap-1.5 bg-black/80 backdrop-blur-md px-3 py-2 rounded-xl border border-white/10 select-none shadow-lg">
+                                <Volume2 size={12} className="text-zinc-400" />
+                                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">Chỉ xem — Trưởng phòng điều khiển</span>
+                              </div>
+                              
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const video = videoRef.current;
+                                  if (video) {
+                                    video.muted = !video.muted;
+                                    setIsMuted(video.muted);
+                                  }
+                                }}
+                                className="h-8 w-8 rounded-xl bg-black/80 backdrop-blur-md border border-white/10 hover:border-pink-500/40 text-zinc-300 hover:text-white flex items-center justify-center transition-all cursor-pointer shadow-lg active:scale-90"
+                                title={isMuted ? "Bật âm thanh" : "Tắt âm thanh"}
+                              >
+                                {isMuted ? <VolumeX size={14} className="text-pink-400" /> : <Volume2 size={14} />}
+                              </button>
+                            </div>
+
+                            {/* Nút phóng to */}
+                            <div className="pointer-events-auto">
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const container = playerContainerRef.current;
+                                  if (container) {
+                                    if (document.fullscreenElement) {
+                                      document.exitFullscreen().catch(() => {});
+                                    } else {
+                                      if (container.requestFullscreen) {
+                                        container.requestFullscreen();
+                                      } else if ((container as any).webkitRequestFullscreen) {
+                                        (container as any).webkitRequestFullscreen();
+                                      }
+                                    }
+                                  }
+                                }}
+                                className="h-8 w-8 rounded-xl bg-black/80 backdrop-blur-md border border-white/10 hover:border-pink-500/40 text-zinc-300 hover:text-white flex items-center justify-center transition-all cursor-pointer shadow-lg active:scale-90"
+                                title="Toàn màn hình"
+                              >
+                                <Maximize size={14} />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       )}
@@ -710,41 +964,14 @@ export default function RoomPage() {
                 )}
               </div>
             </div>
-
-            {/* Danh sách tập phim */}
-            {episodes.length > 1 && (
-              <div className="bg-[#0e0f17]/40 p-5 rounded-2xl space-y-3.5 text-left">
-                <span className="block text-xs font-black text-zinc-455 uppercase tracking-wider select-none">
-                  Danh sách tập phim xem chung:
-                </span>
-                <EpisodeSelector
-                  episodes={episodes}
-                  activeEpisodeIndex={activeEpisodeIndex}
-                  onSelectEpisode={(idx) => {
-                    if (!isHost) {
-                      alert("Chỉ có Trưởng phòng mới được quyền chuyển tập phim nhé! 🎬");
-                      return;
-                    }
-                    const ep = episodes[idx];
-                    if (!ep) return;
-                    
-                    socketRef.current?.emit("change_episode", {
-                      roomId: room.roomId,
-                      episodeSlug: ep.slug,
-                      episodeIndex: idx,
-                      episodeName: ep.name.toLowerCase().includes("tập") ? ep.name : `Tập ${ep.name}`,
-                      userName: user?.displayName || "Trưởng phòng",
-                    });
-                    setActiveEpisodeIndex(idx);
-                  }}
-                  batchSize={40}
-                />
-              </div>
-            )}
           </div>
 
           {/* CỘT PHẢI (NHỎ): Chatbox Realtime */}
-            <div className="lg:col-span-4 bg-[#161622]/95 backdrop-blur-md border border-zinc-800/80 rounded-3xl h-[650px] flex flex-col overflow-hidden relative shadow-2xl shadow-black/80">
+          <div className="lg:col-span-4">
+            <div 
+              style={{ height: isDesktop ? `${playerHeight}px` : "480px" }}
+              className="bg-[#161622]/95 backdrop-blur-md border border-zinc-800/80 rounded-3xl flex flex-col overflow-hidden relative shadow-2xl shadow-black/80 transition-all duration-150"
+            >
             
             {/* Chatbox Header */}
             <div className="p-4 border-b border-zinc-900 bg-gradient-to-b from-zinc-950/60 to-transparent flex items-center gap-2 select-none">
@@ -867,6 +1094,40 @@ export default function RoomPage() {
 
         </div>
 
+      </div>
+
+        {/* Dòng danh sách tập phim phía dưới player */}
+        {episodes.length > 1 && (
+          <div className="lg:w-8/12 pr-0 lg:pr-3 mt-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="bg-[#0e0f17]/40 p-5 rounded-2xl space-y-3.5 text-left border border-zinc-900/60 shadow-lg">
+              <span className="block text-xs font-black text-zinc-400 uppercase tracking-wider select-none">
+                Danh sách tập phim xem chung:
+              </span>
+              <EpisodeSelector
+                episodes={episodes}
+                activeEpisodeIndex={activeEpisodeIndex}
+                onSelectEpisode={(idx) => {
+                  if (!isHost) {
+                    alert("Chỉ có Trưởng phòng mới được quyền chuyển tập phim nhé! 🎬");
+                    return;
+                  }
+                  const ep = episodes[idx];
+                  if (!ep) return;
+                  
+                  socketRef.current?.emit("change_episode", {
+                    roomId: room.roomId,
+                    episodeSlug: ep.slug,
+                    episodeIndex: idx,
+                    episodeName: ep.name.toLowerCase().includes("tập") ? ep.name : `Tập ${ep.name}`,
+                    userName: user?.displayName || "Trưởng phòng",
+                  });
+                  setActiveEpisodeIndex(idx);
+                }}
+                batchSize={40}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
 

@@ -6,6 +6,7 @@ import { Room, RoomSchema } from './schemas/room.schema';
 import { Message, MessageSchema } from './schemas/message.schema';
 import { RoomsGateway } from './rooms.gateway';
 import { AuthModule } from '../auth/auth.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { AuthModule } from '../auth/auth.module';
       { name: Message.name, schema: MessageSchema },
     ]),
     AuthModule,
+    NotificationsModule,
   ],
   controllers: [RoomsController],
   providers: [RoomsService, RoomsGateway],
