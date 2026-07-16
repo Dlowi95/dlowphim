@@ -289,6 +289,11 @@ export default function RoomPage() {
       setViewerCount(data.count);
     });
 
+    // Lắng nghe thông báo phòng bị đóng
+    socket.on("room_closed", () => {
+      setRoomClosedModal(true);
+    });
+
     // Lắng nghe tín hiệu đồng bộ video của Host gửi xuống (chỉ Member mới thực thi)
     socket.on("video_state", (state: { action: "play" | "pause" | "seek"; currentTime: number }) => {
       if (isHost) return; // Host không bao giờ bị member điều khiển ngược
@@ -582,6 +587,7 @@ export default function RoomPage() {
   const activeEp = episodes[activeEpisodeIndex];
 
   return (
+    <>
     <div className="min-h-screen bg-[#07070a] text-white pt-24 pb-12 px-4 md:px-6 relative select-none">
       <div className="max-w-[1550px] mx-auto space-y-6 relative z-10">
         
@@ -863,5 +869,77 @@ export default function RoomPage() {
 
       </div>
     </div>
+
+      {/* ── MODAL: Phòng bị đóng ── */}
+      {roomClosedModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#0e0f16] border border-red-500/20 rounded-2xl shadow-[0_25px_60px_rgba(0,0,0,0.8),0_0_0_1px_rgba(239,68,68,0.1)] p-7 max-w-sm w-[90%] text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-red-500/10 flex items-center justify-center mx-auto">
+              <AlertCircle size={28} className="text-red-400" />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-zinc-100 mb-1">Phòng đã bị đóng</h3>
+              <p className="text-sm text-zinc-400 leading-relaxed">Phòng xem chung đã bị đóng hoặc Trưởng phòng đã rời đi quá lâu.</p>
+            </div>
+            <button
+              onClick={() => { setRoomClosedModal(false); router.push(`/watch/${room?.movieSlug}`); }}
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-black text-sm transition-all active:scale-95 cursor-pointer border-none shadow-lg shadow-pink-500/20"
+            >
+              Về trang phim
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: Xác nhận đóng phòng ── */}
+      {confirmCloseModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#0e0f16] border border-orange-500/20 rounded-2xl shadow-[0_25px_60px_rgba(0,0,0,0.8),0_0_0_1px_rgba(249,115,22,0.1)] p-7 max-w-sm w-[90%] text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-orange-500/10 flex items-center justify-center mx-auto">
+              <Trash2 size={26} className="text-orange-400" />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-zinc-100 mb-1">Đóng phòng xem chung?</h3>
+              <p className="text-sm text-zinc-400 leading-relaxed">Tất cả thành viên trong phòng sẽ bị đưa ra ngoài ngay lập tức. Hành động này không thể hoàn tác.</p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmCloseModal(false)}
+                className="flex-1 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-sm transition-all active:scale-95 cursor-pointer border border-zinc-700 hover:border-zinc-600"
+              >
+                Huỷ bỏ
+              </button>
+              <button
+                onClick={doCloseRoom}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white font-black text-sm transition-all active:scale-95 cursor-pointer border-none shadow-lg shadow-red-500/20"
+              >
+                Đóng phòng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: Thông báo lỗi ── */}
+      {errorModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#0e0f16] border border-zinc-700/40 rounded-2xl shadow-[0_25px_60px_rgba(0,0,0,0.8)] p-7 max-w-sm w-[90%] text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-zinc-800 flex items-center justify-center mx-auto">
+              <AlertCircle size={26} className="text-zinc-400" />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-zinc-100 mb-1">Đã xảy ra lỗi</h3>
+              <p className="text-sm text-zinc-400 leading-relaxed">{errorModal}</p>
+            </div>
+            <button
+              onClick={() => setErrorModal(null)}
+              className="w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-sm transition-all active:scale-95 cursor-pointer border border-zinc-700"
+            >
+              Đã hiểu
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
