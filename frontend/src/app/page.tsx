@@ -12,6 +12,7 @@ import Top10Row from "@/components/Top10Row";
 import UpcomingRow from "@/components/UpcomingRow";
 import CinemaRow from "@/components/CinemaRow";
 import AnimeRow from "@/components/AnimeRow";
+import KamenRiderRow from "@/components/KamenRiderRow";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 import Image from "next/image";
 import { useAuth } from "@/context/AuthContext";
@@ -688,6 +689,9 @@ export default function HomePage() {
 
       {/* 2.8. MÃN NHÃN VỚI PHIM CHIẾU RẠP */}
       <CinemaRow />
+
+      {/* 2.85. ĐẠI LỘ SIÊU NHÂN TOKUSATSU (KAMEN RIDER) */}
+      <KamenRiderRow />
 
       {/* 2.9. KHO TÀNG ANIME MỚI NHẤT */}
       <AnimeRow />
