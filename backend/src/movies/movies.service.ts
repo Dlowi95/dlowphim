@@ -215,15 +215,13 @@ export class MoviesService {
 
     // 3. Lưu vào DB để cache
     try {
-      const cached = new this.movieLogoModel({
-        slug: trimmedSlug,
-        logoUrl,
-        backdropUrl,
-        posterUrl,
-      });
-      await cached.save();
+      await this.movieLogoModel.findOneAndUpdate(
+        { slug: trimmedSlug },
+        { logoUrl, backdropUrl, posterUrl },
+        { upsert: true, new: true }
+      ).exec();
     } catch (saveErr) {
-      console.error('Lỗi lưu cache logo vào DB:', saveErr);
+      console.error('Lỗi lưu cache logo vào DB:', saveErr.message);
     }
 
     return { logoUrl, backdropUrl, posterUrl };

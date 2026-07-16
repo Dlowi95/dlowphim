@@ -272,7 +272,7 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       try {
         const room = await this.roomsService.getRoomDetails(roomId);
         if (room) {
-          // Trả lời sau 1.5 giây để tạo cảm giác gõ chữ tự nhiên
+          // Trả lời sau 400ms để tạo cảm giác gõ chữ tự nhiên nhưng vẫn cực kỳ nhanh chóng
           setTimeout(async () => {
             const aiReplyText = await this.askGemini(room.movieName, text);
 
@@ -296,7 +296,7 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
               isSystem: aiSavedMsg.isSystem,
               time: new Date(aiSavedMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             });
-          }, 1500);
+          }, 400);
         }
       } catch (err) {
         console.error('[Socket] AI response logic error:', err.message);
@@ -304,84 +304,133 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // Helper kết nối Google Gemini API bằng REST API thuần (không phụ thuộc SDK tránh lỗi ESM/CommonJS compiler)
+  // Helper kết nối API AI (ưu tiên Groq API siêu nhanh, sau đó fallback sang Google Gemini API)
   private async askGemini(movieName: string, userMessage: string): Promise<string> {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return 'DlowAI chưa được cấu hình API Key. Vui lòng thêm GEMINI_API_KEY vào file .env ở Backend nhé! 🤖';
-    }
+    const groqKey = process.env.GROQ_API_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY;
 
-    const modelsToTry = [
-      { name: 'gemini-3.5-flash', url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent' },
-      { name: 'gemini-2.5-flash', url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent' },
-      { name: 'gemini-1.5-flash', url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent' },
-    ];
+    if (!groqKey && !geminiKey) {
+      return 'DlowAI chưa được cấu hình API Key. Vui lòng thêm GROQ_API_KEY hoặc GEMINI_API_KEY vào file .env ở Backend nhé! 🤖';
+    }
 
     const promptText = `Chỉ dẫn hệ thống: Bạn là DlowAI, một người bạn xem phim cùng siêu dễ thương, hài hước và am hiểu điện ảnh. Bạn đang xem bộ phim "${movieName}" cùng người dùng trong phòng xem chung DlowPhim. Hãy đóng vai nhân vật này và trả lời tin nhắn của người dùng một cách tự nhiên, ngắn gọn (khoảng 1 đến 3 câu), đúng trọng tâm và giàu cảm xúc. Tuyệt đối không viết dở dang câu, không ngắt lời giữa chừng. Thỉnh thoảng sử dụng emoji cảm xúc phù hợp.
 
 Tin nhắn của người dùng: "${userMessage}"`;
 
-    let lastError: any = null;
-
-    for (const model of modelsToTry) {
+    // 1. Dùng Groq API nếu có cấu hình (Phản hồi siêu tốc)
+    if (groqKey) {
       try {
-        console.log(`[Gemini REST] Sending request to ${model.name}...`);
-        const response = await fetch(`${model.url}?key=${apiKey}`, {
+        console.log(`[Groq API] Sending request to llama-3.3-70b-versatile...`);
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${groqKey}`,
           },
           body: JSON.stringify({
-            contents: [
+            model: 'llama-3.3-70b-versatile',
+            messages: [
               {
-                parts: [
-                  {
-                    text: promptText,
-                  },
-                ],
+                role: 'system',
+                content: `Bạn là DlowAI, một trợ lý xem phim chung siêu dễ thương, hài hước, trả lời tự nhiên ngắn gọn 1-3 câu tiếng Việt về bộ phim "${movieName}".`
               },
+              {
+                role: 'user',
+                content: userMessage
+              }
             ],
-            generationConfig: {
-              maxOutputTokens: 1000,
-              temperature: 0.7,
-              thinkingConfig: {
-                thinkingBudget: 1024,
-              },
-            },
+            temperature: 0.7,
+            max_tokens: 200,
           }),
         });
 
         if (response.ok) {
           const resData: any = await response.json();
-          const parts = resData.candidates?.[0]?.content?.parts || [];
-          // Lọc bỏ các part chứa suy nghĩ nội bộ (thought: true) của Gemini 3.5
-          const textParts = parts.filter((p: any) => !p.thought && p.text);
-
-          let aiReply = '';
-          if (textParts.length > 0) {
-            aiReply = textParts.map((p: any) => p.text).join('').trim();
-          } else if (parts.length > 0) {
-            aiReply = parts[parts.length - 1]?.text?.trim() || '';
-          }
-
-          if (aiReply) {
-            console.log(`[Gemini REST] Model ${model.name} responded successfully (extracted clean text)!`);
-            return aiReply;
+          const textReply = resData.choices?.[0]?.message?.content?.trim();
+          if (textReply) {
+            console.log(`[Groq API] Responded successfully via Llama!`);
+            return textReply;
           }
         } else {
-          const errJson = await response.json().catch(() => ({}));
-          console.warn(`[Gemini REST] Model ${model.name} failed with status: ${response.status}. Details:`, errJson);
-          lastError = errJson;
+          const errText = await response.text();
+          console.warn(`[Groq API] Failed with status: ${response.status}. Details:`, errText);
         }
       } catch (err) {
-        console.warn(`[Gemini REST] Connection to model ${model.name} failed. Error:`, err.message);
-        lastError = err;
+        console.warn('[Groq API] Connection failed. Error:', err.message);
       }
     }
 
-    console.error('[Gemini REST All Models Failed] Last Error Details:', lastError);
-    const errText = lastError?.error?.message || lastError?.message || 'Lỗi không xác định';
-    return `Tớ kết nối tới máy chủ AI của Google bị lỗi: "${errText}". Cậu kiểm tra lại tài khoản hoặc API Key nhé! 🤖`;
+    // 2. Fallback sang Google Gemini nếu Groq không có hoặc lỗi
+    if (geminiKey) {
+      const modelsToTry = [
+        { name: 'gemini-3.5-flash', url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent' },
+        { name: 'gemini-2.5-flash', url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent' },
+        { name: 'gemini-1.5-flash', url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent' },
+      ];
+
+      let lastError: any = null;
+
+      for (const model of modelsToTry) {
+        try {
+          console.log(`[Gemini REST] Sending request to ${model.name}...`);
+          const response = await fetch(`${model.url}?key=${geminiKey}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    {
+                      text: promptText,
+                    },
+                  ],
+                },
+              ],
+              generationConfig: {
+                maxOutputTokens: 1000,
+                temperature: 0.7,
+                thinkingConfig: {
+                  thinkingBudget: 1024,
+                },
+              },
+            }),
+          });
+
+          if (response.ok) {
+            const resData: any = await response.json();
+            const candidates = resData.candidates?.[0]?.content?.parts || [];
+            const textParts = candidates.filter((p: any) => !p.thought && p.text);
+
+            let aiReply = '';
+            if (textParts.length > 0) {
+              aiReply = textParts.map((p: any) => p.text).join('').trim();
+            } else if (candidates.length > 0) {
+              aiReply = candidates[candidates.length - 1]?.text?.trim() || '';
+            }
+
+            if (aiReply) {
+              console.log(`[Gemini REST] Model ${model.name} responded successfully!`);
+              return aiReply;
+            }
+          } else {
+            const errJson = await response.json().catch(() => ({}));
+            console.warn(`[Gemini REST] Model ${model.name} failed with status: ${response.status}. Details:`, errJson);
+            lastError = errJson;
+          }
+        } catch (err) {
+          console.warn(`[Gemini REST] Connection to model ${model.name} failed. Error:`, err.message);
+          lastError = err;
+        }
+      }
+
+      console.error('[Gemini REST All Models Failed] Last Error Details:', lastError);
+      const errText = lastError?.error?.message || lastError?.message || 'Lỗi không xác định';
+      return `Tớ kết nối tới máy chủ AI của Google bị lỗi: "${errText}". Cậu kiểm tra lại tài khoản hoặc API Key nhé! 🤖`;
+    }
+
+    return 'DlowAI chưa được cấu hình API Key. Vui lòng thêm GROQ_API_KEY hoặc GEMINI_API_KEY vào file .env ở Backend nhé! 🤖';
   }
 
   // Phát số người xem động cho toàn phòng

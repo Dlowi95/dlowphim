@@ -964,13 +964,25 @@ function WatchContent({ slug }: { slug: string }) {
             </button>
           </div>
 
-          {/* Unified Movie Player Frame + Action Bar Container with soft shadow, no border */}
-          <div
-            className={`w-full overflow-hidden bg-black rounded-2xl md:rounded-3xl shadow-[0_15px_45px_rgba(0,0,0,0.85)] transition-all duration-300 ${cinemaMode
-                ? "relative z-50 shadow-pink-500/10 w-full max-w-[92vw] mx-auto"
-                : "relative"
-              }`}
-          >
+          {/* Ambient Glow Wrapper */}
+          <div className="relative w-full z-10">
+            {/* Ambient Image Glow (Philips Ambilight / Ambient Mode style) */}
+            <div className="absolute -inset-4 z-0 pointer-events-none select-none overflow-hidden blur-[60px] opacity-40 scale-[1.04] rounded-[32px] transition-opacity duration-500">
+              <img
+                src={tmdbBackdrop || getImageUrl(movie.poster_url || movie.thumb_url)}
+                alt=""
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+
+            {/* Unified Movie Player Frame + Action Bar Container with soft shadow, no border */}
+            <div
+              className={`w-full overflow-hidden bg-black rounded-2xl md:rounded-3xl shadow-[0_15px_45px_rgba(0,0,0,0.85)] transition-all duration-300 relative z-10 ${cinemaMode
+                  ? "shadow-pink-500/10 w-full max-w-[92vw] mx-auto"
+                  : ""
+                }`}
+            >
             {/* Player Container */}
             <div className="relative w-full aspect-video bg-black overflow-hidden group">
               {playerType === "embed" ? (
@@ -1276,6 +1288,7 @@ function WatchContent({ slug }: { slug: string }) {
                 </button>
               </div>
             )}
+          </div>
           </div>
         </div>
 
