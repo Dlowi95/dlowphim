@@ -798,8 +798,8 @@ export default function KamenRiderRow() {
             const isSelected = movie.slug === activeMovie.slug;
             const rTheme = getRiderTheme(movie.slug, movie);
 
-            // Ưu tiên Poster Dọc chuẩn 2:3 chính diện
-            const cardPoster = movie._customBanner || movie._customPoster || tmdbCardData[movie.slug]?.backdrop || tmdbCardData[movie.slug]?.poster || movie.thumb_url || movie.poster_url;
+            // Ưu tiên Poster Dọc chuẩn 2:3 chính diện (đồng bộ 100% với Poster trên Hero)
+            const cardPoster = movie._customPoster || tmdbCardData[movie.slug]?.poster || movie.poster_url || movie.thumb_url || movie._customBanner;
 
             return (
               <div

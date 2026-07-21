@@ -35,7 +35,7 @@ const DEFAULT_SENTAI = [
     quality: "HD",
     order: 1,
     isActive: true,
-    posterUrl: "https://image.tmdb.org/t/p/w500/qx3SJlAp2RK656TusqKx1qEqVMW.jpg",
+    posterUrl: "https://image.tmdb.org/t/p/w500/i01wnWz0Z3rMATqbkAVLHEaGbNP.jpg",
     bannerUrl: "https://image.tmdb.org/t/p/w1280/i01wnWz0Z3rMATqbkAVLHEaGbNP.jpg",
     gallery: [
       { name: "Cuồng Phong Đỏ", color: "#EF4444", symbol: "🦅 Diều Hâu Không Trung", weapon: "Kiếm Phong Nhẫn & Diều Hâu Nỏ", power: 95, actor: "Shane Clarke", description: "Ninja diều hâu tự do phóng khoáng, làm chủ bầu trời không trung.", imageUrl: "" },
