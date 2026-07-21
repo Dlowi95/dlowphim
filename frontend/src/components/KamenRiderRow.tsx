@@ -23,15 +23,15 @@ interface Movie {
   category?: any[];
 }
 
-// 6 Featured Kamen Riders — slug chính xác để fetch trực tiếp từ OPhim API
+// 6 Featured Kamen Riders — slug chính xác theo OPhim API (tìm kiếm thực tế)
 // Thứ tự hiển thị: Zi-O → Decade → Build → Zero-One → Blade → Genm/Ex-Aid
 const TARGET_RIDERS: { slug: string; fallback: Movie }[] = [
   {
-    slug: "kamen-rider-zi-o",
+    slug: "hiep-si-mat-na-zi-o",
     fallback: {
       _id: "rider-zi-o",
-      name: "Kamen Rider Zi-O",
-      slug: "kamen-rider-zi-o",
+      name: "Hiệp Sĩ Mặt Nạ Zi-O",
+      slug: "hiep-si-mat-na-zi-o",
       origin_name: "Kamen Rider Zi-O (Over Quartzer)",
       year: 2018,
       quality: "HD",
@@ -40,11 +40,11 @@ const TARGET_RIDERS: { slug: string; fallback: Movie }[] = [
     }
   },
   {
-    slug: "kamen-rider-decade",
+    slug: "kamen-rider-decade-all-riders-super-spin-off",
     fallback: {
       _id: "rider-decade",
       name: "Kamen Rider Decade",
-      slug: "kamen-rider-decade",
+      slug: "kamen-rider-decade-all-riders-super-spin-off",
       origin_name: "Kamen Rider Decade (All Riders)",
       year: 2009,
       quality: "HD",
@@ -53,11 +53,11 @@ const TARGET_RIDERS: { slug: string; fallback: Movie }[] = [
     }
   },
   {
-    slug: "kamen-rider-build",
+    slug: "hiep-si-mat-na-build",
     fallback: {
       _id: "rider-build",
-      name: "Kamen Rider Build",
-      slug: "kamen-rider-build",
+      name: "Hiệp Sĩ Mặt Nạ Build",
+      slug: "hiep-si-mat-na-build",
       origin_name: "Kamen Rider Build (Be The One)",
       year: 2017,
       quality: "HD",
@@ -66,11 +66,11 @@ const TARGET_RIDERS: { slug: string; fallback: Movie }[] = [
     }
   },
   {
-    slug: "kamen-rider-zero-one",
+    slug: "hiep-sy-mat-na-hiem-hoa-tri-tue-nhan-tao",
     fallback: {
       _id: "rider-zero-one",
-      name: "Kamen Rider Zero-One",
-      slug: "kamen-rider-zero-one",
+      name: "Hiệp Sỹ Mặt Nạ: Hiểm Hoạ Trí Tuệ Nhân Tạo",
+      slug: "hiep-sy-mat-na-hiem-hoa-tri-tue-nhan-tao",
       origin_name: "Kamen Rider Zero-One (REAL×TIME)",
       year: 2019,
       quality: "HD",
@@ -79,11 +79,11 @@ const TARGET_RIDERS: { slug: string; fallback: Movie }[] = [
     }
   },
   {
-    slug: "kamen-rider-blade",
+    slug: "sieu-nhan-the-bai",
     fallback: {
       _id: "rider-blade",
-      name: "Kamen Rider Blade",
-      slug: "kamen-rider-blade",
+      name: "Siêu Nhân Thẻ Bài",
+      slug: "sieu-nhan-the-bai",
       origin_name: "Kamen Rider Blade (Missing Ace)",
       year: 2004,
       quality: "HD",
@@ -92,11 +92,11 @@ const TARGET_RIDERS: { slug: string; fallback: Movie }[] = [
     }
   },
   {
-    slug: "kamen-rider-ex-aid",
+    slug: "sieu-nhan-ex-aid",
     fallback: {
       _id: "rider-genm",
-      name: "Kamen Rider Ex-Aid",
-      slug: "kamen-rider-ex-aid",
+      name: "Siêu Nhân Ex-Aid",
+      slug: "sieu-nhan-ex-aid",
       origin_name: "Kamen Rider Ex-Aid / Genm Versus",
       year: 2016,
       quality: "HD",
@@ -147,7 +147,8 @@ const getRiderTheme = (slug: string) => {
   }
 
   // 4. Zero-One (Xanh Neon / Vàng Chanh - Công nghệ AI)
-  if (s.includes("zero-one") || s.includes("zeroone")) {
+  // slug OPhim: hiep-sy-mat-na-hiem-hoa-tri-tue-nhan-tao
+  if (s.includes("zero-one") || s.includes("zeroone") || s.includes("hiem-hoa") || s.includes("nhan-tao")) {
     return {
       glowClass: "shadow-[0_0_25px_rgba(204,255,0,0.6)] border-[#CCFF00]",
       textClass: "text-[#CCFF00] drop-shadow-[0_2px_8px_rgba(204,255,0,0.6)]",
@@ -159,7 +160,8 @@ const getRiderTheme = (slug: string) => {
   }
 
   // 5. Blade (Xanh Dương Cobalt - Sắc bén, Thẻ bài)
-  if (s.includes("blade")) {
+  // slug OPhim: sieu-nhan-the-bai
+  if (s.includes("blade") || s.includes("the-bai")) {
     return {
       glowClass: "shadow-[0_0_25px_rgba(0,85,165,0.6)] border-[#0055A5]",
       textClass: "text-[#0072CE] drop-shadow-[0_2px_8px_rgba(0,114,206,0.6)]",
