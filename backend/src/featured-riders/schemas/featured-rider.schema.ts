@@ -39,7 +39,16 @@ export class FeaturedRider {
   isActive: boolean;
 
   @Prop({ type: Array, default: [] })
-  gallery: { name: string; color: string; imageUrl: string }[];
+  gallery: {
+    name: string;
+    color: string;
+    imageUrl: string;
+    symbol?: string;
+    weapon?: string;
+    power?: number;
+    actor?: string;
+    description?: string;
+  }[];
 }
 
 export const FeaturedRiderSchema = SchemaFactory.createForClass(FeaturedRider);
