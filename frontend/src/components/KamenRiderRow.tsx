@@ -201,6 +201,7 @@ export default function KamenRiderRow() {
   const [details, setDetails] = useState<any | null>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
+  const [tmdbPosterUrl, setTmdbPosterUrl] = useState<string | null>(null);
   
   const [detailsCache, setDetailsCache] = useState<Record<string, any>>({});
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -281,6 +282,7 @@ export default function KamenRiderRow() {
         setIsTransitioning(true);
         setLogoUrl(null);
         setBackdropUrl(null);
+        setTmdbPosterUrl(null);
 
         // a. Lấy chi tiết OPhim
         let detailData = detailsCache[currentMovie.slug];
@@ -298,8 +300,13 @@ export default function KamenRiderRow() {
         if (!active) return;
         setDetails(detailData || null);
 
-        // b. Lấy Logo và Backdrop nét từ TMDB
-        const titleQuery = detailData?.origin_name || currentMovie.name;
+        // b. Lấy Logo, Backdrop và Poster chất lượng cao từ TMDB
+        // Ưu tiên dùng origin_name tiếng Anh để TMDB tìm chính xác hơn
+        const riderTarget = TARGET_RIDERS.find(r => r.slug === currentMovie.slug);
+        const titleQuery = detailData?.origin_name
+          || riderTarget?.fallback.origin_name
+          || currentMovie.origin_name
+          || currentMovie.name;
         const tmdbId = detailData?.tmdb?.id || "";
         const tmdbType = detailData?.tmdb?.type || "tv";
 
@@ -310,6 +317,7 @@ export default function KamenRiderRow() {
           const logoData = await logoRes.json();
           setLogoUrl(logoData.logoUrl || null);
           setBackdropUrl(logoData.backdropUrl || null);
+          setTmdbPosterUrl(logoData.posterUrl || null);
         }
       } catch (err) {
         console.error("Lỗi lấy chi tiết Rider:", err);
@@ -359,7 +367,8 @@ export default function KamenRiderRow() {
   }
 
   const theme = getRiderTheme(activeMovie.slug);
-  const activePoster = activeMovie.poster_url || details?.poster_url;
+  // Ưu tiên: TMDB poster (đẹp nhất) → OPhim poster → OPhim thumb
+  const activePoster = tmdbPosterUrl || activeMovie.poster_url || details?.poster_url;
 
   return (
     <div className="container mx-auto px-6 mt-16 max-w-7xl select-none relative z-10">
