@@ -563,16 +563,16 @@ export default function KamenRiderRow() {
           style={{ backgroundColor: activeAccentColor }}
         />
 
-        {/* Backdrop Background Mờ phía sau */}
+        {/* Backdrop Background Sáng Rực Rỡ phía sau */}
         {backdropUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={backdropUrl}
             alt="backdrop"
-            className="absolute inset-0 w-full h-full object-cover opacity-20 filter blur-sm scale-105 transition-all duration-700 pointer-events-none"
+            className="absolute inset-0 w-full h-full object-cover opacity-60 filter blur-[1px] scale-105 transition-all duration-700 pointer-events-none"
           />
         )}
-        <div className="absolute inset-0 bg-gradient-to-r from-[#0c0d14] via-[#0c0d14]/90 to-[#0c0d14]/70 z-0" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#0c0d14] via-[#0c0d14]/70 to-[#0c0d14]/40 z-0" />
 
         <div className="relative z-10 p-6 md:p-8 grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
           

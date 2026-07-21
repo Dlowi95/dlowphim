@@ -111,7 +111,7 @@ const DEFAULT_SENTAI = [
   {
     name: "Chiến Đội Bộc Long Abaranger",
     originName: "Bakuryu Sentai Abaranger",
-    slug: "sieu-nhan-boc-long-abaranger",
+    slug: "chien-doi-boc-long-abaranger",
     themeColor: "#8B5CF6",
     description: "Sức mạnh Bộc Long gầm vang cùng các chiến sĩ Abaranger ngăn chặn bộ tộc Eviloid.",
     year: "2003",
@@ -139,9 +139,9 @@ export class FeaturedRidersService implements OnModuleInit {
 
   async onModuleInit() {
     try {
-      // Xóa các Kamen Rider cũ nếu có để chuyển sang Super Sentai
-      const oldSlugs = ["hiep-si-mat-na-zi-o", "kamen-rider-decade-all-riders-super-spin-off", "hiep-si-mat-na-build", "hiep-sy-mat-na-hiem-hoa-tri-tue-nhan-tao", "sieu-nhan-the-bai", "sieu-nhan-ex-aid"];
-      await this.riderModel.deleteMany({ slug: { $in: oldSlugs } }).exec();
+      const validSlugs = DEFAULT_SENTAI.map((s) => s.slug);
+      // Xóa tất cả các document cũ hoặc lỡ tạo dư thừa không thuộc 6 slug chuẩn
+      await this.riderModel.deleteMany({ slug: { $nin: validSlugs } }).exec();
 
       for (const sentai of DEFAULT_SENTAI) {
         await this.riderModel.findOneAndUpdate(
