@@ -16,11 +16,16 @@ interface Movie {
   origin_name: string;
   poster_url?: string;
   thumb_url?: string;
-  year?: number;
+  year?: number | string;
   quality?: string;
   lang?: string;
   time?: string;
   category?: any[];
+  // Admin DB custom fields
+  _customPoster?: string;
+  _customBanner?: string;
+  _themeColor?: string;
+  _description?: string;
 }
 
 // 6 Featured Kamen Riders — slug chính xác theo OPhim API (tìm kiếm thực tế)
@@ -106,8 +111,24 @@ const TARGET_RIDERS: { slug: string; fallback: Movie }[] = [
   }
 ];
 
-// Helper to determine neon glow & custom UI theme color based on the Kamen Rider slug
-const getRiderTheme = (slug: string) => {
+// Helper to determine neon glow & custom UI theme color based on the Kamen Rider slug or admin DB theme color
+const getRiderTheme = (slug: string, movie?: Movie) => {
+  if (movie?._themeColor) {
+    const hex = movie._themeColor;
+    return {
+      glowClass: `shadow-[0_0_25px_rgba(255,255,255,0.2)] border-[${hex}]`,
+      textClass: `drop-shadow-[0_2px_8px_${hex}]`,
+      gradient: `from-[${hex}] via-zinc-800 to-black`,
+      buttonBg: `from-zinc-900 to-zinc-950 text-white border-[${hex}]`,
+      accent: hex,
+      badgeText: "CUSTOM THEME",
+      customStyle: {
+        borderColor: hex,
+        color: hex,
+      }
+    };
+  }
+
   const s = slug.toLowerCase();
   
   // 1. Ohma Zi-O / Zi-O (Gold - Sang trọng, Uy nghiêm)
@@ -215,14 +236,57 @@ export default function KamenRiderRow() {
 
   const isFavorite = user?.favorites?.includes(activeMovie?.slug || "") || false;
 
-  // 1. Fetch trực tiếp từng slug của 6 Kamen Rider được chỉ định
-  // Không dùng search chung để tránh API trả về phim không mong muốn
+  // 1. Fetch Riders: DB (admin) ưu tiên → OPhim + TMDB fallback
   useEffect(() => {
     async function fetchRiders() {
       try {
         setLoadingList(true);
+        const api = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
-        // Fetch song song từng slug cụ thể
+        // ── Thử lấy từ DB admin trước ──
+        const dbRes = await fetch(`${api}/featured-riders`);
+        if (dbRes.ok) {
+          const dbRiders = await dbRes.json();
+          if (Array.isArray(dbRiders) && dbRiders.length > 0) {
+            // Có dữ liệu trong DB → dùng luôn, kèm ảnh custom
+            const riders: Movie[] = dbRiders.map((r: any) => ({
+              _id: r._id,
+              name: r.name,
+              slug: r.slug,
+              origin_name: r.originName || r.name,
+              poster_url: r.posterUrl || "",
+              thumb_url: r.bannerUrl || r.posterUrl || "", // bannerUrl làm thumb cho card grid
+              year: r.year || "",
+              quality: r.quality || "HD",
+              lang: "Vietsub",
+              time: "",
+              // Attach custom images vào đối tượng để component con dùng
+              _customPoster: r.posterUrl || "",
+              _customBanner: r.bannerUrl || "",
+              _themeColor: r.themeColor || "",
+              _description: r.description || "",
+            }));
+
+            setMovies(riders);
+            setActiveMovie(riders[0]);
+
+            // Build tmdbCardData từ DB (bannerUrl làm backdrop, posterUrl làm poster)
+            const tmdbMap: Record<string, { backdrop: string; poster: string }> = {};
+            dbRiders.forEach((r: any) => {
+              tmdbMap[r.slug] = {
+                backdrop: r.bannerUrl || "",
+                poster: r.posterUrl || "",
+              };
+            });
+            setTmdbCardData(tmdbMap);
+
+            // tmdbPosterUrl cho active rider (để panel trái cũng dùng ảnh DB)
+            // Sẽ được set trong useEffect [activeMovie] bên dưới
+            return; // Không fetch thêm OPhim nữa
+          }
+        }
+
+        // ── Fallback: Fetch từng slug OPhim ──
         const results = await Promise.allSettled(
           TARGET_RIDERS.map(async ({ slug, fallback }) => {
             try {
@@ -259,8 +323,7 @@ export default function KamenRiderRow() {
         setMovies(riders);
         setActiveMovie(riders[0]);
 
-        // Batch-fetch TMDB backdrops cho tất cả 6 cards (ảnh chất lượng cao, nhất quán)
-        const api = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+        // Batch-fetch TMDB backdrops cho tất cả 6 cards
         const tmdbBatch = await Promise.allSettled(
           TARGET_RIDERS.map(async ({ slug, fallback }) => {
             try {
@@ -391,9 +454,9 @@ export default function KamenRiderRow() {
     );
   }
 
-  const theme = getRiderTheme(activeMovie.slug);
-  // Ưu tiên: TMDB poster (đẹp nhất) → OPhim poster → OPhim thumb
-  const activePoster = tmdbPosterUrl || activeMovie.poster_url || details?.poster_url;
+  const theme = getRiderTheme(activeMovie.slug, activeMovie);
+  // Ưu tiên: Custom Poster (Admin DB) → TMDB poster → OPhim poster → OPhim thumb
+  const activePoster = activeMovie._customPoster || tmdbPosterUrl || activeMovie.poster_url || details?.poster_url;
 
   return (
     <div className="container mx-auto px-6 mt-16 max-w-7xl select-none relative z-10">
@@ -524,7 +587,7 @@ export default function KamenRiderRow() {
 
               {/* Tóm tắt */}
               <p className="text-xs md:text-[13px] text-zinc-400 leading-relaxed line-clamp-3">
-                {details?.content ? stripHtmlTags(details.content) : "Đang nạp tóm tắt của huyền thoại Kamen Rider..."}
+                {activeMovie._description || (details?.content ? stripHtmlTags(details.content) : "Đang nạp tóm tắt của huyền thoại Kamen Rider...")}
               </p>
             </div>
           </div>
@@ -557,7 +620,7 @@ export default function KamenRiderRow() {
           <div className="grid grid-cols-2 gap-4">
             {movies.map((movie, index) => {
               const isSelected = movie.slug === activeMovie.slug;
-              const rTheme = getRiderTheme(movie.slug);
+              const rTheme = getRiderTheme(movie.slug, movie);
               // TMDB backdrop ưu tiên → OPhim thumb → OPhim poster
               const cardTmdb = tmdbCardData[movie.slug];
               const cardImage = cardTmdb?.backdrop || cardTmdb?.poster

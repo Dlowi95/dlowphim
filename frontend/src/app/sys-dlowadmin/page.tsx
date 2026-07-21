@@ -14,6 +14,7 @@ import BannersManagementView from "@/components/admin/BannersManagementView";
 import MovieReportsView from "@/components/admin/MovieReportsView";
 import NotificationsManagementView from "@/components/admin/NotificationsManagementView";
 import SettingsView from "@/components/admin/SettingsView";
+import FeaturedRidersView from "@/components/admin/FeaturedRidersView";
 
 interface ReportedComment {
   id: string;
@@ -44,7 +45,7 @@ export default function AdminDashboardPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<"dashboard" | "comments" | "movies" | "users" | "banners" | "reports" | "notifications" | "settings">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "comments" | "movies" | "users" | "banners" | "reports" | "notifications" | "settings" | "tokusatsu">("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Reported comments state
@@ -331,6 +332,10 @@ export default function AdminDashboardPage() {
 
           {activeTab === "settings" && (
             <SettingsView />
+          )}
+
+          {activeTab === "tokusatsu" && (
+            <FeaturedRidersView />
           )}
         </div>
       </div>

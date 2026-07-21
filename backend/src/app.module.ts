@@ -11,6 +11,9 @@ import { BannersModule } from './banners/banners.module';
 import { MovieReportsModule } from './movie-reports/movie-reports.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { SystemSettingsModule } from './system-settings/system-settings.module';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
+import { FeaturedRidersModule } from './featured-riders/featured-riders.module';
 import { RoomsModule } from './rooms/rooms.module';
 
 @Module({
@@ -34,6 +37,11 @@ import { RoomsModule } from './rooms/rooms.module';
     NotificationsModule,
     SystemSettingsModule,
     RoomsModule,
+    FeaturedRidersModule,
+    ServeStaticModule.forRoot({
+      rootPath: join(process.cwd(), 'uploads'),
+      serveRoot: '/uploads',
+    }),
   ],
   controllers: [AppController],
   providers: [AppService],
