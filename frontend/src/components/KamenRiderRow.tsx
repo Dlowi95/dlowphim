@@ -202,6 +202,7 @@ export default function KamenRiderRow() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
   const [tmdbPosterUrl, setTmdbPosterUrl] = useState<string | null>(null);
+  const [tmdbCardData, setTmdbCardData] = useState<Record<string, {backdrop: string; poster: string}>>({});
   
   const [detailsCache, setDetailsCache] = useState<Record<string, any>>({});
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -257,6 +258,30 @@ export default function KamenRiderRow() {
 
         setMovies(riders);
         setActiveMovie(riders[0]);
+
+        // Batch-fetch TMDB backdrops cho tất cả 6 cards (ảnh chất lượng cao, nhất quán)
+        const api = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+        const tmdbBatch = await Promise.allSettled(
+          TARGET_RIDERS.map(async ({ slug, fallback }) => {
+            try {
+              const q = encodeURIComponent(fallback.origin_name);
+              const res = await fetch(`${api}/movies/logo/${slug}?title=${q}&tmdbType=tv`);
+              if (res.ok) {
+                const d = await res.json();
+                return { slug, backdrop: d.backdropUrl || "", poster: d.posterUrl || "" };
+              }
+            } catch {}
+            return { slug, backdrop: "", poster: "" };
+          })
+        );
+        const tmdbMap: Record<string, { backdrop: string; poster: string }> = {};
+        tmdbBatch.forEach(r => {
+          if (r.status === "fulfilled" && r.value) {
+            tmdbMap[r.value.slug] = { backdrop: r.value.backdrop, poster: r.value.poster };
+          }
+        });
+        setTmdbCardData(tmdbMap);
+
       } catch (err) {
         console.error("Lỗi lấy danh sách Kamen Rider:", err);
         const fallbacks = TARGET_RIDERS.map(r => r.fallback);
@@ -527,53 +552,93 @@ export default function KamenRiderRow() {
           </div>
         </div>
 
-        {/* CỘT PHẢI (60%): BẢNG LƯỚI 6 RIDERS */}
+        {/* CỘT PHẢI (60%): BẢNG LƯỚI 6 RIDERS - Zi-O là vua ở trên cùng */}
         <div className="lg:col-span-7 flex flex-col justify-between">
-          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 gap-4">
-            {movies.map((movie) => {
+          <div className="grid grid-cols-2 gap-4">
+            {movies.map((movie, index) => {
               const isSelected = movie.slug === activeMovie.slug;
               const rTheme = getRiderTheme(movie.slug);
+              // TMDB backdrop ưu tiên → OPhim thumb → OPhim poster
+              const cardTmdb = tmdbCardData[movie.slug];
+              const cardImage = cardTmdb?.backdrop || cardTmdb?.poster
+                || getImageUrl(movie.thumb_url || movie.poster_url || "");
+
+              // Zi-O (index 0): HERO toàn bề ngang — vua của mọi Rider
+              const isZiOHero = index === 0;
+              // Ex-Aid (index 5): banner phụ toàn bề ngang ở dưới
+              const isBottomBanner = index === 5;
               
               return (
                 <div
                   key={movie._id}
                   onClick={() => handleSelectRider(movie)}
-                  className={`group/card relative aspect-[16/10] rounded-[1.5rem] overflow-hidden bg-zinc-950 border-2 cursor-pointer transition-all duration-300 hover:scale-[1.02] ${
+                  className={`group/card relative rounded-[1.5rem] overflow-hidden bg-zinc-950 border-2 cursor-pointer transition-all duration-300 hover:scale-[1.02] ${
+                    isZiOHero ? "col-span-2 aspect-[21/9]" :
+                    isBottomBanner ? "col-span-2 aspect-[32/9]" :
+                    "aspect-[4/3]"
+                  } ${
                     isSelected
                       ? `${rTheme.glowClass} scale-[1.01]`
                       : "border-zinc-900 hover:border-zinc-800"
                   }`}
                 >
-                  {/* Backdrop Background */}
-                  {movie.thumb_url || movie.poster_url ? (
-                    <Image
-                      src={getImageUrl(movie.thumb_url || movie.poster_url || "")}
+                  {/* Backdrop: TMDB > OPhim */}
+                  {cardImage ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={cardImage}
                       alt={movie.name}
-                      fill
-                      className="object-cover opacity-60 group-hover/card:opacity-85 transition-opacity duration-300"
-                      sizes="(max-width: 768px) 50vw, 240px"
-                      unoptimized
+                      className="absolute inset-0 w-full h-full object-cover opacity-65 group-hover/card:opacity-90 transition-opacity duration-300"
                     />
-                  ) : null}
+                  ) : (
+                    // Placeholder với màu theme khi chưa có ảnh
+                    <div
+                      className="absolute inset-0 opacity-20"
+                      style={{ background: `linear-gradient(135deg, ${rTheme.accent}44, transparent)` }}
+                    />
+                  )}
                   
-                  {/* Technology Tech Overlay pattern */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent z-10" />
+                  {/* Gradient overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent z-10" />
+
+                  {/* Badge đặc biệt OHMA cho Zi-O */}
+                  {isZiOHero && (
+                    <div className="absolute top-3 right-3 z-30 flex items-center gap-1.5">
+                      <span
+                        className="text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border"
+                        style={{
+                          backgroundColor: `${rTheme.accent}22`,
+                          borderColor: rTheme.accent,
+                          color: rTheme.accent,
+                          boxShadow: `0 0 12px ${rTheme.accent}55`
+                        }}
+                      >
+                        👑 OHMA — Kamen Mạnh Nhất
+                      </span>
+                    </div>
+                  )}
                   
-                  {/* Hover indicator lines (glow) */}
+                  {/* Hover indicator glow line */}
                   <div 
                     className="absolute bottom-0 left-0 right-0 h-1 transition-all duration-300 scale-x-0 group-hover/card:scale-x-100 z-20"
                     style={{ backgroundColor: rTheme.accent }}
                   />
 
                   {/* Text Details */}
-                  <div className="absolute bottom-4 left-4 right-4 z-20 text-left">
+                  <div className={`absolute z-20 text-left ${
+                    isZiOHero ? "bottom-5 left-6 right-6" : "bottom-3 left-4 right-4"
+                  }`}>
                     <span 
-                      className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-black/70 border mb-1.5 inline-block"
+                      className={`font-black uppercase tracking-widest px-2 py-0.5 rounded bg-black/70 border mb-1.5 inline-block ${
+                        isZiOHero ? "text-[10px]" : "text-[8px]"
+                      }`}
                       style={{ borderColor: `${rTheme.accent}44`, color: rTheme.accent }}
                     >
                       {movie.year || "RIDER"}
                     </span>
-                    <h3 className="text-xs md:text-sm font-extrabold uppercase tracking-tight text-white group-hover/card:text-zinc-100 transition-colors line-clamp-1">
+                    <h3 className={`font-extrabold uppercase tracking-tight text-white group-hover/card:text-zinc-100 transition-colors line-clamp-1 ${
+                      isZiOHero ? "text-base md:text-lg" : "text-xs md:text-[13px]"
+                    }`}>
                       {cleanMovieName(movie.name)}
                     </h3>
                   </div>
