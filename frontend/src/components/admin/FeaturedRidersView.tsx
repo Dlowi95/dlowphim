@@ -4,6 +4,12 @@ import React, { useState, useEffect, useRef } from "react";
 import Cookies from "js-cookie";
 import { Plus, Trash2, Edit2, GripVertical, Image as ImageIcon, Upload, X, Check, Eye, EyeOff } from "lucide-react";
 
+interface GalleryItem {
+  name: string;
+  color: string;
+  imageUrl: string;
+}
+
 interface FeaturedRider {
   _id: string;
   name: string;
@@ -17,6 +23,7 @@ interface FeaturedRider {
   quality: string;
   order: number;
   isActive: boolean;
+  gallery: GalleryItem[];
 }
 
 const EMPTY_FORM: Omit<FeaturedRider, "_id" | "order"> = {
@@ -30,6 +37,7 @@ const EMPTY_FORM: Omit<FeaturedRider, "_id" | "order"> = {
   year: "",
   quality: "HD",
   isActive: true,
+  gallery: [],
 };
 
 const COLOR_PRESETS = [
@@ -103,6 +111,7 @@ export default function FeaturedRidersView() {
       year: r.year,
       quality: r.quality,
       isActive: r.isActive,
+      gallery: r.gallery || [],
     });
     setEditingId(r._id);
     setShowForm(true);
@@ -551,10 +560,94 @@ export default function FeaturedRidersView() {
                 <textarea
                   value={form.description}
                   onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                  rows={3}
+                  rows={2}
                   placeholder="Mô tả ngắn về bộ phim..."
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-amber-500 resize-none"
                 />
+              </div>
+
+              {/* Gallery 5-6 Siêu Nhân Cá Nhân */}
+              <div className="border-t border-zinc-800 pt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-amber-400 uppercase tracking-wider block">
+                    🎨 Quản lý Ảnh Các Siêu Nhân (Gao Đỏ, Gao Vàng, Gao Xanh...)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({
+                      ...f,
+                      gallery: [...(f.gallery || []), { name: "Ranger Mới", color: "#EF4444", imageUrl: "" }]
+                    }))}
+                    className="text-xs bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition-all"
+                  >
+                    <Plus size={13} /> Thêm Siêu Nhân
+                  </button>
+                </div>
+                
+                <p className="text-[11px] text-zinc-500">
+                  Dán URL ảnh nhân vật chuẩn HD cho từng Siêu Nhân. Để trống URL ảnh thì hệ thống sẽ tự dùng poster phim chính.
+                </p>
+
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {(form.gallery || []).map((item, idx) => (
+                    <div key={idx} className="flex items-center gap-2 bg-zinc-800/80 p-2 rounded-xl border border-zinc-700/60">
+                      <input
+                        type="color"
+                        value={item.color || "#EF4444"}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setForm((f) => {
+                            const newG = [...(f.gallery || [])];
+                            newG[idx] = { ...newG[idx], color: val };
+                            return { ...f, gallery: newG };
+                          });
+                        }}
+                        className="w-7 h-7 rounded border-0 cursor-pointer bg-transparent p-0"
+                        title="Chọn màu sắc chủ đạo"
+                      />
+                      <input
+                        type="text"
+                        value={item.name}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setForm((f) => {
+                            const newG = [...(f.gallery || [])];
+                            newG[idx] = { ...newG[idx], name: val };
+                            return { ...f, gallery: newG };
+                          });
+                        }}
+                        placeholder="VD: Gao Đỏ"
+                        className="w-24 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-white"
+                      />
+                      <input
+                        type="text"
+                        value={item.imageUrl}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setForm((f) => {
+                            const newG = [...(f.gallery || [])];
+                            newG[idx] = { ...newG[idx], imageUrl: val };
+                            return { ...f, gallery: newG };
+                          });
+                        }}
+                        placeholder="URL ảnh Siêu Nhân..."
+                        className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForm((f) => ({
+                            ...f,
+                            gallery: (f.gallery || []).filter((_, i) => i !== idx)
+                          }));
+                        }}
+                        className="text-zinc-500 hover:text-red-400 p-1"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* Active toggle */}

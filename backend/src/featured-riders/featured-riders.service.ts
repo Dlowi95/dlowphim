@@ -17,12 +17,12 @@ const DEFAULT_SENTAI = [
     posterUrl: "https://image.tmdb.org/t/p/w500/yrErA1GiQcZikGG3c0bITFlCO6f.jpg",
     bannerUrl: "https://image.tmdb.org/t/p/w1280/hmhSP3LnFkuhfMmXTLzo5kV23Oz.jpg",
     gallery: [
-      { name: "Gao Đỏ", color: "#EF4444", imageUrl: "https://image.tmdb.org/t/p/w500/yrErA1GiQcZikGG3c0bITFlCO6f.jpg" },
-      { name: "Gao Vàng", color: "#EAB308", imageUrl: "https://image.tmdb.org/t/p/w500/tMAqqOU2Tz5F6uDpJuqAlRhyvhP.jpg" },
-      { name: "Gao Xanh", color: "#3B82F6", imageUrl: "https://image.tmdb.org/t/p/w500/qx3SJlAp2RK656TusqKx1qEqVMW.jpg" },
-      { name: "Gao Đen", color: "#374151", imageUrl: "https://image.tmdb.org/t/p/w500/vupRI1U1wFMF6hDBXRkx93A6xGE.jpg" },
-      { name: "Gao Trắng", color: "#E5E7EB", imageUrl: "https://image.tmdb.org/t/p/w500/eUUZcEvQS03DZHaOw9vBusemlBN.jpg" },
-      { name: "Gao Bạc", color: "#9CA3AF", imageUrl: "https://image.tmdb.org/t/p/w500/bDoHBImQZI7ruSkxWtnkxDLra58.jpg" }
+      { name: "Gao Đỏ", color: "#EF4444", imageUrl: "" },
+      { name: "Gao Vàng", color: "#EAB308", imageUrl: "" },
+      { name: "Gao Xanh", color: "#3B82F6", imageUrl: "" },
+      { name: "Gao Đen", color: "#374151", imageUrl: "" },
+      { name: "Gao Trắng", color: "#E5E7EB", imageUrl: "" },
+      { name: "Gao Bạc", color: "#9CA3AF", imageUrl: "" }
     ]
   },
   {
@@ -38,11 +38,11 @@ const DEFAULT_SENTAI = [
     posterUrl: "https://image.tmdb.org/t/p/w500/qx3SJlAp2RK656TusqKx1qEqVMW.jpg",
     bannerUrl: "https://image.tmdb.org/t/p/w1280/i01wnWz0Z3rMATqbkAVLHEaGbNP.jpg",
     gallery: [
-      { name: "Cuồng Phong Đỏ", color: "#EF4444", imageUrl: "https://image.tmdb.org/t/p/w500/qx3SJlAp2RK656TusqKx1qEqVMW.jpg" },
-      { name: "Cuồng Phong Vàng", color: "#EAB308", imageUrl: "https://image.tmdb.org/t/p/w500/tMAqqOU2Tz5F6uDpJuqAlRhyvhP.jpg" },
-      { name: "Cuồng Phong Xanh", color: "#3B82F6", imageUrl: "https://image.tmdb.org/t/p/w500/yrErA1GiQcZikGG3c0bITFlCO6f.jpg" },
-      { name: "Hung Thần Đỏ", color: "#991B1B", imageUrl: "https://image.tmdb.org/t/p/w500/vupRI1U1wFMF6hDBXRkx93A6xGE.jpg" },
-      { name: "Hung Thần Xanh", color: "#1E3A8A", imageUrl: "https://image.tmdb.org/t/p/w500/eUUZcEvQS03DZHaOw9vBusemlBN.jpg" }
+      { name: "Cuồng Phong Đỏ", color: "#EF4444", imageUrl: "" },
+      { name: "Cuồng Phong Vàng", color: "#EAB308", imageUrl: "" },
+      { name: "Cuồng Phong Xanh", color: "#3B82F6", imageUrl: "" },
+      { name: "Hung Thần Đỏ", color: "#991B1B", imageUrl: "" },
+      { name: "Hung Thần Xanh", color: "#1E3A8A", imageUrl: "" }
     ]
   },
   {
@@ -58,12 +58,12 @@ const DEFAULT_SENTAI = [
     posterUrl: "https://image.tmdb.org/t/p/w500/tMAqqOU2Tz5F6uDpJuqAlRhyvhP.jpg",
     bannerUrl: "https://image.tmdb.org/t/p/w1280/2PE9z3QAmjoMUvsKcJ0lzEwLFOc.jpg",
     gallery: [
-      { name: "Shinken Đỏ", color: "#EF4444", imageUrl: "https://image.tmdb.org/t/p/w500/tMAqqOU2Tz5F6uDpJuqAlRhyvhP.jpg" },
-      { name: "Shinken Xanh Dương", color: "#3B82F6", imageUrl: "https://image.tmdb.org/t/p/w500/qx3SJlAp2RK656TusqKx1qEqVMW.jpg" },
-      { name: "Shinken Hồng", color: "#EC4899", imageUrl: "https://image.tmdb.org/t/p/w500/yrErA1GiQcZikGG3c0bITFlCO6f.jpg" },
-      { name: "Shinken Lục", color: "#10B981", imageUrl: "https://image.tmdb.org/t/p/w500/vupRI1U1wFMF6hDBXRkx93A6xGE.jpg" },
-      { name: "Shinken Vàng", color: "#EAB308", imageUrl: "https://image.tmdb.org/t/p/w500/eUUZcEvQS03DZHaOw9vBusemlBN.jpg" },
-      { name: "Shinken Kim", color: "#F59E0B", imageUrl: "https://image.tmdb.org/t/p/w500/bDoHBImQZI7ruSkxWtnkxDLra58.jpg" }
+      { name: "Shinken Đỏ", color: "#EF4444", imageUrl: "" },
+      { name: "Shinken Xanh Dương", color: "#3B82F6", imageUrl: "" },
+      { name: "Shinken Hồng", color: "#EC4899", imageUrl: "" },
+      { name: "Shinken Lục", color: "#10B981", imageUrl: "" },
+      { name: "Shinken Vàng", color: "#EAB308", imageUrl: "" },
+      { name: "Shinken Kim", color: "#F59E0B", imageUrl: "" }
     ]
   },
   {
@@ -79,12 +79,12 @@ const DEFAULT_SENTAI = [
     posterUrl: "https://image.tmdb.org/t/p/w500/vupRI1U1wFMF6hDBXRkx93A6xGE.jpg",
     bannerUrl: "https://image.tmdb.org/t/p/w1280/hM4CnVs5wW9SI1TQkMTljsHhUE5.jpg",
     gallery: [
-      { name: "Deka Đỏ", color: "#EF4444", imageUrl: "https://image.tmdb.org/t/p/w500/vupRI1U1wFMF6hDBXRkx93A6xGE.jpg" },
-      { name: "Deka Xanh", color: "#3B82F6", imageUrl: "https://image.tmdb.org/t/p/w500/qx3SJlAp2RK656TusqKx1qEqVMW.jpg" },
-      { name: "Deka Lục", color: "#10B981", imageUrl: "https://image.tmdb.org/t/p/w500/yrErA1GiQcZikGG3c0bITFlCO6f.jpg" },
-      { name: "Deka Vàng", color: "#EAB308", imageUrl: "https://image.tmdb.org/t/p/w500/tMAqqOU2Tz5F6uDpJuqAlRhyvhP.jpg" },
-      { name: "Deka Hồng", color: "#EC4899", imageUrl: "https://image.tmdb.org/t/p/w500/eUUZcEvQS03DZHaOw9vBusemlBN.jpg" },
-      { name: "Deka Trắng", color: "#F3F4F6", imageUrl: "https://image.tmdb.org/t/p/w500/bDoHBImQZI7ruSkxWtnkxDLra58.jpg" }
+      { name: "Deka Đỏ", color: "#EF4444", imageUrl: "" },
+      { name: "Deka Xanh", color: "#3B82F6", imageUrl: "" },
+      { name: "Deka Lục", color: "#10B981", imageUrl: "" },
+      { name: "Deka Vàng", color: "#EAB308", imageUrl: "" },
+      { name: "Deka Hồng", color: "#EC4899", imageUrl: "" },
+      { name: "Deka Trắng", color: "#F3F4F6", imageUrl: "" }
     ]
   },
   {
@@ -100,12 +100,12 @@ const DEFAULT_SENTAI = [
     posterUrl: "https://image.tmdb.org/t/p/w500/eUUZcEvQS03DZHaOw9vBusemlBN.jpg",
     bannerUrl: "https://image.tmdb.org/t/p/w1280/v2wiAoSf3b0t0UmonVSYJI3yWXH.jpg",
     gallery: [
-      { name: "Bouken Đỏ", color: "#EF4444", imageUrl: "https://image.tmdb.org/t/p/w500/eUUZcEvQS03DZHaOw9vBusemlBN.jpg" },
-      { name: "Bouken Đen", color: "#374151", imageUrl: "https://image.tmdb.org/t/p/w500/qx3SJlAp2RK656TusqKx1qEqVMW.jpg" },
-      { name: "Bouken Xanh", color: "#3B82F6", imageUrl: "https://image.tmdb.org/t/p/w500/tMAqqOU2Tz5F6uDpJuqAlRhyvhP.jpg" },
-      { name: "Bouken Vàng", color: "#EAB308", imageUrl: "https://image.tmdb.org/t/p/w500/yrErA1GiQcZikGG3c0bITFlCO6f.jpg" },
-      { name: "Bouken Hồng", color: "#EC4899", imageUrl: "https://image.tmdb.org/t/p/w500/vupRI1U1wFMF6hDBXRkx93A6xGE.jpg" },
-      { name: "Bouken Bạc", color: "#9CA3AF", imageUrl: "https://image.tmdb.org/t/p/w500/bDoHBImQZI7ruSkxWtnkxDLra58.jpg" }
+      { name: "Bouken Đỏ", color: "#EF4444", imageUrl: "" },
+      { name: "Bouken Đen", color: "#374151", imageUrl: "" },
+      { name: "Bouken Xanh", color: "#3B82F6", imageUrl: "" },
+      { name: "Bouken Vàng", color: "#EAB308", imageUrl: "" },
+      { name: "Bouken Hồng", color: "#EC4899", imageUrl: "" },
+      { name: "Bouken Bạc", color: "#9CA3AF", imageUrl: "" }
     ]
   },
   {
@@ -121,11 +121,11 @@ const DEFAULT_SENTAI = [
     posterUrl: "https://image.tmdb.org/t/p/w500/bDoHBImQZI7ruSkxWtnkxDLra58.jpg",
     bannerUrl: "https://image.tmdb.org/t/p/w1280/gbY5crvWFNCRgME9fu05kddHhXH.jpg",
     gallery: [
-      { name: "Aba Đỏ", color: "#EF4444", imageUrl: "https://image.tmdb.org/t/p/w500/bDoHBImQZI7ruSkxWtnkxDLra58.jpg" },
-      { name: "Aba Xanh", color: "#3B82F6", imageUrl: "https://image.tmdb.org/t/p/w500/qx3SJlAp2RK656TusqKx1qEqVMW.jpg" },
-      { name: "Aba Vàng", color: "#EAB308", imageUrl: "https://image.tmdb.org/t/p/w500/tMAqqOU2Tz5F6uDpJuqAlRhyvhP.jpg" },
-      { name: "Aba Đen", color: "#374151", imageUrl: "https://image.tmdb.org/t/p/w500/yrErA1GiQcZikGG3c0bITFlCO6f.jpg" },
-      { name: "Aba Trắng", color: "#E5E7EB", imageUrl: "https://image.tmdb.org/t/p/w500/vupRI1U1wFMF6hDBXRkx93A6xGE.jpg" }
+      { name: "Aba Đỏ", color: "#EF4444", imageUrl: "" },
+      { name: "Aba Xanh", color: "#3B82F6", imageUrl: "" },
+      { name: "Aba Vàng", color: "#EAB308", imageUrl: "" },
+      { name: "Aba Đen", color: "#374151", imageUrl: "" },
+      { name: "Aba Trắng", color: "#E5E7EB", imageUrl: "" }
     ]
   }
 ];
