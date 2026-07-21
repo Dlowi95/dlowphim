@@ -2,10 +2,9 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Play, Heart, Info, Monitor, Flame } from "lucide-react";
+import { Play, Heart, Monitor, Flame } from "lucide-react";
 import { cleanMovieName, cleanSlug } from "@/utils/movieUtils";
 import { useAuth } from "@/context/AuthContext";
-import Cookies from "js-cookie";
 import Image from "next/image";
 import { getProxyUrl } from "@/utils/api";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
@@ -24,98 +23,166 @@ interface Movie {
   category?: any[];
 }
 
-const FALLBACK_RIDERS: Movie[] = [
+// 6 Featured Kamen Riders with curated fallback metadata
+const FALLBACK_6_RIDERS: Movie[] = [
   {
-    _id: "rider-1",
-    name: "Shin Kamen Rider",
-    slug: "shin-kamen-rider",
-    origin_name: "Shin Kamen Rider (2023)",
-    poster_url: "shin-kamen-rider-poster.jpg",
-    thumb_url: "shin-kamen-rider-thumb.jpg",
-    year: 2023,
+    _id: "rider-zi-o",
+    name: "Kamen Rider Zi-O",
+    slug: "kamen-rider-zi-o",
+    origin_name: "Kamen Rider Zi-O (Over Quartzer)",
+    poster_url: "kamen-rider-zi-o-poster.jpg",
+    thumb_url: "kamen-rider-zi-o-thumb.jpg",
+    year: 2018,
     quality: "HD",
     lang: "Vietsub",
-    time: "121 phút"
+    time: "49 tập"
   },
   {
-    _id: "rider-2",
-    name: "Kamen Rider Black Sun",
-    slug: "kamen-rider-black-sun",
-    origin_name: "Kamen Rider Black Sun (Season 1)",
-    poster_url: "kamen-rider-black-sun-poster.jpg",
-    thumb_url: "kamen-rider-black-sun-thumb.jpg",
-    year: 2022,
+    _id: "rider-decade",
+    name: "Kamen Rider Decade",
+    slug: "kamen-rider-decade",
+    origin_name: "Kamen Rider Decade (All Riders)",
+    poster_url: "kamen-rider-decade-poster.jpg",
+    thumb_url: "kamen-rider-decade-thumb.jpg",
+    year: 2009,
     quality: "HD",
     lang: "Vietsub",
-    time: "44 phút/tập"
+    time: "31 tập"
   },
   {
-    _id: "rider-3",
-    name: "Kamen Rider Gotchard",
-    slug: "kamen-rider-gotchard",
-    origin_name: "Kamen Rider Gotchard",
-    poster_url: "kamen-rider-gotchard-poster.jpg",
-    thumb_url: "kamen-rider-gotchard-thumb.jpg",
-    year: 2023,
+    _id: "rider-build",
+    name: "Kamen Rider Build",
+    slug: "kamen-rider-build",
+    origin_name: "Kamen Rider Build (Be The One)",
+    poster_url: "kamen-rider-build-poster.jpg",
+    thumb_url: "kamen-rider-build-thumb.jpg",
+    year: 2017,
     quality: "HD",
     lang: "Vietsub",
-    time: "24 phút/tập"
+    time: "49 tập"
   },
   {
-    _id: "rider-4",
-    name: "Kamen Rider Gavv",
-    slug: "kamen-rider-gavv",
-    origin_name: "Kamen Rider Gavv",
-    poster_url: "kamen-rider-gavv-poster.jpg",
-    thumb_url: "kamen-rider-gavv-thumb.jpg",
-    year: 2024,
+    _id: "rider-zero-one",
+    name: "Kamen Rider Zero-One",
+    slug: "kamen-rider-zero-one",
+    origin_name: "Kamen Rider Zero-One (REAL×TIME)",
+    poster_url: "kamen-rider-zero-one-poster.jpg",
+    thumb_url: "kamen-rider-zero-one-thumb.jpg",
+    year: 2019,
     quality: "HD",
     lang: "Vietsub",
-    time: "24 phút/tập"
+    time: "45 tập"
+  },
+  {
+    _id: "rider-blade",
+    name: "Kamen Rider Blade",
+    slug: "kamen-rider-blade",
+    origin_name: "Kamen Rider Blade (Missing Ace)",
+    poster_url: "kamen-rider-blade-poster.jpg",
+    thumb_url: "kamen-rider-blade-thumb.jpg",
+    year: 2004,
+    quality: "HD",
+    lang: "Vietsub",
+    time: "49 tập"
+  },
+  {
+    _id: "rider-genm",
+    name: "Kamen Rider Genm & Ex-Aid",
+    slug: "kamen-rider-ex-aid",
+    origin_name: "Kamen Rider Ex-Aid / Genm Versus",
+    poster_url: "kamen-rider-ex-aid-poster.jpg",
+    thumb_url: "kamen-rider-ex-aid-thumb.jpg",
+    year: 2016,
+    quality: "HD",
+    lang: "Vietsub",
+    time: "45 tập"
   }
 ];
 
-// Helper to determine neon glow color based on the Kamen Rider slug
+// Helper to determine neon glow & custom UI theme color based on the Kamen Rider slug
 const getRiderTheme = (slug: string) => {
   const s = slug.toLowerCase();
-  if (s.includes("gavv")) {
+  
+  // 1. Ohma Zi-O / Zi-O (Gold - Sang trọng, Uy nghiêm)
+  if (s.includes("zi-o") || s.includes("ohma")) {
     return {
-      glowClass: "shadow-[0_0_20px_rgba(236,72,153,0.55)] border-pink-500",
-      textClass: "text-pink-500 drop-shadow-[0_2px_8px_rgba(236,72,153,0.6)]",
-      gradient: "from-pink-500 via-purple-600 to-indigo-500",
-      accent: "#ec4899"
+      glowClass: "shadow-[0_0_25px_rgba(255,215,0,0.6)] border-[#FFD700]",
+      textClass: "text-[#FFD700] drop-shadow-[0_2px_8px_rgba(255,215,0,0.6)]",
+      gradient: "from-[#FFD700] via-[#D4AF37] to-[#B8860B]",
+      buttonBg: "from-[#FFD700] to-[#D4AF37] text-black font-black hover:from-[#FFE44D] hover:to-[#E5BE39]",
+      accent: "#FFD700",
+      badgeText: "VÀNG GOLD (UY NGHIÊM)"
     };
   }
-  if (s.includes("gotchard") || s.includes("w") || s.includes("double")) {
+
+  // 2. Decade (Hồng Magenta - Bất ngờ, Kết nối)
+  if (s.includes("decade")) {
     return {
-      glowClass: "shadow-[0_0_20px_rgba(6,182,212,0.55)] border-cyan-500",
-      textClass: "text-cyan-400 drop-shadow-[0_2px_8px_rgba(6,182,212,0.6)]",
-      gradient: "from-cyan-400 via-teal-500 to-emerald-500",
-      accent: "#06b6d4"
+      glowClass: "shadow-[0_0_25px_rgba(255,0,127,0.6)] border-[#FF007F]",
+      textClass: "text-[#FF007F] drop-shadow-[0_2px_8px_rgba(255,0,127,0.6)]",
+      gradient: "from-[#FF007F] via-[#E4007F] to-[#C7006E]",
+      buttonBg: "from-[#FF007F] to-[#E4007F] text-white hover:from-[#FF3399] hover:to-[#F5008B]",
+      accent: "#FF007F",
+      badgeText: "HỒNG MAGENTA (NỔI BẬT)"
     };
   }
-  if (s.includes("black-sun") || s.includes("kuuga") || s.includes("agito")) {
+
+  // 3. Build (Đỏ Crimson - Nhiệt huyết, Khoa học)
+  if (s.includes("build")) {
     return {
-      glowClass: "shadow-[0_0_20px_rgba(245,158,11,0.55)] border-amber-500",
-      textClass: "text-amber-500 drop-shadow-[0_2px_8px_rgba(245,158,11,0.6)]",
-      gradient: "from-amber-500 via-orange-600 to-red-600",
-      accent: "#f59e0b"
+      glowClass: "shadow-[0_0_25px_rgba(230,0,18,0.6)] border-[#E60012]",
+      textClass: "text-[#E60012] drop-shadow-[0_2px_8px_rgba(230,0,18,0.6)]",
+      gradient: "from-[#E60012] via-[#C8102E] to-[#A0000D]",
+      buttonBg: "from-[#E60012] to-[#C8102E] text-white hover:from-[#FF1A2B] hover:to-[#DC143C]",
+      accent: "#E60012",
+      badgeText: "ĐỎ CRIMSON (NHIỆT HUYẾT)"
     };
   }
-  if (s.includes("saber") || s.includes("geats") || s.includes("kabuto") || s.includes("shin")) {
+
+  // 4. Zero-One (Xanh Neon / Vàng Chanh - Công nghệ AI)
+  if (s.includes("zero-one") || s.includes("zeroone")) {
     return {
-      glowClass: "shadow-[0_0_20px_rgba(239,68,68,0.55)] border-red-500",
-      textClass: "text-red-500 drop-shadow-[0_2px_8px_rgba(239,68,68,0.6)]",
-      gradient: "from-red-500 via-rose-600 to-red-500",
-      accent: "#ef4444"
+      glowClass: "shadow-[0_0_25px_rgba(204,255,0,0.6)] border-[#CCFF00]",
+      textClass: "text-[#CCFF00] drop-shadow-[0_2px_8px_rgba(204,255,0,0.6)]",
+      gradient: "from-[#CCFF00] via-[#DFFF00] to-[#AACC00]",
+      buttonBg: "from-[#CCFF00] to-[#B3E600] text-black font-black hover:from-[#D8FF33] hover:to-[#C2F000]",
+      accent: "#CCFF00",
+      badgeText: "XANH NEON (CÔNG NGHỆ)"
     };
   }
-  // Default Cyberpunk Green
+
+  // 5. Blade (Xanh Dương Cobalt - Sắc bén, Thẻ bài)
+  if (s.includes("blade")) {
+    return {
+      glowClass: "shadow-[0_0_25px_rgba(0,85,165,0.6)] border-[#0055A5]",
+      textClass: "text-[#0072CE] drop-shadow-[0_2px_8px_rgba(0,114,206,0.6)]",
+      gradient: "from-[#0055A5] via-[#0072CE] to-[#003B73]",
+      buttonBg: "from-[#0055A5] to-[#0072CE] text-white hover:from-[#0066CC] hover:to-[#1A8CFF]",
+      accent: "#0072CE",
+      badgeText: "XANH COBALT (SẮC BÉN)"
+    };
+  }
+
+  // 6. Genm / Ex-Aid (Tím Violet - Gaming Huyền bí)
+  if (s.includes("genm") || s.includes("ex-aid") || s.includes("exaid")) {
+    return {
+      glowClass: "shadow-[0_0_25px_rgba(138,43,226,0.6)] border-[#8A2BE2]",
+      textClass: "text-[#8A2BE2] drop-shadow-[0_2px_8px_rgba(138,43,226,0.6)]",
+      gradient: "from-[#6A0DAD] via-[#8A2BE2] to-[#4B0082]",
+      buttonBg: "from-[#6A0DAD] to-[#8A2BE2] text-white hover:from-[#7B1FA2] hover:to-[#9C27B0]",
+      accent: "#8A2BE2",
+      badgeText: "TÍM VIOLET (GAMING)"
+    };
+  }
+
+  // Default Fallback
   return {
-    glowClass: "shadow-[0_0_20px_rgba(34,197,94,0.55)] border-green-500",
-    textClass: "text-green-400 drop-shadow-[0_2px_8px_rgba(34,197,94,0.6)]",
-    gradient: "from-green-400 via-emerald-500 to-teal-500",
-    accent: "#22c55e"
+    glowClass: "shadow-[0_0_25px_rgba(236,72,153,0.55)] border-pink-500",
+    textClass: "text-pink-500 drop-shadow-[0_2px_8px_rgba(236,72,153,0.6)]",
+    gradient: "from-pink-500 via-purple-600 to-indigo-500",
+    buttonBg: "from-pink-500 to-rose-500 text-white hover:from-pink-600 hover:to-rose-600",
+    accent: "#ec4899",
+    badgeText: "SPECIAL THEME"
   };
 };
 
@@ -137,18 +204,18 @@ export default function KamenRiderRow() {
 
   const isFavorite = user?.favorites?.includes(activeMovie?.slug || "") || false;
 
-  // 1. Fetch danh sách phim Kamen Rider từ API tim-kiem
+  // 1. Fetch danh sách phim Kamen Rider từ API tim-kiem và sắp xếp ưu tiên 6 Rider của user
   useEffect(() => {
     async function fetchRiders() {
       try {
         setLoadingList(true);
-        const res = await fetch(getProxyUrl("https://ophim1.com/v1/api/tim-kiem?keyword=kamen+rider&limit=12"));
+        const res = await fetch(getProxyUrl("https://ophim1.com/v1/api/tim-kiem?keyword=kamen+rider&limit=24"));
         const data = await res.json();
         
         if (data.status === "success" || data.status === true) {
-          const items = data.data?.items || data.items || [];
+          const items: Movie[] = data.data?.items || data.items || [];
           if (items.length > 0) {
-            // Loại trùng lặp slug
+            // Lọc trùng lặp slug
             const seen = new Set<string>();
             const uniqueItems = items.filter((item: any) => {
               const baseSlug = cleanSlug(item.slug);
@@ -156,21 +223,44 @@ export default function KamenRiderRow() {
               seen.add(baseSlug);
               return true;
             });
-            const top8 = uniqueItems.slice(0, 8);
-            setMovies(top8);
-            setActiveMovie(top8[0]);
+
+            // Ưu tiên xếp các bộ: Zi-O, Decade, Build, Zero-One, Blade, Genm/Ex-Aid lên trước
+            const priorityKeywords = ["zi-o", "decade", "build", "zero-one", "blade", "ex-aid", "genm"];
+            const prioritized = uniqueItems.sort((a, b) => {
+              const aIndex = priorityKeywords.findIndex(k => a.slug.toLowerCase().includes(k));
+              const bIndex = priorityKeywords.findIndex(k => b.slug.toLowerCase().includes(k));
+              if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+              if (aIndex !== -1) return -1;
+              if (bIndex !== -1) return 1;
+              return 0;
+            });
+
+            // Chọn 6 bộ đầu tiên
+            const top6 = prioritized.slice(0, 6);
+
+            // Nếu thiếu slot so với 6 bộ, thêm từ FALLBACK_6_RIDERS
+            if (top6.length < 6) {
+              const missingCount = 6 - top6.length;
+              const fallbackItems = FALLBACK_6_RIDERS.filter(
+                f => !top6.some(t => t.slug === f.slug)
+              ).slice(0, missingCount);
+              top6.push(...fallbackItems);
+            }
+
+            setMovies(top6);
+            setActiveMovie(top6[0]);
           } else {
-            setMovies(FALLBACK_RIDERS);
-            setActiveMovie(FALLBACK_RIDERS[0]);
+            setMovies(FALLBACK_6_RIDERS);
+            setActiveMovie(FALLBACK_6_RIDERS[0]);
           }
         } else {
-          setMovies(FALLBACK_RIDERS);
-          setActiveMovie(FALLBACK_RIDERS[0]);
+          setMovies(FALLBACK_6_RIDERS);
+          setActiveMovie(FALLBACK_6_RIDERS[0]);
         }
       } catch (err) {
         console.error("Lỗi lấy danh sách Kamen Rider:", err);
-        setMovies(FALLBACK_RIDERS);
-        setActiveMovie(FALLBACK_RIDERS[0]);
+        setMovies(FALLBACK_6_RIDERS);
+        setActiveMovie(FALLBACK_6_RIDERS[0]);
       } finally {
         setLoadingList(false);
       }
@@ -226,7 +316,6 @@ export default function KamenRiderRow() {
       } finally {
         if (active) {
           setLoadingDetails(false);
-          // Cho transition kết thúc sau 300ms
           setTimeout(() => setIsTransitioning(false), 300);
         }
       }
@@ -262,32 +351,45 @@ export default function KamenRiderRow() {
     return (
       <div className="container mx-auto px-6 mt-16 max-w-7xl">
         <div className="h-[450px] bg-zinc-950/20 border border-zinc-900/60 rounded-[2rem] flex flex-col items-center justify-center gap-3">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500" />
-          <p className="text-zinc-500 font-bold text-xs">Đang nạp dữ liệu siêu nhân...</p>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-400" />
+          <p className="text-zinc-500 font-bold text-xs">Đang nạp 6 Huyền Thoại Kamen Rider...</p>
         </div>
       </div>
     );
   }
 
-  const theme = getRiderTheme(activeMovie?.slug || "");
-  const activePoster = activeMovie?.poster_url || details?.poster_url;
+  const theme = getRiderTheme(activeMovie.slug);
+  const activePoster = activeMovie.poster_url || details?.poster_url;
 
   return (
     <div className="container mx-auto px-6 mt-16 max-w-7xl select-none relative z-10">
       
-      {/* Title block kiểu High-tech HUD */}
+      {/* Title block kiểu High-tech HUD năng động */}
       <div className="flex items-center justify-between border-b border-zinc-800/40 pb-4 mb-8">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-pink-500/10 border border-pink-500/30 flex items-center justify-center">
-            <Flame size={16} className="text-pink-500 animate-pulse" />
+          <div 
+            className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-500 border"
+            style={{ backgroundColor: `${theme.accent}15`, borderColor: `${theme.accent}40` }}
+          >
+            <Flame size={16} style={{ color: theme.accent }} className="animate-pulse" />
           </div>
-          <h2 className="text-xl md:text-2xl font-black tracking-tight uppercase bg-gradient-to-r from-pink-500 to-rose-500 bg-clip-text text-transparent">
+          <h2 
+            className="text-xl md:text-2xl font-black tracking-tight uppercase transition-all duration-500"
+            style={{ color: theme.accent }}
+          >
             Đại Lộ Siêu Nhân Tokusatsu
           </h2>
         </div>
         
-        <span className="text-[10px] font-black text-zinc-550 tracking-widest bg-zinc-950/80 px-3 py-1 rounded-md border border-zinc-900/50">
-          Kamen Rider Special
+        <span 
+          className="text-[10px] font-black tracking-widest px-3 py-1 rounded-md border transition-all duration-500"
+          style={{ 
+            backgroundColor: "#090a0f", 
+            borderColor: `${theme.accent}40`,
+            color: theme.accent 
+          }}
+        >
+          {theme.badgeText}
         </span>
       </div>
 
@@ -298,9 +400,9 @@ export default function KamenRiderRow() {
         <div className="lg:col-span-5 bg-[#0e0f17]/95 border border-zinc-800/60 rounded-[2rem] p-6.5 flex flex-col justify-between shadow-2xl relative overflow-hidden group">
           <HalftoneOverlay />
           
-          {/* Neon Glow Ambient ở góc */}
+          {/* Dynamic Neon Glow Ambient ở góc bối cảnh */}
           <div 
-            className="absolute -top-12 -left-12 w-32 h-32 blur-3xl opacity-20 rounded-full transition-all duration-500" 
+            className="absolute -top-12 -left-12 w-36 h-36 blur-3xl opacity-25 rounded-full transition-all duration-500" 
             style={{ backgroundColor: theme.accent }}
           />
 
@@ -309,9 +411,9 @@ export default function KamenRiderRow() {
             {/* Visual Screen Area (mechanical gear rotating in bg) */}
             <div className="relative aspect-[3/4] max-w-[280px] mx-auto w-full rounded-2xl overflow-hidden shadow-2xl z-10 flex items-center justify-center">
               
-              {/* Vòng quay biến hình phía sau */}
+              {/* Vòng quay biến hình phía sau đổi màu theo Rider */}
               <div 
-                className="absolute inset-0 z-0 opacity-20 border-[6px] border-dashed rounded-full animate-[spin_35s_linear_infinite]"
+                className="absolute inset-0 z-0 opacity-30 border-[6px] border-dashed rounded-full animate-[spin_35s_linear_infinite] transition-colors duration-500"
                 style={{ borderColor: theme.accent }}
               />
 
@@ -322,7 +424,7 @@ export default function KamenRiderRow() {
                 {activePoster ? (
                   <Image
                     src={getImageUrl(activePoster)}
-                    alt={activeMovie?.name || ""}
+                    alt={activeMovie.name}
                     fill
                     className="object-cover"
                     sizes="280px"
@@ -346,35 +448,41 @@ export default function KamenRiderRow() {
                   <div className="h-14 flex items-center mb-1">
                     <img
                       src={logoUrl}
-                      alt={activeMovie?.name}
+                      alt={activeMovie.name}
                       className="max-h-full max-w-full object-contain filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
                       referrerPolicy="no-referrer"
                     />
                   </div>
                 ) : (
-                  <h3 className="text-xl md:text-2xl font-black uppercase tracking-tight leading-tight bg-gradient-to-r from-white to-zinc-300 bg-clip-text text-transparent">
-                    {activeMovie ? cleanMovieName(activeMovie.name) : ""}
+                  <h3 className="text-xl md:text-2xl font-black uppercase tracking-tight leading-tight text-white">
+                    {cleanMovieName(activeMovie.name)}
                   </h3>
                 )}
                 
                 <h4 className="text-xs font-extrabold text-zinc-400 mt-1 uppercase tracking-wide">
-                  {details?.origin_name || activeMovie?.origin_name}
+                  {details?.origin_name || activeMovie.origin_name}
                 </h4>
               </div>
 
               {/* Badges thông số */}
               <div className="flex flex-wrap items-center gap-2 text-[10px] font-black tracking-wider uppercase select-none">
-                <span className="bg-amber-400 text-black px-2 py-0.5 rounded shadow-sm">
-                  IMDb 7.5
+                <span 
+                  className="px-2 py-0.5 rounded shadow-sm text-black font-black transition-colors duration-500"
+                  style={{ backgroundColor: theme.accent }}
+                >
+                  IMDb 8.0
                 </span>
                 <span className="bg-zinc-900/90 border border-zinc-800 text-zinc-400 px-2 py-0.5 rounded">
                   T13
                 </span>
                 <span className="bg-zinc-900/90 border border-zinc-800 text-zinc-300 px-2 py-0.5 rounded">
-                  {activeMovie?.year}
+                  {activeMovie.year}
                 </span>
-                {activeMovie?.quality && (
-                  <span className="bg-zinc-900/90 border border-zinc-800 text-pink-400 px-2 py-0.5 rounded">
+                {activeMovie.quality && (
+                  <span 
+                    className="bg-zinc-900/90 border border-zinc-800 px-2 py-0.5 rounded font-bold"
+                    style={{ color: theme.accent }}
+                  >
                     {activeMovie.quality}
                   </span>
                 )}
@@ -382,18 +490,18 @@ export default function KamenRiderRow() {
 
               {/* Tóm tắt */}
               <p className="text-xs md:text-[13px] text-zinc-400 leading-relaxed line-clamp-3">
-                {details?.content ? stripHtmlTags(details.content) : "Đang nạp tóm tắt của phim siêu nhân..."}
+                {details?.content ? stripHtmlTags(details.content) : "Đang nạp tóm tắt của huyền thoại Kamen Rider..."}
               </p>
             </div>
           </div>
 
-          {/* Nút hành động */}
+          {/* Nút hành động xem ngay (Background đổi màu theo Rider) */}
           <div className="flex items-center gap-3 pt-6 border-t border-zinc-800/60 z-10">
             <button
-              onClick={() => activeMovie && router.push(`/movie/${activeMovie.slug}`)}
-              className="flex-1 h-12 rounded-xl text-xs font-black uppercase tracking-widest text-white transition-all active:scale-95 cursor-pointer relative overflow-hidden flex items-center justify-center gap-2 group/btn border border-pink-500/20 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 shadow-lg shadow-pink-500/20 hover:shadow-pink-500/35"
+              onClick={() => router.push(`/movie/${activeMovie.slug}`)}
+              className={`flex-1 h-12 rounded-xl text-xs font-black uppercase tracking-widest transition-all active:scale-95 cursor-pointer relative overflow-hidden flex items-center justify-center gap-2 group/btn border border-white/20 bg-gradient-to-r ${theme.buttonBg} shadow-lg shadow-black/40`}
             >
-              <Play size={13} className="fill-white text-white" />
+              <Play size={13} className="fill-current" />
               <span>Xem ngay</span>
             </button>
 
@@ -410,11 +518,11 @@ export default function KamenRiderRow() {
           </div>
         </div>
 
-        {/* CỘT PHẢI (60%): BẢNG LƯỚI RIDER MATRIX GRID */}
+        {/* CỘT PHẢI (60%): BẢNG LƯỚI 6 RIDERS */}
         <div className="lg:col-span-7 flex flex-col justify-between">
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 gap-4">
             {movies.map((movie) => {
-              const isSelected = movie.slug === activeMovie?.slug;
+              const isSelected = movie.slug === activeMovie.slug;
               const rTheme = getRiderTheme(movie.slug);
               
               return (
@@ -451,8 +559,8 @@ export default function KamenRiderRow() {
                   {/* Text Details */}
                   <div className="absolute bottom-4 left-4 right-4 z-20 text-left">
                     <span 
-                      className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-black/60 border mb-1.5 inline-block"
-                      style={{ borderColor: `${rTheme.accent}33`, color: rTheme.accent }}
+                      className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-black/70 border mb-1.5 inline-block"
+                      style={{ borderColor: `${rTheme.accent}44`, color: rTheme.accent }}
                     >
                       {movie.year || "RIDER"}
                     </span>
