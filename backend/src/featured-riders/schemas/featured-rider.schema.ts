@@ -37,6 +37,9 @@ export class FeaturedRider {
 
   @Prop({ default: true })
   isActive: boolean;
+
+  @Prop({ type: Array, default: [] })
+  gallery: { name: string; color: string; imageUrl: string }[];
 }
 
 export const FeaturedRiderSchema = SchemaFactory.createForClass(FeaturedRider);

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Play, Heart, Monitor, Flame } from "lucide-react";
+import { Play, Heart, Monitor, Flame, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { cleanMovieName } from "@/utils/movieUtils";
 import { useAuth } from "@/context/AuthContext";
 import Image from "next/image";
@@ -26,6 +26,7 @@ interface Movie {
   _customBanner?: string;
   _themeColor?: string;
   _description?: string;
+  _gallery?: { name: string; color: string; imageUrl: string }[];
 }
 
 // 6 Featured Super Sentai / Siêu Nhân Tuổi Thơ
@@ -222,6 +223,9 @@ export default function KamenRiderRow() {
   const [tmdbPosterUrl, setTmdbPosterUrl] = useState<string | null>(null);
   const [tmdbCardData, setTmdbCardData] = useState<Record<string, {backdrop: string; poster: string}>>({});
   
+  const [activeGalleryIndex, setActiveGalleryIndex] = useState<number>(0);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+
   const [detailsCache, setDetailsCache] = useState<Record<string, any>>({});
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
@@ -257,11 +261,12 @@ export default function KamenRiderRow() {
               quality: r.quality || "HD",
               lang: "Vietsub",
               time: "",
-              // Attach custom images vào đối tượng để component con dùng
+              // Attach custom images & gallery 5 Super Sentai vào đối tượng
               _customPoster: r.posterUrl || "",
               _customBanner: r.bannerUrl || "",
               _themeColor: r.themeColor || "",
               _description: r.description || "",
+              _gallery: Array.isArray(r.gallery) ? r.gallery : [],
             }));
 
             setMovies(riders);
@@ -424,6 +429,28 @@ export default function KamenRiderRow() {
   const handleSelectRider = (movie: Movie) => {
     if (activeMovie?.slug === movie.slug) return;
     setActiveMovie(movie);
+    setActiveGalleryIndex(0);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchStartX - touchEndX;
+    const gallery = activeMovie?._gallery || [];
+    if (gallery.length > 0) {
+      if (diff > 30) {
+        // Lướt sang trái -> chuyển Ranger tiếp theo
+        setActiveGalleryIndex((prev) => (prev + 1) % gallery.length);
+      } else if (diff < -30) {
+        // Lướt sang phải -> quay lại Ranger trước
+        setActiveGalleryIndex((prev) => (prev - 1 + gallery.length) % gallery.length);
+      }
+    }
+    setTouchStartX(null);
   };
 
   const getImageUrl = (path: string) => {
@@ -452,8 +479,12 @@ export default function KamenRiderRow() {
   }
 
   const theme = getRiderTheme(activeMovie.slug, activeMovie);
-  // Ưu tiên: Custom Poster (Admin DB) → TMDB poster → OPhim poster → OPhim thumb
-  const activePoster = activeMovie._customPoster || tmdbPosterUrl || activeMovie.poster_url || details?.poster_url;
+  const gallery = activeMovie._gallery || [];
+  const currentRanger = gallery[activeGalleryIndex];
+
+  // Ưu tiên: Ranger được chọn từ Gallery → Custom Poster (Admin DB) → TMDB poster → OPhim poster
+  const activePoster = currentRanger?.imageUrl || activeMovie._customPoster || tmdbPosterUrl || activeMovie.poster_url || details?.poster_url;
+  const activeAccentColor = currentRanger?.color || theme.accent;
 
   return (
     <div className="container mx-auto px-4 md:px-6 mt-16 max-w-7xl select-none relative z-10 space-y-6">
@@ -463,13 +494,13 @@ export default function KamenRiderRow() {
         <div className="flex items-center gap-2.5">
           <div 
             className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-500 border"
-            style={{ backgroundColor: `${theme.accent}15`, borderColor: `${theme.accent}40` }}
+            style={{ backgroundColor: `${activeAccentColor}15`, borderColor: `${activeAccentColor}40` }}
           >
-            <Flame size={16} style={{ color: theme.accent }} className="animate-pulse" />
+            <Flame size={16} style={{ color: activeAccentColor }} className="animate-pulse" />
           </div>
           <h2 
             className="text-xl md:text-2xl font-black tracking-tight uppercase transition-all duration-500"
-            style={{ color: theme.accent }}
+            style={{ color: activeAccentColor }}
           >
             Đại Lộ Siêu Nhân Tuổi Thơ
           </h2>
@@ -479,8 +510,8 @@ export default function KamenRiderRow() {
           className="text-[10px] font-black tracking-widest px-3 py-1 rounded-md border transition-all duration-500 hidden sm:inline-block"
           style={{ 
             backgroundColor: "#090a0f", 
-            borderColor: `${theme.accent}40`,
-            color: theme.accent 
+            borderColor: `${activeAccentColor}40`,
+            color: activeAccentColor 
           }}
         >
           {theme.badgeText}
@@ -494,11 +525,11 @@ export default function KamenRiderRow() {
         {/* Ambient Blur Glow ở góc màn hình */}
         <div 
           className="absolute -top-24 -left-24 w-96 h-96 blur-3xl opacity-20 rounded-full transition-all duration-700 pointer-events-none" 
-          style={{ backgroundColor: theme.accent }}
+          style={{ backgroundColor: activeAccentColor }}
         />
         <div 
           className="absolute -bottom-24 -right-24 w-96 h-96 blur-3xl opacity-15 rounded-full transition-all duration-700 pointer-events-none" 
-          style={{ backgroundColor: theme.accent }}
+          style={{ backgroundColor: activeAccentColor }}
         />
 
         {/* Backdrop Background Mờ phía sau */}
@@ -514,17 +545,25 @@ export default function KamenRiderRow() {
 
         <div className="relative z-10 p-6 md:p-8 grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
           
-          {/* POSTER ĐỨNG NẾT CĂNG (PORTRAIT 2:3) BÊN TRÁI HERO */}
-          <div className="md:col-span-4 lg:col-span-3 flex justify-center">
-            <div className={`relative aspect-[2/3] w-full max-w-[240px] rounded-2xl overflow-hidden border-2 transition-all duration-500 shadow-2xl ${theme.glowClass} ${
-              isTransitioning ? "opacity-0 scale-95 blur-[2px]" : "opacity-100 scale-100 blur-0"
-            }`}>
+          {/* POSTER ĐỨNG VỚI MULTI-RANGER CAROUSEL SWIPER (BÊN TRÁI HERO) */}
+          <div className="md:col-span-4 lg:col-span-3 flex flex-col items-center">
+            <div 
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              className={`group/poster relative aspect-[2/3] w-full max-w-[240px] rounded-2xl overflow-hidden border-2 transition-all duration-500 shadow-2xl cursor-grab active:cursor-grabbing select-none ${
+                isTransitioning ? "opacity-0 scale-95 blur-[2px]" : "opacity-100 scale-100 blur-0"
+              }`}
+              style={{
+                borderColor: activeAccentColor,
+                boxShadow: `0 0 25px ${activeAccentColor}88`
+              }}
+            >
               {activePoster ? (
                 <Image
                   src={getImageUrl(activePoster)}
                   alt={activeMovie.name}
                   fill
-                  className="object-cover"
+                  className="object-cover transition-all duration-500"
                   sizes="240px"
                   unoptimized
                 />
@@ -533,8 +572,76 @@ export default function KamenRiderRow() {
                   <Monitor size={36} className="text-zinc-700" />
                 </div>
               )}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+
+              {/* Tên Ranger đang chọn hiển thị trên Poster */}
+              {currentRanger && (
+                <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5">
+                  <span
+                    className="text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border shadow-lg backdrop-blur-md"
+                    style={{
+                      backgroundColor: "rgba(9, 10, 15, 0.85)",
+                      borderColor: activeAccentColor,
+                      color: activeAccentColor,
+                      boxShadow: `0 0 12px ${activeAccentColor}66`
+                    }}
+                  >
+                    ✨ {currentRanger.name}
+                  </span>
+                </div>
+              )}
+
+              {/* Mũi tên chuyển ảnh Left / Right (Desktop) */}
+              {gallery.length > 1 && (
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveGalleryIndex((prev) => (prev - 1 + gallery.length) % gallery.length);
+                    }}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/90 border border-white/20 text-white flex items-center justify-center opacity-0 group-hover/poster:opacity-100 transition-opacity z-30 cursor-pointer"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveGalleryIndex((prev) => (prev + 1) % gallery.length);
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/90 border border-white/20 text-white flex items-center justify-center opacity-0 group-hover/poster:opacity-100 transition-opacity z-30 cursor-pointer"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </>
+              )}
             </div>
+
+            {/* BAR NÚT CHỌN MÀU SIÊU NHÂN (Ranger Color Pills Selector) */}
+            {gallery.length > 0 && (
+              <div className="flex flex-wrap items-center justify-center gap-1.5 mt-3.5 z-20 max-w-[250px]">
+                {gallery.map((ranger, idx) => {
+                  const isRangerActive = idx === activeGalleryIndex;
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => setActiveGalleryIndex(idx)}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider transition-all duration-300 border cursor-pointer ${
+                        isRangerActive ? "scale-105 shadow-md" : "opacity-60 hover:opacity-100"
+                      }`}
+                      style={{
+                        borderColor: ranger.color,
+                        backgroundColor: isRangerActive ? `${ranger.color}33` : "rgba(12, 13, 20, 0.8)",
+                        color: isRangerActive ? ranger.color : "#a1a1aa",
+                        boxShadow: isRangerActive ? `0 0 10px ${ranger.color}66` : undefined,
+                      }}
+                    >
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: ranger.color }} />
+                      <span>{ranger.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* CHI TIẾT VÀ NÚT XEM NGAY BÊN PHẢI HERO */}
@@ -565,8 +672,8 @@ export default function KamenRiderRow() {
               {/* Thông số Badges */}
               <div className="flex flex-wrap items-center gap-2 pt-1 text-[10px] md:text-xs font-black tracking-wider uppercase select-none">
                 <span 
-                  className="px-2.5 py-0.5 rounded shadow-md text-black font-black"
-                  style={{ backgroundColor: theme.accent }}
+                  className="px-2.5 py-0.5 rounded shadow-md text-black font-black transition-colors duration-300"
+                  style={{ backgroundColor: activeAccentColor }}
                 >
                   IMDb 8.0
                 </span>
@@ -578,8 +685,8 @@ export default function KamenRiderRow() {
                 </span>
                 {activeMovie.quality && (
                   <span 
-                    className="bg-zinc-900/90 border border-zinc-800 px-2.5 py-0.5 rounded font-bold"
-                    style={{ color: theme.accent }}
+                    className="bg-zinc-900/90 border border-zinc-800 px-2.5 py-0.5 rounded font-bold transition-colors duration-300"
+                    style={{ color: activeAccentColor }}
                   >
                     {activeMovie.quality}
                   </span>
