@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Play, Heart, Monitor, Flame } from "lucide-react";
-import { cleanMovieName, cleanSlug } from "@/utils/movieUtils";
+import { cleanMovieName } from "@/utils/movieUtils";
 import { useAuth } from "@/context/AuthContext";
 import Image from "next/image";
 import { getProxyUrl } from "@/utils/api";
@@ -23,79 +23,86 @@ interface Movie {
   category?: any[];
 }
 
-// 6 Featured Kamen Riders with curated fallback metadata
-const FALLBACK_6_RIDERS: Movie[] = [
+// 6 Featured Kamen Riders — slug chính xác để fetch trực tiếp từ OPhim API
+// Thứ tự hiển thị: Zi-O → Decade → Build → Zero-One → Blade → Genm/Ex-Aid
+const TARGET_RIDERS: { slug: string; fallback: Movie }[] = [
   {
-    _id: "rider-zi-o",
-    name: "Kamen Rider Zi-O",
     slug: "kamen-rider-zi-o",
-    origin_name: "Kamen Rider Zi-O (Over Quartzer)",
-    poster_url: "kamen-rider-zi-o-poster.jpg",
-    thumb_url: "kamen-rider-zi-o-thumb.jpg",
-    year: 2018,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "49 tập"
+    fallback: {
+      _id: "rider-zi-o",
+      name: "Kamen Rider Zi-O",
+      slug: "kamen-rider-zi-o",
+      origin_name: "Kamen Rider Zi-O (Over Quartzer)",
+      year: 2018,
+      quality: "HD",
+      lang: "Vietsub",
+      time: "49 tập"
+    }
   },
   {
-    _id: "rider-decade",
-    name: "Kamen Rider Decade",
     slug: "kamen-rider-decade",
-    origin_name: "Kamen Rider Decade (All Riders)",
-    poster_url: "kamen-rider-decade-poster.jpg",
-    thumb_url: "kamen-rider-decade-thumb.jpg",
-    year: 2009,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "31 tập"
+    fallback: {
+      _id: "rider-decade",
+      name: "Kamen Rider Decade",
+      slug: "kamen-rider-decade",
+      origin_name: "Kamen Rider Decade (All Riders)",
+      year: 2009,
+      quality: "HD",
+      lang: "Vietsub",
+      time: "31 tập"
+    }
   },
   {
-    _id: "rider-build",
-    name: "Kamen Rider Build",
     slug: "kamen-rider-build",
-    origin_name: "Kamen Rider Build (Be The One)",
-    poster_url: "kamen-rider-build-poster.jpg",
-    thumb_url: "kamen-rider-build-thumb.jpg",
-    year: 2017,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "49 tập"
+    fallback: {
+      _id: "rider-build",
+      name: "Kamen Rider Build",
+      slug: "kamen-rider-build",
+      origin_name: "Kamen Rider Build (Be The One)",
+      year: 2017,
+      quality: "HD",
+      lang: "Vietsub",
+      time: "49 tập"
+    }
   },
   {
-    _id: "rider-zero-one",
-    name: "Kamen Rider Zero-One",
     slug: "kamen-rider-zero-one",
-    origin_name: "Kamen Rider Zero-One (REAL×TIME)",
-    poster_url: "kamen-rider-zero-one-poster.jpg",
-    thumb_url: "kamen-rider-zero-one-thumb.jpg",
-    year: 2019,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "45 tập"
+    fallback: {
+      _id: "rider-zero-one",
+      name: "Kamen Rider Zero-One",
+      slug: "kamen-rider-zero-one",
+      origin_name: "Kamen Rider Zero-One (REAL×TIME)",
+      year: 2019,
+      quality: "HD",
+      lang: "Vietsub",
+      time: "45 tập"
+    }
   },
   {
-    _id: "rider-blade",
-    name: "Kamen Rider Blade",
     slug: "kamen-rider-blade",
-    origin_name: "Kamen Rider Blade (Missing Ace)",
-    poster_url: "kamen-rider-blade-poster.jpg",
-    thumb_url: "kamen-rider-blade-thumb.jpg",
-    year: 2004,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "49 tập"
+    fallback: {
+      _id: "rider-blade",
+      name: "Kamen Rider Blade",
+      slug: "kamen-rider-blade",
+      origin_name: "Kamen Rider Blade (Missing Ace)",
+      year: 2004,
+      quality: "HD",
+      lang: "Vietsub",
+      time: "49 tập"
+    }
   },
   {
-    _id: "rider-genm",
-    name: "Kamen Rider Genm & Ex-Aid",
     slug: "kamen-rider-ex-aid",
-    origin_name: "Kamen Rider Ex-Aid / Genm Versus",
-    poster_url: "kamen-rider-ex-aid-poster.jpg",
-    thumb_url: "kamen-rider-ex-aid-thumb.jpg",
-    year: 2016,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "45 tập"
+    fallback: {
+      _id: "rider-genm",
+      name: "Kamen Rider Ex-Aid",
+      slug: "kamen-rider-ex-aid",
+      origin_name: "Kamen Rider Ex-Aid / Genm Versus",
+      year: 2016,
+      quality: "HD",
+      lang: "Vietsub",
+      time: "45 tập"
+    }
   }
 ];
 
@@ -204,63 +211,54 @@ export default function KamenRiderRow() {
 
   const isFavorite = user?.favorites?.includes(activeMovie?.slug || "") || false;
 
-  // 1. Fetch danh sách phim Kamen Rider từ API tim-kiem và sắp xếp ưu tiên 6 Rider của user
+  // 1. Fetch trực tiếp từng slug của 6 Kamen Rider được chỉ định
+  // Không dùng search chung để tránh API trả về phim không mong muốn
   useEffect(() => {
     async function fetchRiders() {
       try {
         setLoadingList(true);
-        const res = await fetch(getProxyUrl("https://ophim1.com/v1/api/tim-kiem?keyword=kamen+rider&limit=24"));
-        const data = await res.json();
-        
-        if (data.status === "success" || data.status === true) {
-          const items: Movie[] = data.data?.items || data.items || [];
-          if (items.length > 0) {
-            // Lọc trùng lặp slug
-            const seen = new Set<string>();
-            const uniqueItems = items.filter((item: any) => {
-              const baseSlug = cleanSlug(item.slug);
-              if (seen.has(baseSlug)) return false;
-              seen.add(baseSlug);
-              return true;
-            });
 
-            // Ưu tiên xếp các bộ: Zi-O, Decade, Build, Zero-One, Blade, Genm/Ex-Aid lên trước
-            const priorityKeywords = ["zi-o", "decade", "build", "zero-one", "blade", "ex-aid", "genm"];
-            const prioritized = uniqueItems.sort((a, b) => {
-              const aIndex = priorityKeywords.findIndex(k => a.slug.toLowerCase().includes(k));
-              const bIndex = priorityKeywords.findIndex(k => b.slug.toLowerCase().includes(k));
-              if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
-              if (aIndex !== -1) return -1;
-              if (bIndex !== -1) return 1;
-              return 0;
-            });
-
-            // Chọn 6 bộ đầu tiên
-            const top6 = prioritized.slice(0, 6);
-
-            // Nếu thiếu slot so với 6 bộ, thêm từ FALLBACK_6_RIDERS
-            if (top6.length < 6) {
-              const missingCount = 6 - top6.length;
-              const fallbackItems = FALLBACK_6_RIDERS.filter(
-                f => !top6.some(t => t.slug === f.slug)
-              ).slice(0, missingCount);
-              top6.push(...fallbackItems);
+        // Fetch song song từng slug cụ thể
+        const results = await Promise.allSettled(
+          TARGET_RIDERS.map(async ({ slug, fallback }) => {
+            try {
+              const res = await fetch(getProxyUrl(`https://ophim1.com/v1/api/phim/${slug}`));
+              const data = await res.json();
+              if (data.status === true || data.status === "success") {
+                const item = data.data?.item || data.movie;
+                if (item) {
+                  return {
+                    _id: item._id || fallback._id,
+                    name: item.name || fallback.name,
+                    slug: item.slug || slug,
+                    origin_name: item.origin_name || fallback.origin_name,
+                    poster_url: item.poster_url || "",
+                    thumb_url: item.thumb_url || "",
+                    year: item.year || fallback.year,
+                    quality: item.quality || fallback.quality,
+                    lang: item.lang || fallback.lang,
+                    time: item.time || fallback.time,
+                  } as Movie;
+                }
+              }
+              return fallback;
+            } catch {
+              return fallback;
             }
+          })
+        );
 
-            setMovies(top6);
-            setActiveMovie(top6[0]);
-          } else {
-            setMovies(FALLBACK_6_RIDERS);
-            setActiveMovie(FALLBACK_6_RIDERS[0]);
-          }
-        } else {
-          setMovies(FALLBACK_6_RIDERS);
-          setActiveMovie(FALLBACK_6_RIDERS[0]);
-        }
+        const riders: Movie[] = results.map((result, i) =>
+          result.status === "fulfilled" ? result.value : TARGET_RIDERS[i].fallback
+        );
+
+        setMovies(riders);
+        setActiveMovie(riders[0]);
       } catch (err) {
         console.error("Lỗi lấy danh sách Kamen Rider:", err);
-        setMovies(FALLBACK_6_RIDERS);
-        setActiveMovie(FALLBACK_6_RIDERS[0]);
+        const fallbacks = TARGET_RIDERS.map(r => r.fallback);
+        setMovies(fallbacks);
+        setActiveMovie(fallbacks[0]);
       } finally {
         setLoadingList(false);
       }
