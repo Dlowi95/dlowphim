@@ -3,84 +3,84 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { FeaturedRider, FeaturedRiderDocument } from './schemas/featured-rider.schema';
 
-const DEFAULT_RIDERS = [
+const DEFAULT_SENTAI = [
   {
-    name: "Kamen Rider Zi-O",
-    originName: "Kamen Rider Zi-O",
-    slug: "hiep-si-mat-na-zi-o",
-    themeColor: "#FFD700",
-    description: "Chiến đấu để cứu lấy quá khứ, hiện tại và tương lai, băng qua Thời-Không gặp gỡ các Kamen Rider huyền thoại.",
-    year: "2018",
+    name: "Siêu Nhân Gao",
+    originName: "Hyakujuu Sentai Gaoranger",
+    slug: "sieu-nhan-gao-2011",
+    themeColor: "#EF4444",
+    description: "Chiến đội Bách Thú Siêu Nhân Gao chiến đấu cùng các Quỷ Tà Ma gao bảo vệ Trái Đất.",
+    year: "2001",
     quality: "HD",
     order: 0,
     isActive: true,
-    posterUrl: "https://image.tmdb.org/t/p/w500/mfxCaDok0RsdjRaJ9R9lfCgLdGa.jpg",
-    bannerUrl: "https://image.tmdb.org/t/p/w1280/eZehJ9NuqALor1mkNgIUABsUxWk.jpg"
+    posterUrl: "https://image.tmdb.org/t/p/w500/yrErA1GiQcZikGG3c0bITFlCO6f.jpg",
+    bannerUrl: "https://image.tmdb.org/t/p/w1280/hmhSP3LnFkuhfMmXTLzo5kV23Oz.jpg"
   },
   {
-    name: "Kamen Rider Decade",
-    originName: "Kamen Rider Decade",
-    slug: "kamen-rider-decade-all-riders-super-spin-off",
-    themeColor: "#FF007F",
-    description: "Hành trình xuyên qua 9 thế giới Rider để ngăn chặn sự hủy diệt của đa vũ trụ.",
-    year: "2009",
+    name: "Siêu Nhân Cuồng Phong",
+    originName: "Power Rangers Ninja Storm",
+    slug: "sieu-nhan-cuong-phong",
+    themeColor: "#3B82F6",
+    description: "Các học viên Phong Nhẫn Tỉnh học biến hình thành Siêu Nhân Cuồng Phong chống lại Tà Ác Thang.",
+    year: "2003",
     quality: "HD",
     order: 1,
     isActive: true,
-    posterUrl: "https://image.tmdb.org/t/p/w500/sw9GXc15N85FZXAKbYkb2MeijG7.jpg",
-    bannerUrl: "https://image.tmdb.org/t/p/w1280/bwVeleD8VEhIBVEmSgBi1TZt02m.jpg"
+    posterUrl: "https://image.tmdb.org/t/p/w500/qx3SJlAp2RK656TusqKx1qEqVMW.jpg",
+    bannerUrl: "https://image.tmdb.org/t/p/w1280/i01wnWz0Z3rMATqbkAVLHEaGbNP.jpg"
   },
   {
-    name: "Kamen Rider Build",
-    originName: "Kamen Rider Build",
-    slug: "hiep-si-mat-na-build",
-    themeColor: "#E60012",
-    description: "Nhà khoa học thiên tài Kiryu Sento cùng những phát minh độc đáo chiến đấu bảo vệ hòa bình.",
-    year: "2017",
+    name: "Chiến Đội Thần Kiếm Shinkenger",
+    originName: "Samurai Sentai Shinkenger",
+    slug: "chien-doi-than-kiem-shinkenger",
+    themeColor: "#EAB308",
+    description: "Chúa công Shiba Takeru cùng 5 trang sĩ Samurai chiến đấu với Gedoushu bảo vệ nhân gian.",
+    year: "2009",
     quality: "HD",
     order: 2,
     isActive: true,
-    posterUrl: "https://image.tmdb.org/t/p/w500/ingl1iXZTZaKBeVJh6yYnroAvCp.jpg",
-    bannerUrl: "https://image.tmdb.org/t/p/w1280/fq7KRio375bJznT2R0YNsE3gKu0.jpg"
+    posterUrl: "https://image.tmdb.org/t/p/w500/tMAqqOU2Tz5F6uDpJuqAlRhyvhP.jpg",
+    bannerUrl: "https://image.tmdb.org/t/p/w1280/2PE9z3QAmjoMUvsKcJ0lzEwLFOc.jpg"
   },
   {
-    name: "Kamen Rider Zero-One",
-    originName: "Kamen Rider Zero-One",
-    slug: "hiep-sy-mat-na-hiem-hoa-tri-tue-nhan-tao",
-    themeColor: "#CCFF00",
-    description: "Hiden Aruto - Tổng giám đốc tập đoàn AI Hiden chiến đấu vì ước mơ con người và Humagear.",
-    year: "2019",
+    name: "Chiến Đội Đặc Nhiệm Dekaranger",
+    originName: "Tokusou Sentai Dekaranger",
+    slug: "chien-doi-dac-nhiem-dekaranger",
+    themeColor: "#10B981",
+    description: "Biệt đội cảnh sát vũ trụ S.P.D Dekaranger truy bắt tội phạm ngoài hành tinh Alienizer.",
+    year: "2004",
     quality: "HD",
     order: 3,
     isActive: true,
-    posterUrl: "https://image.tmdb.org/t/p/w500/jx3p0jcUMb4jrxQ8MbUffQ2XHpG.jpg",
-    bannerUrl: "https://image.tmdb.org/t/p/w1280/gWb3SdAoaEng1s3akEfzU81K4qY.jpg"
+    posterUrl: "https://image.tmdb.org/t/p/w500/vupRI1U1wFMF6hDBXRkx93A6xGE.jpg",
+    bannerUrl: "https://image.tmdb.org/t/p/w1280/hM4CnVs5wW9SI1TQkMTljsHhUE5.jpg"
   },
   {
-    name: "Kamen Rider Blade",
-    originName: "Kamen Rider Blade",
-    slug: "sieu-nhan-the-bai",
-    themeColor: "#0072CE",
-    description: "Cuộc chiến bài Joker đầy kịch tính của các Kamen Rider BOARD bảo vệ loài người.",
-    year: "2004",
+    name: "Chiến Đội Phiêu Lưu Boukenger",
+    originName: "GoGo Sentai Boukenger",
+    slug: "chien-doi-phieu-luu-boukenger",
+    themeColor: "#F97316",
+    description: "Chiến đội Boukenger lên đường tìm kiếm và thu hồi các cổ vật Precious đầy sức mạnh bí ẩn.",
+    year: "2006",
     quality: "HD",
     order: 4,
     isActive: true,
-    posterUrl: "https://image.tmdb.org/t/p/w500/ch3Lyr9i4V1XcZa9DjCKdUdsl5k.jpg",
-    bannerUrl: "https://image.tmdb.org/t/p/w1280/oHBfLn40NGaqJVZfJCn5sHXGox7.jpg"
+    posterUrl: "https://image.tmdb.org/t/p/w500/eUUZcEvQS03DZHaOw9vBusemlBN.jpg",
+    bannerUrl: "https://image.tmdb.org/t/p/w1280/v2wiAoSf3b0t0UmonVSYJI3yWXH.jpg"
   },
   {
-    name: "Kamen Rider Ex-Aid",
-    originName: "Kamen Rider Ex-Aid",
-    slug: "sieu-nhan-ex-aid",
-    themeColor: "#8A2BE2",
-    description: "Bác sĩ thiên tài Emu Hojo biến hình cùng sức mạnh game cứu chữa căn bệnh virus Bugster.",
-    year: "2016",
+    name: "Chiến Đội Bộc Long Abaranger",
+    originName: "Bakuryu Sentai Abaranger",
+    slug: "chien-doi-boc-long-abaranger",
+    themeColor: "#8B5CF6",
+    description: "Sức mạnh Bộc Long gầm vang cùng các chiến sĩ Abaranger ngăn chặn bộ tộc Eviloid.",
+    year: "2003",
     quality: "HD",
     order: 5,
     isActive: true,
-    posterUrl: "https://image.tmdb.org/t/p/w500/s7jsmtcs4VD9u7rxAuumpUBoDeO.jpg",
-    bannerUrl: "https://image.tmdb.org/t/p/w1280/rZmePFnfsVDw2qq8CaLLq9iHyEq.jpg"
+    posterUrl: "https://image.tmdb.org/t/p/w500/bDoHBImQZI7ruSkxWtnkxDLra58.jpg",
+    bannerUrl: "https://image.tmdb.org/t/p/w1280/gbY5crvWFNCRgME9fu05kddHhXH.jpg"
   }
 ];
 
@@ -93,13 +93,20 @@ export class FeaturedRidersService implements OnModuleInit {
 
   async onModuleInit() {
     try {
-      const count = await this.riderModel.countDocuments();
-      if (count === 0) {
-        console.log('[FeaturedRidersService] Seeding default HD Kamen Riders...');
-        await this.riderModel.insertMany(DEFAULT_RIDERS);
+      // Xóa các Kamen Rider cũ nếu có để chuyển sang Super Sentai
+      const oldSlugs = ["hiep-si-mat-na-zi-o", "kamen-rider-decade-all-riders-super-spin-off", "hiep-si-mat-na-build", "hiep-sy-mat-na-hiem-hoa-tri-tue-nhan-tao", "sieu-nhan-the-bai", "sieu-nhan-ex-aid"];
+      await this.riderModel.deleteMany({ slug: { $in: oldSlugs } }).exec();
+
+      for (const sentai of DEFAULT_SENTAI) {
+        await this.riderModel.findOneAndUpdate(
+          { slug: sentai.slug },
+          { $set: sentai },
+          { upsert: true, new: true }
+        ).exec();
       }
+      console.log('[FeaturedRidersService] Super Sentai / Siêu Nhân series initialized!');
     } catch (err) {
-      console.error('[FeaturedRidersService] Failed to seed default riders:', err);
+      console.error('[FeaturedRidersService] Failed to seed Super Sentai:', err);
     }
   }
 

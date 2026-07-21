@@ -28,90 +28,89 @@ interface Movie {
   _description?: string;
 }
 
-// 6 Featured Kamen Riders — slug chính xác theo OPhim API (tìm kiếm thực tế)
-// Thứ tự hiển thị: Zi-O → Decade → Build → Zero-One → Blade → Genm/Ex-Aid
+// 6 Featured Super Sentai / Siêu Nhân Tuổi Thơ
 const TARGET_RIDERS: { slug: string; fallback: Movie }[] = [
   {
-    slug: "hiep-si-mat-na-zi-o",
+    slug: "sieu-nhan-gao-2011",
     fallback: {
-      _id: "rider-zi-o",
-      name: "Hiệp Sĩ Mặt Nạ Zi-O",
-      slug: "hiep-si-mat-na-zi-o",
-      origin_name: "Kamen Rider Zi-O (Over Quartzer)",
-      year: 2018,
+      _id: "sentai-gao",
+      name: "Siêu Nhân Gao",
+      slug: "sieu-nhan-gao-2011",
+      origin_name: "Hyakujuu Sentai Gaoranger",
+      year: 2001,
       quality: "HD",
       lang: "Vietsub",
-      time: "49 tập"
+      time: "51 tập"
     }
   },
   {
-    slug: "kamen-rider-decade-all-riders-super-spin-off",
+    slug: "sieu-nhan-cuong-phong",
     fallback: {
-      _id: "rider-decade",
-      name: "Kamen Rider Decade",
-      slug: "kamen-rider-decade-all-riders-super-spin-off",
-      origin_name: "Kamen Rider Decade (All Riders)",
+      _id: "sentai-cuong-phong",
+      name: "Siêu Nhân Cuồng Phong",
+      slug: "sieu-nhan-cuong-phong",
+      origin_name: "Power Rangers Ninja Storm",
+      year: 2003,
+      quality: "HD",
+      lang: "Vietsub",
+      time: "38 tập"
+    }
+  },
+  {
+    slug: "chien-doi-than-kiem-shinkenger",
+    fallback: {
+      _id: "sentai-shinkenger",
+      name: "Chiến Đội Thần Kiếm Shinkenger",
+      slug: "chien-doi-than-kiem-shinkenger",
+      origin_name: "Samurai Sentai Shinkenger",
       year: 2009,
       quality: "HD",
       lang: "Vietsub",
-      time: "31 tập"
-    }
-  },
-  {
-    slug: "hiep-si-mat-na-build",
-    fallback: {
-      _id: "rider-build",
-      name: "Hiệp Sĩ Mặt Nạ Build",
-      slug: "hiep-si-mat-na-build",
-      origin_name: "Kamen Rider Build (Be The One)",
-      year: 2017,
-      quality: "HD",
-      lang: "Vietsub",
       time: "49 tập"
     }
   },
   {
-    slug: "hiep-sy-mat-na-hiem-hoa-tri-tue-nhan-tao",
+    slug: "chien-doi-dac-nhiem-dekaranger",
     fallback: {
-      _id: "rider-zero-one",
-      name: "Hiệp Sỹ Mặt Nạ: Hiểm Hoạ Trí Tuệ Nhân Tạo",
-      slug: "hiep-sy-mat-na-hiem-hoa-tri-tue-nhan-tao",
-      origin_name: "Kamen Rider Zero-One (REAL×TIME)",
-      year: 2019,
-      quality: "HD",
-      lang: "Vietsub",
-      time: "45 tập"
-    }
-  },
-  {
-    slug: "sieu-nhan-the-bai",
-    fallback: {
-      _id: "rider-blade",
-      name: "Siêu Nhân Thẻ Bài",
-      slug: "sieu-nhan-the-bai",
-      origin_name: "Kamen Rider Blade (Missing Ace)",
+      _id: "sentai-dekaranger",
+      name: "Chiến Đội Đặc Nhiệm Dekaranger",
+      slug: "chien-doi-dac-nhiem-dekaranger",
+      origin_name: "Tokusou Sentai Dekaranger",
       year: 2004,
       quality: "HD",
       lang: "Vietsub",
+      time: "50 tập"
+    }
+  },
+  {
+    slug: "chien-doi-phieu-luu-boukenger",
+    fallback: {
+      _id: "sentai-boukenger",
+      name: "Chiến Đội Phiêu Lưu Boukenger",
+      slug: "chien-doi-phieu-luu-boukenger",
+      origin_name: "GoGo Sentai Boukenger",
+      year: 2006,
+      quality: "HD",
+      lang: "Vietsub",
       time: "49 tập"
     }
   },
   {
-    slug: "sieu-nhan-ex-aid",
+    slug: "chien-doi-boc-long-abaranger",
     fallback: {
-      _id: "rider-genm",
-      name: "Siêu Nhân Ex-Aid",
-      slug: "sieu-nhan-ex-aid",
-      origin_name: "Kamen Rider Ex-Aid / Genm Versus",
-      year: 2016,
+      _id: "sentai-abaranger",
+      name: "Chiến Đội Bộc Long Abaranger",
+      slug: "chien-doi-boc-long-abaranger",
+      origin_name: "Bakuryu Sentai Abaranger",
+      year: 2003,
       quality: "HD",
       lang: "Vietsub",
-      time: "45 tập"
+      time: "50 tập"
     }
   }
 ];
 
-// Helper to determine neon glow & custom UI theme color based on the Kamen Rider slug or admin DB theme color
+// Helper to determine neon glow & custom UI theme color based on the Sentai slug or admin DB theme color
 const getRiderTheme = (slug: string, movie?: Movie) => {
   if (movie?._themeColor) {
     const hex = movie._themeColor;
@@ -121,7 +120,7 @@ const getRiderTheme = (slug: string, movie?: Movie) => {
       gradient: `from-[${hex}] via-zinc-800 to-black`,
       buttonBg: `from-zinc-900 to-zinc-950 text-white border-[${hex}]`,
       accent: hex,
-      badgeText: "CUSTOM THEME",
+      badgeText: "SUPER SENTAI",
       customStyle: {
         borderColor: hex,
         color: hex,
@@ -131,77 +130,75 @@ const getRiderTheme = (slug: string, movie?: Movie) => {
 
   const s = slug.toLowerCase();
   
-  // 1. Ohma Zi-O / Zi-O (Gold - Sang trọng, Uy nghiêm)
-  if (s.includes("zi-o") || s.includes("ohma")) {
+  // 1. Siêu Nhân Gao (Đỏ Rực)
+  if (s.includes("gao")) {
     return {
-      glowClass: "shadow-[0_0_25px_rgba(255,215,0,0.6)] border-[#FFD700]",
-      textClass: "text-[#FFD700] drop-shadow-[0_2px_8px_rgba(255,215,0,0.6)]",
-      gradient: "from-[#FFD700] via-[#D4AF37] to-[#B8860B]",
-      buttonBg: "from-[#FFD700] to-[#D4AF37] text-black font-black hover:from-[#FFE44D] hover:to-[#E5BE39]",
-      accent: "#FFD700",
-      badgeText: "VÀNG GOLD (UY NGHIÊM)"
+      glowClass: "shadow-[0_0_25px_rgba(239,68,68,0.6)] border-[#EF4444]",
+      textClass: "text-[#EF4444] drop-shadow-[0_2px_8px_rgba(239,68,68,0.6)]",
+      gradient: "from-[#EF4444] via-[#DC2626] to-[#991B1B]",
+      buttonBg: "from-[#EF4444] to-[#DC2626] text-white font-black hover:from-[#F87171]",
+      accent: "#EF4444",
+      badgeText: "BÁCH THÚ GAORANGER"
     };
   }
 
-  // 2. Decade (Hồng Magenta - Bất ngờ, Kết nối)
-  if (s.includes("decade")) {
+  // 2. Cuồng Phong (Xanh Dương)
+  if (s.includes("cuong-phong") || s.includes("ninja-storm")) {
     return {
-      glowClass: "shadow-[0_0_25px_rgba(255,0,127,0.6)] border-[#FF007F]",
-      textClass: "text-[#FF007F] drop-shadow-[0_2px_8px_rgba(255,0,127,0.6)]",
-      gradient: "from-[#FF007F] via-[#E4007F] to-[#C7006E]",
-      buttonBg: "from-[#FF007F] to-[#E4007F] text-white hover:from-[#FF3399] hover:to-[#F5008B]",
-      accent: "#FF007F",
-      badgeText: "HỒNG MAGENTA (NỔI BẬT)"
+      glowClass: "shadow-[0_0_25px_rgba(59,130,246,0.6)] border-[#3B82F6]",
+      textClass: "text-[#3B82F6] drop-shadow-[0_2px_8px_rgba(59,130,246,0.6)]",
+      gradient: "from-[#3B82F6] via-[#2563EB] to-[#1D4ED8]",
+      buttonBg: "from-[#3B82F6] to-[#2563EB] text-white hover:from-[#60A5FA]",
+      accent: "#3B82F6",
+      badgeText: "PHONG NHẪN NINJA STORM"
     };
   }
 
-  // 3. Build (Đỏ Crimson - Nhiệt huyết, Khoa học)
-  if (s.includes("build")) {
+  // 3. Shinkenger (Vàng Samurai)
+  if (s.includes("shinkenger") || s.includes("than-kiem")) {
     return {
-      glowClass: "shadow-[0_0_25px_rgba(230,0,18,0.6)] border-[#E60012]",
-      textClass: "text-[#E60012] drop-shadow-[0_2px_8px_rgba(230,0,18,0.6)]",
-      gradient: "from-[#E60012] via-[#C8102E] to-[#A0000D]",
-      buttonBg: "from-[#E60012] to-[#C8102E] text-white hover:from-[#FF1A2B] hover:to-[#DC143C]",
-      accent: "#E60012",
-      badgeText: "ĐỎ CRIMSON (NHIỆT HUYẾT)"
+      glowClass: "shadow-[0_0_25px_rgba(234,179,8,0.6)] border-[#EAB308]",
+      textClass: "text-[#EAB308] drop-shadow-[0_2px_8px_rgba(234,179,8,0.6)]",
+      gradient: "from-[#EAB308] via-[#CA8A04] to-[#854D0E]",
+      buttonBg: "from-[#EAB308] to-[#CA8A04] text-black font-black hover:from-[#FACC15]",
+      accent: "#EAB308",
+      badgeText: "SAMURAI SHINKENGER"
     };
   }
 
-  // 4. Zero-One (Xanh Neon / Vàng Chanh - Công nghệ AI)
-  // slug OPhim: hiep-sy-mat-na-hiem-hoa-tri-tue-nhan-tao
-  if (s.includes("zero-one") || s.includes("zeroone") || s.includes("hiem-hoa") || s.includes("nhan-tao")) {
+  // 4. Dekaranger (Xanh Lục Emerald / Cảnh sát S.P.D)
+  if (s.includes("dekaranger") || s.includes("dac-nhiem")) {
     return {
-      glowClass: "shadow-[0_0_25px_rgba(204,255,0,0.6)] border-[#CCFF00]",
-      textClass: "text-[#CCFF00] drop-shadow-[0_2px_8px_rgba(204,255,0,0.6)]",
-      gradient: "from-[#CCFF00] via-[#DFFF00] to-[#AACC00]",
-      buttonBg: "from-[#CCFF00] to-[#B3E600] text-black font-black hover:from-[#D8FF33] hover:to-[#C2F000]",
-      accent: "#CCFF00",
-      badgeText: "XANH NEON (CÔNG NGHỆ)"
+      glowClass: "shadow-[0_0_25px_rgba(16,185,129,0.6)] border-[#10B981]",
+      textClass: "text-[#10B981] drop-shadow-[0_2px_8px_rgba(16,185,129,0.6)]",
+      gradient: "from-[#10B981] via-[#059669] to-[#047857]",
+      buttonBg: "from-[#10B981] to-[#059669] text-white hover:from-[#34D399]",
+      accent: "#10B981",
+      badgeText: "CẢNH SÁT SPD DEKARANGER"
     };
   }
 
-  // 5. Blade (Xanh Dương Cobalt - Sắc bén, Thẻ bài)
-  // slug OPhim: sieu-nhan-the-bai
-  if (s.includes("blade") || s.includes("the-bai")) {
+  // 5. Boukenger (Cam Phiêu Lưu)
+  if (s.includes("boukenger") || s.includes("phieu-luu")) {
     return {
-      glowClass: "shadow-[0_0_25px_rgba(0,85,165,0.6)] border-[#0055A5]",
-      textClass: "text-[#0072CE] drop-shadow-[0_2px_8px_rgba(0,114,206,0.6)]",
-      gradient: "from-[#0055A5] via-[#0072CE] to-[#003B73]",
-      buttonBg: "from-[#0055A5] to-[#0072CE] text-white hover:from-[#0066CC] hover:to-[#1A8CFF]",
-      accent: "#0072CE",
-      badgeText: "XANH COBALT (SẮC BÉN)"
+      glowClass: "shadow-[0_0_25px_rgba(249,115,22,0.6)] border-[#F97316]",
+      textClass: "text-[#F97316] drop-shadow-[0_2px_8px_rgba(249,115,22,0.6)]",
+      gradient: "from-[#F97316] via-[#EA580C] to-[#C2410C]",
+      buttonBg: "from-[#F97316] to-[#EA580C] text-white hover:from-[#FB923C]",
+      accent: "#F97316",
+      badgeText: "PHIÊU LƯU BOUKENGER"
     };
   }
 
-  // 6. Genm / Ex-Aid (Tím Violet - Gaming Huyền bí)
-  if (s.includes("genm") || s.includes("ex-aid") || s.includes("exaid")) {
+  // 6. Abaranger (Tím Bộc Long)
+  if (s.includes("abaranger") || s.includes("boc-long")) {
     return {
-      glowClass: "shadow-[0_0_25px_rgba(138,43,226,0.6)] border-[#8A2BE2]",
-      textClass: "text-[#8A2BE2] drop-shadow-[0_2px_8px_rgba(138,43,226,0.6)]",
-      gradient: "from-[#6A0DAD] via-[#8A2BE2] to-[#4B0082]",
-      buttonBg: "from-[#6A0DAD] to-[#8A2BE2] text-white hover:from-[#7B1FA2] hover:to-[#9C27B0]",
-      accent: "#8A2BE2",
-      badgeText: "TÍM VIOLET (GAMING)"
+      glowClass: "shadow-[0_0_25px_rgba(139,92,246,0.6)] border-[#8B5CF6]",
+      textClass: "text-[#8B5CF6] drop-shadow-[0_2px_8px_rgba(139,92,246,0.6)]",
+      gradient: "from-[#8B5CF6] via-[#7C3AED] to-[#5B21B6]",
+      buttonBg: "from-[#8B5CF6] to-[#7C3AED] text-white hover:from-[#A78BFA]",
+      accent: "#8B5CF6",
+      badgeText: "BỘC LONG ABARANGER"
     };
   }
 
@@ -212,7 +209,7 @@ const getRiderTheme = (slug: string, movie?: Movie) => {
     gradient: "from-pink-500 via-purple-600 to-indigo-500",
     buttonBg: "from-pink-500 to-rose-500 text-white hover:from-pink-600 hover:to-rose-600",
     accent: "#ec4899",
-    badgeText: "SPECIAL THEME"
+    badgeText: "SUPER SENTAI"
   };
 };
 
@@ -448,7 +445,7 @@ export default function KamenRiderRow() {
       <div className="container mx-auto px-6 mt-16 max-w-7xl">
         <div className="h-[450px] bg-zinc-950/20 border border-zinc-900/60 rounded-[2rem] flex flex-col items-center justify-center gap-3">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-400" />
-          <p className="text-zinc-500 font-bold text-xs">Đang nạp 6 Huyền Thoại Kamen Rider...</p>
+          <p className="text-zinc-500 font-bold text-xs">Đang nạp 6 Siêu Nhân Tuổi Thơ Super Sentai...</p>
         </div>
       </div>
     );
@@ -474,7 +471,7 @@ export default function KamenRiderRow() {
             className="text-xl md:text-2xl font-black tracking-tight uppercase transition-all duration-500"
             style={{ color: theme.accent }}
           >
-            Đại Lộ Siêu Nhân Tokusatsu
+            Đại Lộ Siêu Nhân Tuổi Thơ
           </h2>
         </div>
         
@@ -625,7 +622,7 @@ export default function KamenRiderRow() {
       <div>
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs font-black uppercase tracking-widest text-zinc-400">
-            Chọn Kamen Rider (6 Huyền Thoại)
+            Chọn Siêu Nhân Tuổi Thơ (6 Huyền Thoại)
           </span>
           <span className="text-[10px] text-zinc-500">
             Click vào thẻ để chuyển đổi giao diện & màu sắc

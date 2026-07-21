@@ -225,9 +225,9 @@ export default function FeaturedRidersView() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-black text-white">🦾 Quản lý Tokusatsu</h2>
+          <h2 className="text-xl font-black text-white">🦾 Quản lý Siêu Nhân & Tokusatsu</h2>
           <p className="text-xs text-zinc-500 mt-1">
-            Tùy chỉnh 6 Kamen Rider hiển thị trên trang chủ — ảnh, màu sắc, thứ tự
+            Tùy chỉnh 6 phim Siêu Nhân hiển thị trên trang chủ — ảnh, màu sắc, thứ tự
           </p>
         </div>
         <button
@@ -235,7 +235,7 @@ export default function FeaturedRidersView() {
           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-sm font-black transition-all active:scale-95"
         >
           <Plus size={16} />
-          Thêm Rider
+          Thêm Siêu Nhân
         </button>
       </div>
 
