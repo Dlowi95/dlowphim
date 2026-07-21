@@ -459,10 +459,10 @@ export default function KamenRiderRow() {
   const activePoster = activeMovie._customPoster || tmdbPosterUrl || activeMovie.poster_url || details?.poster_url;
 
   return (
-    <div className="container mx-auto px-6 mt-16 max-w-7xl select-none relative z-10">
+    <div className="container mx-auto px-4 md:px-6 mt-16 max-w-7xl select-none relative z-10 space-y-6">
       
       {/* Title block kiểu High-tech HUD năng động */}
-      <div className="flex items-center justify-between border-b border-zinc-800/40 pb-4 mb-8">
+      <div className="flex items-center justify-between border-b border-zinc-800/40 pb-4">
         <div className="flex items-center gap-2.5">
           <div 
             className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-500 border"
@@ -479,7 +479,7 @@ export default function KamenRiderRow() {
         </div>
         
         <span 
-          className="text-[10px] font-black tracking-widest px-3 py-1 rounded-md border transition-all duration-500"
+          className="text-[10px] font-black tracking-widest px-3 py-1 rounded-md border transition-all duration-500 hidden sm:inline-block"
           style={{ 
             backgroundColor: "#090a0f", 
             borderColor: `${theme.accent}40`,
@@ -490,94 +490,98 @@ export default function KamenRiderRow() {
         </span>
       </div>
 
-      {/* Main Console Box */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
-        
-        {/* CỘT TRÁI (40%): TRÌNH ĐIỀU KHIỂN HENSHIN CONSOLE */}
-        <div className="lg:col-span-5 bg-[#0e0f17]/95 border border-zinc-800/60 rounded-[2rem] p-6.5 flex flex-col justify-between shadow-2xl relative overflow-hidden group">
-          <HalftoneOverlay />
-          
-          {/* Dynamic Neon Glow Ambient ở góc bối cảnh */}
-          <div 
-            className="absolute -top-12 -left-12 w-36 h-36 blur-3xl opacity-25 rounded-full transition-all duration-500" 
-            style={{ backgroundColor: theme.accent }}
+      {/* ─── HERO STAGE (PANEL HIỂN THỊ CHÍNH DẠNG CINEMATIC STAGE) ─── */}
+      <div className="relative rounded-[2rem] overflow-hidden border border-zinc-800/80 bg-[#0c0d14] shadow-2xl transition-all duration-500 group">
+        <HalftoneOverlay />
+
+        {/* Ambient Blur Glow ở góc màn hình */}
+        <div 
+          className="absolute -top-24 -left-24 w-96 h-96 blur-3xl opacity-20 rounded-full transition-all duration-700 pointer-events-none" 
+          style={{ backgroundColor: theme.accent }}
+        />
+        <div 
+          className="absolute -bottom-24 -right-24 w-96 h-96 blur-3xl opacity-15 rounded-full transition-all duration-700 pointer-events-none" 
+          style={{ backgroundColor: theme.accent }}
+        />
+
+        {/* Backdrop Background Mờ phía sau */}
+        {backdropUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={backdropUrl}
+            alt="backdrop"
+            className="absolute inset-0 w-full h-full object-cover opacity-20 filter blur-sm scale-105 transition-all duration-700 pointer-events-none"
           />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-r from-[#0c0d14] via-[#0c0d14]/90 to-[#0c0d14]/70 z-0" />
 
-          <div className="space-y-6 flex-grow flex flex-col">
-            
-            {/* Visual Screen Area (mechanical gear rotating in bg) */}
-            <div className="relative aspect-[3/4] max-w-[280px] mx-auto w-full rounded-2xl overflow-hidden shadow-2xl z-10 flex items-center justify-center">
-              
-              {/* Vòng quay biến hình phía sau đổi màu theo Rider */}
-              <div 
-                className="absolute inset-0 z-0 opacity-30 border-[6px] border-dashed rounded-full animate-[spin_35s_linear_infinite] transition-colors duration-500"
-                style={{ borderColor: theme.accent }}
-              />
-
-              {/* Poster đứng chính */}
-              <div className={`w-[90%] h-[90%] relative rounded-xl overflow-hidden border-2 z-10 transition-all duration-500 ${theme.glowClass} ${
-                isTransitioning ? "opacity-0 scale-98 blur-[2px]" : "opacity-100 scale-100 blur-0"
-              }`}>
-                {activePoster ? (
-                  <Image
-                    src={getImageUrl(activePoster)}
-                    alt={activeMovie.name}
-                    fill
-                    className="object-cover"
-                    sizes="280px"
-                    unoptimized
-                  />
-                ) : (
-                  <div className="w-full h-full bg-zinc-900 flex items-center justify-center">
-                    <Monitor size={36} className="text-zinc-700" />
-                  </div>
-                )}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-              </div>
+        <div className="relative z-10 p-6 md:p-8 grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
+          
+          {/* POSTER ĐỨNG NẾT CĂNG (PORTRAIT 2:3) BÊN TRÁI HERO */}
+          <div className="md:col-span-4 lg:col-span-3 flex justify-center">
+            <div className={`relative aspect-[2/3] w-full max-w-[240px] rounded-2xl overflow-hidden border-2 transition-all duration-500 shadow-2xl ${theme.glowClass} ${
+              isTransitioning ? "opacity-0 scale-95 blur-[2px]" : "opacity-100 scale-100 blur-0"
+            }`}>
+              {activePoster ? (
+                <Image
+                  src={getImageUrl(activePoster)}
+                  alt={activeMovie.name}
+                  fill
+                  className="object-cover"
+                  sizes="240px"
+                  unoptimized
+                />
+              ) : (
+                <div className="w-full h-full bg-zinc-900 flex items-center justify-center">
+                  <Monitor size={36} className="text-zinc-700" />
+                </div>
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
             </div>
+          </div>
 
-            {/* Cụm thông tin phim */}
-            <div className={`space-y-3.5 text-left transition-all duration-300 ${
+          {/* CHI TIẾT VÀ NÚT XEM NGAY BÊN PHẢI HERO */}
+          <div className="md:col-span-8 lg:col-span-9 space-y-4 text-left">
+            <div className={`space-y-2 transition-all duration-300 ${
               isTransitioning ? "opacity-0 -translate-y-2" : "opacity-100 translate-y-0"
             }`}>
-              <div>
-                {logoUrl ? (
-                  <div className="h-14 flex items-center mb-1">
-                    <img
-                      src={logoUrl}
-                      alt={activeMovie.name}
-                      className="max-h-full max-w-full object-contain filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
-                      referrerPolicy="no-referrer"
-                    />
-                  </div>
-                ) : (
-                  <h3 className="text-xl md:text-2xl font-black uppercase tracking-tight leading-tight text-white">
-                    {cleanMovieName(activeMovie.name)}
-                  </h3>
-                )}
-                
-                <h4 className="text-xs font-extrabold text-zinc-400 mt-1 uppercase tracking-wide">
-                  {details?.origin_name || activeMovie.origin_name}
-                </h4>
-              </div>
+              {/* Logo phim hoặc Tên lớn */}
+              {logoUrl ? (
+                <div className="h-16 md:h-20 flex items-center">
+                  <img
+                    src={logoUrl}
+                    alt={activeMovie.name}
+                    className="max-h-full max-w-[320px] object-contain filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.9)]"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              ) : (
+                <h3 className="text-2xl md:text-4xl font-black uppercase tracking-tight text-white drop-shadow-md">
+                  {cleanMovieName(activeMovie.name)}
+                </h3>
+              )}
 
-              {/* Badges thông số */}
-              <div className="flex flex-wrap items-center gap-2 text-[10px] font-black tracking-wider uppercase select-none">
+              <h4 className="text-xs md:text-sm font-bold text-zinc-400 uppercase tracking-widest">
+                {details?.origin_name || activeMovie.origin_name}
+              </h4>
+
+              {/* Thông số Badges */}
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-[10px] md:text-xs font-black tracking-wider uppercase select-none">
                 <span 
-                  className="px-2 py-0.5 rounded shadow-sm text-black font-black transition-colors duration-500"
+                  className="px-2.5 py-0.5 rounded shadow-md text-black font-black"
                   style={{ backgroundColor: theme.accent }}
                 >
                   IMDb 8.0
                 </span>
-                <span className="bg-zinc-900/90 border border-zinc-800 text-zinc-400 px-2 py-0.5 rounded">
+                <span className="bg-zinc-900/90 border border-zinc-800 text-zinc-400 px-2.5 py-0.5 rounded">
                   T13
                 </span>
-                <span className="bg-zinc-900/90 border border-zinc-800 text-zinc-300 px-2 py-0.5 rounded">
+                <span className="bg-zinc-900/90 border border-zinc-800 text-zinc-300 px-2.5 py-0.5 rounded">
                   {activeMovie.year}
                 </span>
                 {activeMovie.quality && (
                   <span 
-                    className="bg-zinc-900/90 border border-zinc-800 px-2 py-0.5 rounded font-bold"
+                    className="bg-zinc-900/90 border border-zinc-800 px-2.5 py-0.5 rounded font-bold"
                     style={{ color: theme.accent }}
                   >
                     {activeMovie.quality}
@@ -585,132 +589,125 @@ export default function KamenRiderRow() {
                 )}
               </div>
 
-              {/* Tóm tắt */}
-              <p className="text-xs md:text-[13px] text-zinc-400 leading-relaxed line-clamp-3">
+              {/* Mô tả ngắn */}
+              <p className="text-xs md:text-sm text-zinc-300 leading-relaxed line-clamp-3 pt-2 max-w-3xl">
                 {activeMovie._description || (details?.content ? stripHtmlTags(details.content) : "Đang nạp tóm tắt của huyền thoại Kamen Rider...")}
               </p>
             </div>
+
+            {/* Nút xem ngay & yêu thích */}
+            <div className="flex items-center gap-3 pt-4">
+              <button
+                onClick={() => router.push(`/movie/${activeMovie.slug}`)}
+                className={`px-8 h-12 rounded-xl text-xs md:text-sm font-black uppercase tracking-widest transition-all active:scale-95 cursor-pointer relative overflow-hidden flex items-center justify-center gap-2 group/btn border border-white/20 bg-gradient-to-r ${theme.buttonBg} shadow-lg shadow-black/40`}
+              >
+                <Play size={16} className="fill-current" />
+                <span>Xem Ngay Ngay Bằng HD</span>
+              </button>
+
+              <button
+                onClick={handleFavoriteToggle}
+                className={`w-12 h-12 rounded-xl border flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer ${
+                  isFavorite
+                    ? "bg-rose-500/10 border-rose-500 text-rose-500 shadow-md shadow-rose-500/15"
+                    : "bg-zinc-950/40 border-zinc-800 text-zinc-400 hover:text-white"
+                }`}
+              >
+                <Heart size={18} className={isFavorite ? "fill-rose-500" : ""} />
+              </button>
+            </div>
           </div>
 
-          {/* Nút hành động xem ngay (Background đổi màu theo Rider) */}
-          <div className="flex items-center gap-3 pt-6 border-t border-zinc-800/60 z-10">
-            <button
-              onClick={() => router.push(`/movie/${activeMovie.slug}`)}
-              className={`flex-1 h-12 rounded-xl text-xs font-black uppercase tracking-widest transition-all active:scale-95 cursor-pointer relative overflow-hidden flex items-center justify-center gap-2 group/btn border border-white/20 bg-gradient-to-r ${theme.buttonBg} shadow-lg shadow-black/40`}
-            >
-              <Play size={13} className="fill-current" />
-              <span>Xem ngay</span>
-            </button>
+        </div>
+      </div>
 
-            <button
-              onClick={handleFavoriteToggle}
-              className={`w-12 h-12 rounded-xl border flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer ${
-                isFavorite
-                  ? "bg-rose-500/10 border-rose-500 text-rose-500 shadow-md shadow-rose-500/15"
-                  : "bg-zinc-950/40 border-zinc-800 text-zinc-400 hover:text-white"
-              }`}
-            >
-              <Heart size={16} className={isFavorite ? "fill-rose-500" : ""} />
-            </button>
-          </div>
+      {/* ─── 6 CARDS ĐỒNG NHẤT TỈ LỆ PORTRAIT 2:3 (HÌNH CHÍNH DIỆN RIDER) ─── */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs font-black uppercase tracking-widest text-zinc-400">
+            Chọn Kamen Rider (6 Huyền Thoại)
+          </span>
+          <span className="text-[10px] text-zinc-500">
+            Click vào thẻ để chuyển đổi giao diện & màu sắc
+          </span>
         </div>
 
-        {/* CỘT PHẢI (60%): BẢNG LƯỚI 6 RIDERS - Zi-O là vua ở trên cùng */}
-        <div className="lg:col-span-7 flex flex-col justify-between">
-          <div className="grid grid-cols-2 gap-4">
-            {movies.map((movie, index) => {
-              const isSelected = movie.slug === activeMovie.slug;
-              const rTheme = getRiderTheme(movie.slug, movie);
-              // TMDB backdrop ưu tiên → OPhim thumb → OPhim poster
-              const cardTmdb = tmdbCardData[movie.slug];
-              const cardImage = cardTmdb?.backdrop || cardTmdb?.poster
-                || getImageUrl(movie.thumb_url || movie.poster_url || "");
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5 md:gap-4">
+          {movies.map((movie) => {
+            const isSelected = movie.slug === activeMovie.slug;
+            const rTheme = getRiderTheme(movie.slug, movie);
 
-              // Zi-O (index 0): HERO toàn bề ngang — vua của mọi Rider
-              const isZiOHero = index === 0;
-              // Ex-Aid (index 5): banner phụ toàn bề ngang ở dưới
-              const isBottomBanner = index === 5;
-              
-              return (
-                <div
-                  key={movie._id}
-                  onClick={() => handleSelectRider(movie)}
-                  className={`group/card relative rounded-[1.5rem] overflow-hidden bg-zinc-950 border-2 cursor-pointer transition-all duration-300 hover:scale-[1.02] ${
-                    isZiOHero ? "col-span-2 aspect-[21/9]" :
-                    isBottomBanner ? "col-span-2 aspect-[32/9]" :
-                    "aspect-[4/3]"
-                  } ${
-                    isSelected
-                      ? `${rTheme.glowClass} scale-[1.01]`
-                      : "border-zinc-900 hover:border-zinc-800"
-                  }`}
-                >
-                  {/* Backdrop: TMDB > OPhim */}
-                  {cardImage ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={cardImage}
-                      alt={movie.name}
-                      className="absolute inset-0 w-full h-full object-cover opacity-65 group-hover/card:opacity-90 transition-opacity duration-300"
-                    />
-                  ) : (
-                    // Placeholder với màu theme khi chưa có ảnh
-                    <div
-                      className="absolute inset-0 opacity-20"
-                      style={{ background: `linear-gradient(135deg, ${rTheme.accent}44, transparent)` }}
-                    />
-                  )}
-                  
-                  {/* Gradient overlay */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent z-10" />
+            // Ưu tiên Poster Dọc chuẩn 2:3 chính diện
+            const cardPoster = movie._customPoster 
+              || tmdbCardData[movie.slug]?.poster
+              || getImageUrl(movie.poster_url || movie.thumb_url || "");
 
-                  {/* Badge đặc biệt OHMA cho Zi-O */}
-                  {isZiOHero && (
-                    <div className="absolute top-3 right-3 z-30 flex items-center gap-1.5">
-                      <span
-                        className="text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border"
-                        style={{
-                          backgroundColor: `${rTheme.accent}22`,
-                          borderColor: rTheme.accent,
-                          color: rTheme.accent,
-                          boxShadow: `0 0 12px ${rTheme.accent}55`
-                        }}
-                      >
-                        👑 OHMA — Kamen Mạnh Nhất
-                      </span>
-                    </div>
-                  )}
-                  
-                  {/* Hover indicator glow line */}
-                  <div 
-                    className="absolute bottom-0 left-0 right-0 h-1 transition-all duration-300 scale-x-0 group-hover/card:scale-x-100 z-20"
-                    style={{ backgroundColor: rTheme.accent }}
+            return (
+              <div
+                key={movie._id}
+                onClick={() => handleSelectRider(movie)}
+                className={`group/card relative aspect-[2/3] rounded-2xl overflow-hidden bg-zinc-950 border-2 cursor-pointer transition-all duration-300 ${
+                  isSelected
+                    ? "scale-[1.04] z-20 shadow-xl"
+                    : "border-zinc-800/80 hover:border-zinc-700 opacity-75 hover:opacity-100 hover:scale-[1.02]"
+                }`}
+                style={{
+                  borderColor: isSelected ? rTheme.accent : undefined,
+                  boxShadow: isSelected ? `0 0 20px ${rTheme.accent}66` : undefined,
+                }}
+              >
+                {/* Poster chính diện đứng */}
+                {cardPoster ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={cardPoster}
+                    alt={movie.name}
+                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover/card:scale-105"
                   />
+                ) : (
+                  <div
+                    className="absolute inset-0 opacity-20"
+                    style={{ background: `linear-gradient(135deg, ${rTheme.accent}44, transparent)` }}
+                  />
+                )}
 
-                  {/* Text Details */}
-                  <div className={`absolute z-20 text-left ${
-                    isZiOHero ? "bottom-5 left-6 right-6" : "bottom-3 left-4 right-4"
-                  }`}>
-                    <span 
-                      className={`font-black uppercase tracking-widest px-2 py-0.5 rounded bg-black/70 border mb-1.5 inline-block ${
-                        isZiOHero ? "text-[10px]" : "text-[8px]"
-                      }`}
-                      style={{ borderColor: `${rTheme.accent}44`, color: rTheme.accent }}
-                    >
-                      {movie.year || "RIDER"}
-                    </span>
-                    <h3 className={`font-extrabold uppercase tracking-tight text-white group-hover/card:text-zinc-100 transition-colors line-clamp-1 ${
-                      isZiOHero ? "text-base md:text-lg" : "text-xs md:text-[13px]"
-                    }`}>
-                      {cleanMovieName(movie.name)}
-                    </h3>
-                  </div>
+                {/* Dark Gradient Overlay ở dưới */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent z-10 opacity-90 group-hover/card:opacity-75 transition-opacity" />
+
+                {/* Badge Năm sản xuất ở góc trên */}
+                <div className="absolute top-2.5 left-2.5 z-20">
+                  <span 
+                    className="text-[9px] font-black tracking-wider px-2 py-0.5 rounded bg-black/80 border border-white/10 text-white"
+                    style={{ borderColor: isSelected ? `${rTheme.accent}66` : undefined }}
+                  >
+                    {movie.year || "RIDER"}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
-        </div>
 
+                {/* Indicator Glow Line khi được chọn */}
+                <div 
+                  className={`absolute bottom-0 left-0 right-0 h-1.5 transition-all duration-300 z-20 ${
+                    isSelected ? "scale-x-100" : "scale-x-0 group-hover/card:scale-x-100"
+                  }`}
+                  style={{ backgroundColor: rTheme.accent }}
+                />
+
+                {/* Tên Rider */}
+                <div className="absolute bottom-3 left-3 right-3 z-20 text-left">
+                  <h3 
+                    className="text-xs md:text-sm font-black uppercase tracking-tight text-white line-clamp-1 drop-shadow-md transition-colors"
+                    style={{ color: isSelected ? rTheme.accent : undefined }}
+                  >
+                    {cleanMovieName(movie.name)}
+                  </h3>
+                  <p className="text-[10px] text-zinc-400 line-clamp-1 font-medium">
+                    {movie.origin_name || movie.name}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
     </div>
