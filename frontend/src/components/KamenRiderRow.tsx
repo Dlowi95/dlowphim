@@ -50,7 +50,9 @@ const TARGET_RIDERS: { slug: string; fallback: Movie }[] = [
       year: 2001,
       quality: "HD",
       lang: "Vietsub",
-      time: "51 tập"
+      time: "51 tập",
+      poster_url: "https://image.tmdb.org/t/p/w500/yrErA1GiQcZikGG3c0bITFlCO6f.jpg",
+      thumb_url: "https://image.tmdb.org/t/p/w1280/hmhSP3LnFkuhfMmXTLzo5kV23Oz.jpg"
     }
   },
   {
@@ -63,7 +65,9 @@ const TARGET_RIDERS: { slug: string; fallback: Movie }[] = [
       year: 2003,
       quality: "HD",
       lang: "Vietsub",
-      time: "38 tập"
+      time: "38 tập",
+      poster_url: "https://image.tmdb.org/t/p/w500/qx3SJlAp2RK656TusqKx1qEqVMW.jpg",
+      thumb_url: "https://image.tmdb.org/t/p/w1280/i01wnWz0Z3rMATqbkAVLHEaGbNP.jpg"
     }
   },
   {
@@ -76,7 +80,9 @@ const TARGET_RIDERS: { slug: string; fallback: Movie }[] = [
       year: 2009,
       quality: "HD",
       lang: "Vietsub",
-      time: "49 tập"
+      time: "49 tập",
+      poster_url: "https://image.tmdb.org/t/p/w500/tMAqqOU2Tz5F6uDpJuqAlRhyvhP.jpg",
+      thumb_url: "https://image.tmdb.org/t/p/w1280/2PE9z3QAmjoMUvsKcJ0lzEwLFOc.jpg"
     }
   },
   {
@@ -89,7 +95,9 @@ const TARGET_RIDERS: { slug: string; fallback: Movie }[] = [
       year: 2004,
       quality: "HD",
       lang: "Vietsub",
-      time: "50 tập"
+      time: "50 tập",
+      poster_url: "https://image.tmdb.org/t/p/w500/vupRI1U1wFMF6hDBXRkx93A6xGE.jpg",
+      thumb_url: "https://image.tmdb.org/t/p/w1280/hM4CnVs5wW9SI1TQkMTljsHhUE5.jpg"
     }
   },
   {
@@ -102,7 +110,9 @@ const TARGET_RIDERS: { slug: string; fallback: Movie }[] = [
       year: 2006,
       quality: "HD",
       lang: "Vietsub",
-      time: "49 tập"
+      time: "49 tập",
+      poster_url: "https://image.tmdb.org/t/p/w500/eUUZcEvQS03DZHaOw9vBusemlBN.jpg",
+      thumb_url: "https://image.tmdb.org/t/p/w1280/v2wiAoSf3b0t0UmonVSYJI3yWXH.jpg"
     }
   },
   {
@@ -115,7 +125,9 @@ const TARGET_RIDERS: { slug: string; fallback: Movie }[] = [
       year: 2003,
       quality: "HD",
       lang: "Vietsub",
-      time: "50 tập"
+      time: "50 tập",
+      poster_url: "https://image.tmdb.org/t/p/w500/bDoHBImQZI7ruSkxWtnkxDLra58.jpg",
+      thumb_url: "https://image.tmdb.org/t/p/w1280/gbY5crvWFNCRgME9fu05kddHhXH.jpg"
     }
   }
 ];
@@ -139,7 +151,7 @@ const getRiderTheme = (slug: string, movie?: Movie) => {
   }
 
   const s = slug.toLowerCase();
-  
+
   // 1. Siêu Nhân Gao (Đỏ Rực)
   if (s.includes("gao")) {
     return {
@@ -230,8 +242,8 @@ export default function KamenRiderRow() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
   const [tmdbPosterUrl, setTmdbPosterUrl] = useState<string | null>(null);
-  const [tmdbCardData, setTmdbCardData] = useState<Record<string, {backdrop: string; poster: string}>>({});
-  
+  const [tmdbCardData, setTmdbCardData] = useState<Record<string, { backdrop: string; poster: string }>>({});
+
   const [activeGalleryIndex, setActiveGalleryIndex] = useState<number>(0);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [tilt, setTilt] = useState<{ rx: number; ry: number; gx: number; gy: number }>({ rx: 0, ry: 0, gx: 50, gy: 50 });
@@ -366,7 +378,7 @@ export default function KamenRiderRow() {
                 const d = await res.json();
                 return { slug, backdrop: d.backdropUrl || "", poster: d.posterUrl || "" };
               }
-            } catch {}
+            } catch { }
             return { slug, backdrop: "", poster: "" };
           })
         );
@@ -519,30 +531,30 @@ export default function KamenRiderRow() {
 
   return (
     <div className="container mx-auto px-4 md:px-6 mt-16 max-w-7xl select-none relative z-10 space-y-6">
-      
+
       {/* Title block kiểu High-tech HUD năng động */}
       <div className="flex items-center justify-between border-b border-zinc-800/40 pb-4">
         <div className="flex items-center gap-2.5">
-          <div 
+          <div
             className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-500 border"
             style={{ backgroundColor: `${activeAccentColor}15`, borderColor: `${activeAccentColor}40` }}
           >
             <Flame size={16} style={{ color: activeAccentColor }} className="animate-pulse" />
           </div>
-          <h2 
+          <h2
             className="text-xl md:text-2xl font-black tracking-tight uppercase transition-all duration-500"
             style={{ color: activeAccentColor }}
           >
             Đại Lộ Siêu Nhân Tuổi Thơ
           </h2>
         </div>
-        
-        <span 
+
+        <span
           className="text-[10px] font-black tracking-widest px-3 py-1 rounded-md border transition-all duration-500 hidden sm:inline-block"
-          style={{ 
-            backgroundColor: "#090a0f", 
+          style={{
+            backgroundColor: "#090a0f",
             borderColor: `${activeAccentColor}40`,
-            color: activeAccentColor 
+            color: activeAccentColor
           }}
         >
           {theme.badgeText}
@@ -554,12 +566,12 @@ export default function KamenRiderRow() {
         <HalftoneOverlay />
 
         {/* Ambient Blur Glow ở góc màn hình */}
-        <div 
-          className="absolute -top-24 -left-24 w-96 h-96 blur-3xl opacity-20 rounded-full transition-all duration-700 pointer-events-none" 
+        <div
+          className="absolute -top-24 -left-24 w-96 h-96 blur-3xl opacity-20 rounded-full transition-all duration-700 pointer-events-none"
           style={{ backgroundColor: activeAccentColor }}
         />
-        <div 
-          className="absolute -bottom-24 -right-24 w-96 h-96 blur-3xl opacity-15 rounded-full transition-all duration-700 pointer-events-none" 
+        <div
+          className="absolute -bottom-24 -right-24 w-96 h-96 blur-3xl opacity-15 rounded-full transition-all duration-700 pointer-events-none"
           style={{ backgroundColor: activeAccentColor }}
         />
 
@@ -575,17 +587,16 @@ export default function KamenRiderRow() {
         <div className="absolute inset-0 bg-gradient-to-r from-[#0c0d14] via-[#0c0d14]/70 to-[#0c0d14]/40 z-0" />
 
         <div className="relative z-10 p-6 md:p-8 grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
-          
+
           {/* POSTER ĐỨNG VỚI 3D PARALLAX TILT & MULTI-RANGER CAROUSEL SWIPER */}
           <div className="md:col-span-4 lg:col-span-3 flex flex-col items-center">
-            <div 
+            <div
               onMouseMove={handleMouseMove3D}
               onMouseLeave={handleMouseLeave3D}
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
-              className={`group/poster relative aspect-[2/3] w-full max-w-[240px] rounded-2xl overflow-hidden border-2 shadow-2xl cursor-grab active:cursor-grabbing select-none ${
-                isTransitioning ? "opacity-0 scale-95 blur-[2px]" : "opacity-100 scale-100 blur-0"
-              }`}
+              className={`group/poster relative aspect-[2/3] w-full max-w-[240px] rounded-2xl overflow-hidden border-2 shadow-2xl cursor-grab active:cursor-grabbing select-none ${isTransitioning ? "opacity-0 scale-95 blur-[2px]" : "opacity-100 scale-100 blur-0"
+                }`}
               style={{
                 transform: isHovered
                   ? `perspective(1000px) rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg) scale3d(1.05, 1.05, 1.05)`
@@ -617,7 +628,7 @@ export default function KamenRiderRow() {
 
               {/* 3D Holographic Light Glare Sheen khi hover */}
               {isHovered && (
-                <div 
+                <div
                   className="absolute inset-0 z-20 pointer-events-none opacity-40 mix-blend-overlay transition-opacity duration-300"
                   style={{
                     background: `radial-gradient(circle at ${tilt.gx}% ${tilt.gy}%, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0) 60%)`
@@ -637,7 +648,7 @@ export default function KamenRiderRow() {
                       boxShadow: `0 0 12px ${activeAccentColor}66`
                     }}
                   >
-                    ✨ {currentRanger.name}
+                    {currentRanger.name}
                   </span>
                 </div>
               )}
@@ -676,9 +687,8 @@ export default function KamenRiderRow() {
                     <button
                       key={idx}
                       onClick={() => setActiveGalleryIndex(idx)}
-                      className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider transition-all duration-300 border cursor-pointer ${
-                        isRangerActive ? "scale-105 shadow-md" : "opacity-60 hover:opacity-100"
-                      }`}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider transition-all duration-300 border cursor-pointer ${isRangerActive ? "scale-105 shadow-md" : "opacity-60 hover:opacity-100"
+                        }`}
                       style={{
                         borderColor: ranger.color,
                         backgroundColor: isRangerActive ? `${ranger.color}33` : "rgba(12, 13, 20, 0.8)",
@@ -697,9 +707,8 @@ export default function KamenRiderRow() {
 
           {/* CHI TIẾT VÀ NÚT XEM NGAY BÊN PHẢI HERO */}
           <div className="md:col-span-8 lg:col-span-9 space-y-4 text-left">
-            <div className={`space-y-2 transition-all duration-300 ${
-              isTransitioning ? "opacity-0 -translate-y-2" : "opacity-100 translate-y-0"
-            }`}>
+            <div className={`space-y-2 transition-all duration-300 ${isTransitioning ? "opacity-0 -translate-y-2" : "opacity-100 translate-y-0"
+              }`}>
               {/* Logo phim hoặc Tên lớn */}
               {logoUrl ? (
                 <div className="h-16 md:h-20 flex items-center">
@@ -722,7 +731,7 @@ export default function KamenRiderRow() {
 
               {/* Thông số Badges */}
               <div className="flex flex-wrap items-center gap-2 pt-1 text-[10px] md:text-xs font-black tracking-wider uppercase select-none">
-                <span 
+                <span
                   className="px-2.5 py-0.5 rounded shadow-md text-black font-black transition-colors duration-300"
                   style={{ backgroundColor: activeAccentColor }}
                 >
@@ -735,7 +744,7 @@ export default function KamenRiderRow() {
                   {activeMovie.year}
                 </span>
                 {activeMovie.quality && (
-                  <span 
+                  <span
                     className="bg-zinc-900/90 border border-zinc-800 px-2.5 py-0.5 rounded font-bold transition-colors duration-300"
                     style={{ color: activeAccentColor }}
                   >
@@ -749,7 +758,7 @@ export default function KamenRiderRow() {
                     className={`px-7 h-12 rounded-xl text-xs md:text-sm font-black uppercase tracking-widest transition-all active:scale-95 cursor-pointer relative overflow-hidden flex items-center justify-center gap-2 group/btn border border-white/20 bg-gradient-to-r ${theme.buttonBg} shadow-lg shadow-black/40`}
                   >
                     <Play size={16} className="fill-current" />
-                    <span>Xem Ngay Ngay Bằng HD</span>
+                    <span>Xem Ngay</span>
                   </button>
 
                   <button
@@ -762,11 +771,10 @@ export default function KamenRiderRow() {
 
                   <button
                     onClick={handleFavoriteToggle}
-                    className={`w-12 h-12 rounded-xl border flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer ${
-                      isFavorite
-                        ? "bg-rose-500/10 border-rose-500 text-rose-500 shadow-md shadow-rose-500/15"
-                        : "bg-zinc-950/40 border-zinc-800 text-zinc-400 hover:text-white"
-                    }`}
+                    className={`w-12 h-12 rounded-xl border flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer ${isFavorite
+                      ? "bg-rose-500/10 border-rose-500 text-rose-500 shadow-md shadow-rose-500/15"
+                      : "bg-zinc-950/40 border-zinc-800 text-zinc-400 hover:text-white"
+                      }`}
                   >
                     <Heart size={18} className={isFavorite ? "fill-rose-500" : ""} />
                   </button>
@@ -805,11 +813,10 @@ export default function KamenRiderRow() {
               <div
                 key={movie._id || movie.slug}
                 onClick={() => handleSelectRider(movie)}
-                className={`group/card relative aspect-[2/3] rounded-2xl overflow-hidden cursor-pointer border-2 transition-all duration-500 transform active:scale-95 ${
-                  isSelected
-                    ? `${rTheme.glowClass} scale-[1.03] z-20`
-                    : "border-zinc-800/80 hover:border-zinc-600 hover:scale-[1.02] opacity-80 hover:opacity-100"
-                }`}
+                className={`group/card relative aspect-[2/3] rounded-2xl overflow-hidden cursor-pointer border-2 transition-all duration-500 transform active:scale-95 ${isSelected
+                  ? `${rTheme.glowClass} scale-[1.03] z-20`
+                  : "border-zinc-800/80 hover:border-zinc-600 hover:scale-[1.02] opacity-80 hover:opacity-100"
+                  }`}
               >
                 {/* Image background */}
                 {cardPoster ? (
@@ -833,7 +840,7 @@ export default function KamenRiderRow() {
 
                 {/* Badge Năm sản xuất ở góc trên */}
                 <div className="absolute top-2.5 left-2.5 z-20">
-                  <span 
+                  <span
                     className="text-[9px] font-black tracking-wider px-2 py-0.5 rounded bg-black/80 border border-white/10 text-white"
                     style={{ borderColor: isSelected ? `${rTheme.accent}66` : undefined }}
                   >
@@ -842,16 +849,15 @@ export default function KamenRiderRow() {
                 </div>
 
                 {/* Indicator Glow Line khi được chọn */}
-                <div 
-                  className={`absolute bottom-0 left-0 right-0 h-1.5 transition-all duration-300 z-20 ${
-                    isSelected ? "scale-x-100" : "scale-x-0 group-hover/card:scale-x-100"
-                  }`}
+                <div
+                  className={`absolute bottom-0 left-0 right-0 h-1.5 transition-all duration-300 z-20 ${isSelected ? "scale-x-100" : "scale-x-0 group-hover/card:scale-x-100"
+                    }`}
                   style={{ backgroundColor: rTheme.accent }}
                 />
 
                 {/* Tên Rider */}
                 <div className="absolute bottom-3 left-3 right-3 z-20 text-left">
-                  <h3 
+                  <h3
                     className="text-xs md:text-sm font-black uppercase tracking-tight text-white line-clamp-1 drop-shadow-md transition-colors"
                     style={{ color: isSelected ? rTheme.accent : undefined }}
                   >
@@ -871,7 +877,7 @@ export default function KamenRiderRow() {
       {showRangerModal && activeMovie && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
           <div className="relative w-full max-w-3xl rounded-3xl bg-[#0e1017]/95 border border-zinc-700/80 p-6 md:p-8 shadow-2xl overflow-hidden space-y-6">
-            
+
             {/* Close button */}
             <button
               onClick={() => setShowRangerModal(false)}
@@ -907,9 +913,8 @@ export default function KamenRiderRow() {
                     <button
                       key={idx}
                       onClick={() => setActiveGalleryIndex(idx)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer border flex items-center gap-2 ${
-                        isSel ? "scale-105 shadow-lg" : "opacity-60 hover:opacity-100"
-                      }`}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer border flex items-center gap-2 ${isSel ? "scale-105 shadow-lg" : "opacity-60 hover:opacity-100"
+                        }`}
                       style={{
                         borderColor: m.color,
                         backgroundColor: isSel ? `${m.color}33` : "rgba(18, 20, 29, 0.6)",
@@ -928,10 +933,10 @@ export default function KamenRiderRow() {
             {/* Character detail 3D card */}
             {currentRanger && (
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
-                
+
                 {/* 3D Poster / Avatar */}
                 <div className="md:col-span-5 flex justify-center">
-                  <div 
+                  <div
                     className="relative aspect-[2/3] w-full max-w-[210px] rounded-2xl overflow-hidden border-2 shadow-2xl transition-all duration-500"
                     style={{
                       borderColor: activeAccentColor,
@@ -948,7 +953,7 @@ export default function KamenRiderRow() {
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                     <div className="absolute bottom-3 left-3 right-3 text-center">
-                      <span 
+                      <span
                         className="text-xs font-black uppercase tracking-widest px-3 py-1 rounded-full border shadow-md inline-block"
                         style={{
                           backgroundColor: "rgba(10, 10, 15, 0.9)",
@@ -991,7 +996,7 @@ export default function KamenRiderRow() {
                       <span style={{ color: activeAccentColor }}>{currentRanger.power || 95} / 100</span>
                     </div>
                     <div className="w-full h-2.5 rounded-full bg-zinc-900 overflow-hidden p-0.5 border border-zinc-800">
-                      <div 
+                      <div
                         className="h-full rounded-full transition-all duration-700 shadow-md"
                         style={{
                           width: `${currentRanger.power || 95}%`,
