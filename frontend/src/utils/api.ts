@@ -1,4 +1,9 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+// Reusable config variable for Movie API Domain
+export const MOVIE_API_DOMAIN = process.env.NEXT_PUBLIC_MOVIE_API_DOMAIN || "https://ophim1.com";
+
+// Reusable config variable for Fallback/Secondary Movie API Domain (KKPhim/PhimAPI)
+export const FALLBACK_API_DOMAIN = process.env.NEXT_PUBLIC_FALLBACK_API_DOMAIN || "https://phimapi.com";
 
 /**
  * Chuyển đổi một URL gọi API Ophim trực tiếp thành một URL đi qua Proxy Cache ở Backend DlowPhim.
@@ -22,7 +27,8 @@ export const getProxyUrl = (originalUrl: string): string => {
       url.hostname.includes("ophim") || 
       url.hostname.includes("kkphim") || 
       url.hostname.includes("phimimg") ||
-      url.hostname.includes("phimapi")
+      url.hostname.includes("phimapi") ||
+      url.origin === MOVIE_API_DOMAIN
     ) {
       const pathWithQuery = url.pathname + url.search;
       return `${API_URL}/movies/ophim-proxy?path=${encodeURIComponent(pathWithQuery)}`;

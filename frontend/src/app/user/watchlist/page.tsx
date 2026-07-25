@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from "react";
 import { Plus, ListPlus, Folder, Edit3, Trash2, X, ChevronLeft, Loader2, Play, Save } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { cleanMovieName } from "@/utils/movieUtils";
+import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import Link from "next/link";
 import Pagination from "@/components/Pagination";
 
@@ -83,11 +84,11 @@ export default function UserWatchlistPage() {
       try {
         const promises = selectedPlaylist.movies.map(async (slug) => {
           try {
-            const res = await fetch(`https://ophim1.com/v1/api/phim/${slug}`);
+            const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${slug}`));
             if (!res.ok) return null;
             const data = await res.json();
             if (data.status === true || data.status === "success") {
-              const movie = data.data?.item || data.movie;
+              const movie = data.movie || data.data?.item;
               if (movie) {
                 return {
                   slug: movie.slug,
@@ -172,13 +173,6 @@ export default function UserWatchlistPage() {
     if (selectedPlaylist) {
       await toggleMovieInPlaylist(selectedPlaylist.id, movieSlug);
     }
-  };
-
-  const getImageUrl = (path?: string) => {
-    if (!path) return "";
-    if (path.startsWith("http")) return path;
-    const fileName = path.split("/").pop();
-    return `https://img.ophim.live/uploads/movies/${fileName}`;
   };
 
   return (

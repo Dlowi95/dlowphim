@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { cleanMovieName } from "@/utils/movieUtils";
+import { cleanMovieName, getImageUrl, getBestMovieImage } from "@/utils/movieUtils";
 import MovieHoverPopup from "./MovieHoverPopup";
 import Image from "next/image";
-import { getProxyUrl } from "@/utils/api";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 
 interface Movie {
   _id: string;
@@ -46,21 +46,49 @@ export default function MovieCard({ movie, aspect = "landscape" }: MovieCardProp
     };
   }, []);
 
-  const getImageUrl = (movieObj: Movie) => {
-    // In OPhim API, thumb_url is the vertical portrait poster, and poster_url is the horizontal landscape backdrop.
-    const path = aspect === "landscape"
-      ? (movieObj.poster_url || movieObj.thumb_url)
-      : (movieObj.thumb_url || movieObj.poster_url);
-    if (!path) return "";
-    const fileName = path.split("/").pop();
-    return `https://img.ophim.live/uploads/movies/${fileName}`;
+  const initialUrl = aspect === "landscape"
+    ? (movie.poster_url || movie.thumb_url)
+    : (movie.thumb_url || movie.poster_url);
+
+  const [imgSrc, setImgSrc] = useState<string>(() => getBestMovieImage(movie, aspect === "landscape" ? "poster" : "thumb"));
+  const [attemptCount, setAttemptCount] = useState(0);
+
+  useEffect(() => {
+    setImgSrc(getBestMovieImage(movie, aspect === "landscape" ? "poster" : "thumb"));
+    setAttemptCount(0);
+  }, [movie.slug, movie.poster_url, movie.thumb_url, aspect]);
+
+  const handleImageError = () => {
+    const alternateUrl = aspect === "portrait" ? movie.poster_url : movie.thumb_url;
+    if (attemptCount === 0 && alternateUrl && movie.poster_url && movie.thumb_url && movie.poster_url !== movie.thumb_url) {
+      setAttemptCount(1);
+      setImgSrc(getImageUrl(alternateUrl));
+      return;
+    }
+
+    if (attemptCount < 2) {
+      setAttemptCount(2);
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      fetch(`${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && (data.posterUrl || data.backdropUrl)) {
+            setImgSrc(aspect === "portrait" ? (data.posterUrl || data.backdropUrl) : (data.backdropUrl || data.posterUrl));
+          } else {
+            setImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+          }
+        })
+        .catch(() => {
+          setImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+        });
+    }
   };
 
   const handleMouseEnter = (e: React.MouseEvent) => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     
     // Tải trước dữ liệu phim ngầm (Prefetching)
-    const prefetchUrl = getProxyUrl(`https://ophim1.com/v1/api/phim/${movie.slug}`);
+    const prefetchUrl = getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${movie.slug}`);
     fetch(prefetchUrl).catch(() => {});
 
     // Immediately mount the popup component (so it starts fetching details)
@@ -132,12 +160,13 @@ export default function MovieCard({ movie, aspect = "landscape" }: MovieCardProp
             maskImage: "radial-gradient(white, black)"
           }}
         >
-          <Image
-            src={getImageUrl(movie)}
+          <img
+            src={imgSrc}
             alt={cleanedName}
-            fill
-            className="object-cover rounded-xl group-hover/card:scale-105 transition-transform duration-300"
-            sizes={aspect === "landscape" ? "(max-width: 768px) 50vw, 25vw" : "(max-width: 768px) 33vw, 15vw"}
+            onError={handleImageError}
+            loading="lazy"
+            decoding="async"
+            className="w-full h-full object-cover rounded-xl group-hover/card:scale-105 transition-transform duration-300"
           />
 
           

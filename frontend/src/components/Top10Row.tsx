@@ -3,9 +3,9 @@
 import React, { useEffect, useState, useRef } from "react";
 import { Loader2, Flame } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { cleanMovieName, cleanSlug } from "@/utils/movieUtils";
+import { cleanMovieName, cleanSlug, getImageUrl } from "@/utils/movieUtils";
 import MovieHoverPopup from "./MovieHoverPopup";
-import { getProxyUrl } from "@/utils/api";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import Image from "next/image";
 
 interface Movie {
@@ -214,10 +214,9 @@ export default function Top10Row() {
         const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
 
         const [res1, res2] = await Promise.all([
-          fetch(getProxyUrl("https://ophim1.com/v1/api/danh-sach/phim-bo?page=1"), { signal: controller.signal }),
-          fetch(getProxyUrl("https://ophim1.com/v1/api/danh-sach/phim-bo?page=2"), { signal: controller.signal })
+          fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/danh-sach/phim-bo?page=1`), { signal: controller.signal }),
+          fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/danh-sach/phim-bo?page=2`), { signal: controller.signal })
         ]);
-
         clearTimeout(timeoutId);
         
         const d1 = await res1.json();
@@ -414,12 +413,43 @@ function Top10MovieCard({ movie, index, wasDraggingRef, tmdbCache }: Top10MovieC
     };
   }, []);
 
-  const getImageUrl = (movieObj: Movie) => {
-    // Top 10 card is aspect-[2/3] (portrait), so we prefer thumb_url (vertical poster in OPhim)
+  const getTop10ImageUrl = (movieObj: Movie) => {
     const path = movieObj.thumb_url || movieObj.poster_url;
-    if (!path) return "";
-    const fileName = path.split("/").pop();
-    return `https://img.ophim.live/uploads/movies/${fileName}`;
+    return getImageUrl(path);
+  };
+
+  const initialTop10Url = tmdbCache[movie.slug]?.posterUrl || getTop10ImageUrl(movie);
+  const [top10ImgSrc, setTop10ImgSrc] = useState<string>(initialTop10Url);
+  const [top10Attempt, setTop10Attempt] = useState(0);
+
+  useEffect(() => {
+    setTop10ImgSrc(tmdbCache[movie.slug]?.posterUrl || getTop10ImageUrl(movie));
+    setTop10Attempt(0);
+  }, [movie.slug, tmdbCache, movie.thumb_url, movie.poster_url]);
+
+  const handleTop10ImgError = () => {
+    if (top10Attempt === 0 && movie.poster_url && movie.thumb_url && movie.poster_url !== movie.thumb_url) {
+      setTop10Attempt(1);
+      setTop10ImgSrc(getImageUrl(movie.poster_url));
+      return;
+    }
+
+    if (top10Attempt < 2) {
+      setTop10Attempt(2);
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      fetch(`${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && (data.posterUrl || data.backdropUrl)) {
+            setTop10ImgSrc(data.posterUrl || data.backdropUrl);
+          } else {
+            setTop10ImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+          }
+        })
+        .catch(() => {
+          setTop10ImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+        });
+    }
   };
 
   const handleMouseEnter = (e: React.MouseEvent) => {
@@ -543,12 +573,13 @@ function Top10MovieCard({ movie, index, wasDraggingRef, tmdbCache }: Top10MovieC
             maskImage: "radial-gradient(white, black)"
           }}
         >
-          <Image
-            src={tmdbCache[movie.slug]?.posterUrl || getImageUrl(movie)}
+          <img
+            src={top10ImgSrc}
             alt={cleanedName}
-            fill
-            className="object-cover rounded-2xl transition-transform duration-300 group-hover/top10:scale-105"
-            sizes="(max-width: 768px) 150px, 200px"
+            onError={handleTop10ImgError}
+            loading="lazy"
+            decoding="async"
+            className="w-full h-full object-cover rounded-2xl transition-transform duration-300 group-hover/top10:scale-105"
           />
 
           

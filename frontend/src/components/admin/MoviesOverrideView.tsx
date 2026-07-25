@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Cookies from "js-cookie";
 import { Search, Loader2, Save, Sparkles, RefreshCw, FileText } from "lucide-react";
 import { Button } from "@heroui/react";
+import { getImageUrl } from "@/utils/movieUtils";
 
 interface MoviesOverrideViewProps {
   showToast: (msg: string, type: "success" | "error" | "warning") => void;
@@ -157,7 +158,7 @@ export default function MoviesOverrideView({ showToast }: MoviesOverrideViewProp
               {originalMovie.thumb_url && (
                 <div className="w-16 aspect-[2/3] rounded-lg overflow-hidden shrink-0 bg-zinc-900 border border-zinc-800">
                   <img
-                    src={originalMovie.thumb_url.startsWith("http") ? originalMovie.thumb_url : `https://img.ophim.live/uploads/movies/${originalMovie.thumb_url.split("/").pop()}`}
+                    src={getImageUrl(originalMovie.thumb_url || originalMovie.poster_url)}
                     alt={originalMovie.name}
                     className="w-full h-full object-cover"
                   />

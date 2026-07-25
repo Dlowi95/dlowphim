@@ -4,13 +4,13 @@ import React, { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Play, Heart, Info, ChevronRight } from "lucide-react";
-import { cleanMovieName, cleanSlug } from "@/utils/movieUtils";
+import { cleanMovieName, cleanSlug, getImageUrl, getBestMovieImage, isValidMovieImage } from "@/utils/movieUtils";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { getTmdbApiKey } from "@/utils/tmdb";
 import Image from "next/image";
-import { getProxyUrl } from "@/utils/api";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 
 interface Movie {
   _id: string;
@@ -229,13 +229,13 @@ export default function AnimeRow() {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [activeMovie, setActiveMovie] = useState<Movie | null>(null);
   const [details, setDetails] = useState<any | null>(null);
-  
+
   // Details cache to prevent delay on repeated clicks
   const [detailsCache, setDetailsCache] = useState<Record<string, any>>({});
-  
+
   // Transition state to handle smooth fade-out and fade-in
   const [isTransitioning, setIsTransitioning] = useState(false);
-  
+
   const [loadingList, setLoadingList] = useState(true);
   const [loadingDetails, setLoadingDetails] = useState(false);
 
@@ -260,7 +260,7 @@ export default function AnimeRow() {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
 
-        const res = await fetch(getProxyUrl("https://ophim1.com/v1/api/danh-sach/hoat-hinh?page=1"), {
+        const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/danh-sach/hoat-hinh?page=1`), {
           signal: controller.signal
         });
         clearTimeout(timeoutId);
@@ -318,12 +318,12 @@ export default function AnimeRow() {
     async function fetchActiveDetails() {
       try {
         setLoadingDetails(true);
-        const res = await fetch(getProxyUrl(`https://ophim1.com/v1/api/phim/${activeMovie!.slug}`), {
+        const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${activeMovie!.slug}`), {
           signal: controller.signal
         });
         const data = await res.json();
         if (data.status === true || data.status === "success") {
-          const item = data.data?.item || data.movie || null;
+          const item = data.movie || data.data?.item || null;
           if (item) {
             // Cào thêm ảnh nét từ TMDB thông qua Backend Proxy Cache
             const tmdbId = item.tmdb?.id;
@@ -336,10 +336,11 @@ export default function AnimeRow() {
                 );
                 if (proxyRes.ok) {
                   const proxyData = await proxyRes.json();
-                  if (proxyData.backdropUrl) {
-                    item.poster_url = proxyData.backdropUrl;
-                  } else if (proxyData.posterUrl) {
+                  if (proxyData.posterUrl) {
                     item.poster_url = proxyData.posterUrl;
+                  }
+                  if (proxyData.backdropUrl) {
+                    item.thumb_url = proxyData.backdropUrl;
                   }
                 }
               } catch (e) {
@@ -365,6 +366,30 @@ export default function AnimeRow() {
       controller.abort();
     };
   }, [activeMovie]);
+
+  const initialHeroUrl = getImageUrl(details?.thumb_url || activeMovie?.thumb_url || details?.poster_url || activeMovie?.poster_url);
+  const [heroImgSrc, setHeroImgSrc] = useState<string>(initialHeroUrl);
+
+  useEffect(() => {
+    setHeroImgSrc(getImageUrl(details?.thumb_url || activeMovie?.thumb_url || details?.poster_url || activeMovie?.poster_url));
+  }, [activeMovie?.slug, details?.thumb_url, details?.poster_url]);
+
+  const handleHeroImgError = () => {
+    if (!activeMovie) return;
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+    fetch(`${API_URL}/movies/logo/${activeMovie.slug}?title=${encodeURIComponent(activeMovie.origin_name || activeMovie.name)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && (data.backdropUrl || data.posterUrl)) {
+          setHeroImgSrc(data.backdropUrl || data.posterUrl);
+        } else {
+          setHeroImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+        }
+      })
+      .catch(() => {
+        setHeroImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+      });
+  };
 
   // Favorite toggle handler
   const toggleFavorite = async (e: React.MouseEvent) => {
@@ -408,19 +433,12 @@ export default function AnimeRow() {
   const handleThumbnailClick = (movie: Movie) => {
     if (wasDraggingRef.current) return;
     if (movie.slug === activeMovie?.slug) return;
-    
+
     setIsTransitioning(true);
     setTimeout(() => {
       setActiveMovie(movie);
       setIsTransitioning(false);
     }, 150); // 150ms fade-out, then swap and fade-in
-  };
-
-  const getImageUrl = (path?: string) => {
-    if (!path) return "";
-    if (path.startsWith("http")) return path;
-    const fileName = path.split("/").pop();
-    return `https://img.ophim.live/uploads/movies/${fileName}`;
   };
 
   if (loadingList) {
@@ -436,14 +454,14 @@ export default function AnimeRow() {
 
   const cleanedName = cleanMovieName(activeMovie.name);
   const cleanedOriginName = cleanMovieName(activeMovie.origin_name);
-  
+
   // Instantly use details from listing object if details is loading
   const ageRating = getAgeRating(activeMovie.name, details?.category || activeMovie.category);
   const durationText = activeMovie.time || details?.time || "24 phút/tập";
   const movieYear = activeMovie.year || details?.year || 2026;
   const movieQuality = activeMovie.quality || details?.quality || "HD";
   const movieLang = activeMovie.lang || details?.lang || "Vietsub";
-  
+
   const movieDescription = stripHtmlTags(details?.content || "");
   const genres = activeMovie.category?.map((c: any) => c.name).join(" • ") || details?.category?.map((c: any) => c.name).join(" • ") || "Hoạt hình";
   const imdbScore = details?.imdb?.vote_average || ((cleanedName.length % 3) * 0.4 + 7.2).toFixed(1);
@@ -455,7 +473,7 @@ export default function AnimeRow() {
         <h3 className="text-xl md:text-2xl font-black text-zinc-100 uppercase tracking-tight">
           Kho Tàng Anime Mới Nhất
         </h3>
-        
+
         <div className="relative group/tooltip">
           <Link
             href="/search?genre=hoat-hinh"
@@ -471,20 +489,18 @@ export default function AnimeRow() {
 
       {/* Main Unified Box */}
       <div className="relative w-full rounded-3xl border border-zinc-800/40 bg-[#111219] overflow-hidden flex flex-col p-6 md:p-10 shadow-2xl">
-        
+
         {/* Top Section: Active Movie Banner Details with Transition opacity & blur */}
-        <div className={`relative w-full min-h-[320px] md:min-h-[380px] flex items-center mb-8 md:mb-10 z-10 transition-all duration-300 ease-in-out ${
-          isTransitioning ? "opacity-0 scale-[0.98] blur-[2px]" : "opacity-100 scale-100 blur-0"
-        }`}>
-          
+        <div className={`relative w-full min-h-[320px] md:min-h-[380px] flex items-center mb-8 md:mb-10 z-10 transition-all duration-300 ease-in-out ${isTransitioning ? "opacity-0 scale-[0.98] blur-[2px]" : "opacity-100 scale-100 blur-0"
+          }`}>
+
           {/* Right-aligned Backdrop Image (No mask inside to avoid sub-pixel bleed) */}
           <div className="absolute right-0 top-0 bottom-0 w-full md:w-[65%] h-full z-0 pointer-events-none select-none overflow-hidden rounded-r-3xl">
-            <Image
-              src={getImageUrl(details?.poster_url || activeMovie.poster_url || details?.thumb_url || activeMovie.thumb_url)}
+            <img
+              src={heroImgSrc}
               alt={cleanedName}
-              fill
-              className="object-cover"
-              sizes="(max-width: 768px) 100vw, 65vw"
+              onError={handleHeroImgError}
+              className="w-full h-full object-cover"
             />
             {/* Halftone dot grid pattern overlay to make the image look crisp and textured */}
             <HalftoneOverlay />
@@ -492,7 +508,7 @@ export default function AnimeRow() {
 
           {/* Smooth mask on parent: starts at left-0 to cover any sub-pixel gap at the image left edge */}
           <div className="absolute inset-y-0 left-0 w-full md:w-[72%] z-[1] pointer-events-none select-none bg-gradient-to-r from-[#111219] via-[#111219] via-55% to-transparent" />
-          
+
           {/* Bottom fade mask to blend with thumbnails */}
           <div className="absolute inset-x-0 bottom-0 h-1/4 z-[2] pointer-events-none select-none bg-gradient-to-t from-[#111219] to-transparent" />
 
@@ -554,11 +570,10 @@ export default function AnimeRow() {
               {/* Heart Button */}
               <button
                 onClick={toggleFavorite}
-                className={`w-10 h-10 md:w-12 md:h-12 rounded-full border flex items-center justify-center transition-all duration-300 cursor-pointer ${
-                  isFavorite
+                className={`w-10 h-10 md:w-12 md:h-12 rounded-full border flex items-center justify-center transition-all duration-300 cursor-pointer ${isFavorite
                     ? "border-pink-500/40 bg-pink-500/10 text-pink-500 hover:bg-pink-500/20"
                     : "border-zinc-800/60 bg-zinc-900/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
-                }`}
+                  }`}
               >
                 <Heart size={16} className={isFavorite ? "fill-pink-500" : ""} />
               </button>
@@ -582,47 +597,94 @@ export default function AnimeRow() {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUpOrLeave}
             onMouseLeave={handleMouseUpOrLeave}
-            className={`flex overflow-x-auto md:overflow-x-visible no-scrollbar w-full gap-4 md:gap-2.5 select-none pb-2 md:pb-0 md:grid md:grid-cols-[repeat(15,minmax(0,1fr))] md:w-full ${
-              isDragging ? "cursor-grabbing" : "cursor-grab"
-            }`}
+            className={`flex overflow-x-auto md:overflow-x-visible no-scrollbar w-full gap-4 md:gap-2.5 select-none pb-2 md:pb-0 md:grid md:grid-cols-[repeat(15,minmax(0,1fr))] md:w-full ${isDragging ? "cursor-grabbing" : "cursor-grab"
+              }`}
             style={{
               msOverflowStyle: "none",
               scrollbarWidth: "none"
             }}
           >
-            {movies.map((movie) => {
-              const isActive = movie.slug === activeMovie.slug;
-              const title = cleanMovieName(movie.name);
-              return (
-                <div
-                  key={movie._id || movie.slug}
-                  onClick={() => handleThumbnailClick(movie)}
-                  className={`w-[70px] shrink-0 md:w-auto md:shrink aspect-[2/3] rounded-xl overflow-hidden cursor-pointer transition-all duration-300 relative select-none ${
-                    isActive
-                      ? "border-2 border-pink-500 scale-105 shadow-[0_0_15px_rgba(236,72,153,0.5)]"
-                      : "border border-zinc-800/60 hover:border-pink-500/50"
-                  }`}
-                  style={{
-                    WebkitMaskImage: "-webkit-radial-gradient(white, black)",
-                    maskImage: "radial-gradient(white, black)"
-                  }}
-                >
-                  <Image
-                    src={getImageUrl(movie.thumb_url || movie.poster_url)}
-                    alt={title}
-                    fill
-                    className="object-cover"
-                    sizes="(max-width: 768px) 70px, 100px"
-                  />
-                  {/* Subtle hover overlay */}
-                  <div className="absolute inset-0 bg-black/10 hover:bg-black/0 transition-colors" />
-                </div>
-              );
-            })}
+            {movies.map((movie) => (
+              <AnimeThumbCard
+                key={movie._id || movie.slug}
+                movie={movie}
+                isActive={movie.slug === activeMovie.slug}
+                onClick={() => handleThumbnailClick(movie)}
+              />
+            ))}
           </div>
         </div>
 
       </div>
+    </div>
+  );
+}
+
+function AnimeThumbCard({
+  movie,
+  isActive,
+  onClick
+}: {
+  movie: Movie;
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  const title = cleanMovieName(movie.name);
+  const initialUrl = getBestMovieImage(movie, 'poster');
+  const [imgSrc, setImgSrc] = useState<string>(initialUrl);
+  const [attemptCount, setAttemptCount] = useState(0);
+
+  useEffect(() => {
+    setImgSrc(getBestMovieImage(movie, 'poster'));
+    setAttemptCount(0);
+  }, [movie.slug, movie.thumb_url, movie.poster_url]);
+
+  const handleImgError = () => {
+    if (attemptCount === 0 && movie.poster_url && movie.thumb_url && movie.poster_url !== movie.thumb_url) {
+      setAttemptCount(1);
+      setImgSrc(getImageUrl(movie.poster_url));
+      return;
+    }
+
+    if (attemptCount < 2) {
+      setAttemptCount(2);
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      fetch(`${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && (data.posterUrl || data.backdropUrl)) {
+            setImgSrc(data.posterUrl || data.backdropUrl);
+          } else {
+            setImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+          }
+        })
+        .catch(() => {
+          setImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+        });
+    }
+  };
+
+  return (
+    <div
+      onClick={onClick}
+      className={`w-[70px] shrink-0 md:w-auto md:shrink aspect-[2/3] rounded-xl overflow-hidden cursor-pointer transition-all duration-300 relative select-none ${isActive
+          ? "border-2 border-pink-500 scale-105 shadow-[0_0_15px_rgba(236,72,153,0.5)]"
+          : "border border-zinc-800/60 hover:border-pink-500/50"
+        }`}
+      style={{
+        WebkitMaskImage: "-webkit-radial-gradient(white, black)",
+        maskImage: "radial-gradient(white, black)"
+      }}
+    >
+      <img
+        src={imgSrc}
+        alt={title}
+        onError={handleImgError}
+        loading="lazy"
+        decoding="async"
+        className="w-full h-full object-cover"
+      />
+      <div className="absolute inset-0 bg-black/10 hover:bg-black/0 transition-colors" />
     </div>
   );
 }

@@ -8,20 +8,11 @@ import { useRouter, useParams } from "next/navigation";
 import { ArrowLeft, Film, Send, Sparkles, MessageSquare, Users, Trash2, Calendar, Tv, Volume2, AlertCircle, Copy, Check, Bot, Clock, VideoOff, VolumeX, Maximize } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
-import { cleanMovieName } from "@/utils/movieUtils";
-import { getProxyUrl } from "@/utils/api";
+import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import EpisodeSelector from "@/components/EpisodeSelector";
 import { io } from "socket.io-client";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
-
-const getImageUrl = (path: string) => {
-  if (!path) return "";
-  if (path.startsWith("http://") || path.startsWith("https://")) {
-    return path;
-  }
-  const fileName = path.split("/").pop();
-  return `https://img.ophim.live/uploads/movies/${fileName}`;
-};
 
 // Import dynamic Plyr
 import "plyr/dist/plyr.css";
@@ -294,7 +285,7 @@ export default function RoomPage() {
         };
 
         // 3. Lấy thông tin phim từ OPhim API chạy nền bất đồng bộ (không làm nghẽn socket/chat)
-        fetch(getProxyUrl(`https://ophim1.com/v1/api/phim/${roomData.movieSlug}`))
+        fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${roomData.movieSlug}`))
           .then(res => {
             if (res.ok) return res.json();
             throw new Error("Lỗi API kết nối OPhim");
@@ -800,12 +791,29 @@ export default function RoomPage() {
                 {!isHost && !hasMovieStarted ? (
                   <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#07070a] px-6 text-center select-none">
                     {posterUrl && (
-                      <Image
+                      <img
                         src={getImageUrl(posterUrl)}
                         alt=""
-                        fill
-                        className="object-cover blur-[25px] opacity-20 pointer-events-none"
-                        unoptimized
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          if (room?.movieSlug) {
+                            fetch(`${API_URL}/movies/logo/${room.movieSlug}?title=${encodeURIComponent(room.movieName || "")}`)
+                              .then((res) => (res.ok ? res.json() : null))
+                              .then((data) => {
+                                if (data && (data.backdropUrl || data.posterUrl)) {
+                                  target.src = data.backdropUrl || data.posterUrl;
+                                } else {
+                                  target.src = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80";
+                                }
+                              })
+                              .catch(() => {
+                                target.src = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80";
+                              });
+                          } else {
+                            target.src = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80";
+                          }
+                        }}
+                        className="w-full h-full object-cover blur-[25px] opacity-20 pointer-events-none"
                       />
                     )}
                     <HalftoneOverlay />

@@ -33,7 +33,6 @@ const NAV_ITEMS = [
   { id: "users", label: "Người dùng", icon: Users },
   { id: "comments", label: "Bình luận & Báo xấu", icon: MessageSquare, countKey: "reports" },
   { id: "banners", label: "Banner", icon: ImageIcon },
-  { id: "tokusatsu", label: "🦾 Tokusatsu", icon: Sword },
   { id: "reports", label: "Báo cáo lỗi", icon: AlertTriangle, countKey: "movieReports" },
   { id: "notifications", label: "Thông báo", icon: Bell, countKey: "notifications" },
 ];

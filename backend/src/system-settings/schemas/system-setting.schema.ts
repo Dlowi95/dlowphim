@@ -19,6 +19,40 @@ export class SystemSetting {
   @Prop({ default: 'https://ophim1.com/danh-sach/phim-moi-cap-nhat' })
   movieCrawlSource?: string;
 
+  @Prop({ default: 'ophim' })
+  activeMovieSourceId: string;
+
+  @Prop({
+    type: [
+      {
+        id: { type: String, required: true },
+        name: { type: String, required: true },
+        domain: { type: String, required: true },
+        crawlUrl: { type: String, required: true },
+      },
+    ],
+    default: [
+      {
+        id: 'phimapi',
+        name: 'PhimAPI / KKPhim',
+        domain: 'https://phimapi.com',
+        crawlUrl: 'https://phimapi.com/danh-sach/phim-moi-cap-nhat',
+      },
+      {
+        id: 'ophim',
+        name: 'OPhim (Khuyên dùng)',
+        domain: 'https://ophim1.com',
+        crawlUrl: 'https://ophim1.com/danh-sach/phim-moi-cap-nhat',
+      },
+    ],
+  })
+  movieSources: Array<{
+    id: string;
+    name: string;
+    domain: string;
+    crawlUrl: string;
+  }>;
+
   @Prop({ type: Number, default: 12 })
   autoCrawlInterval?: number; // hours
 

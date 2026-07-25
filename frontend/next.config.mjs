@@ -5,23 +5,11 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: "https",
-        hostname: "image.tmdb.org",
-      },
-      {
-        protocol: "https",
-        hostname: "img.ophim.live",
-      },
-      {
-        protocol: "https",
-        hostname: "phimimg.com",
-      },
-      {
-        protocol: "https",
-        hostname: "img.kkphim.link",
+        hostname: "**",
       },
       {
         protocol: "http",
-        hostname: "localhost",
+        hostname: "**",
       },
     ],
   },

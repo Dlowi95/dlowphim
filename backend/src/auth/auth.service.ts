@@ -285,36 +285,37 @@ export class AuthService {
   }
 
   async updateHistory(userId: string, historyItem: any) {
-    const user = await this.userModel.findById(userId);
-    if (!user) {
-      throw new UnauthorizedException('Không tìm thấy người dùng');
-    }
-
-    if (!user.watchHistory) {
-      user.watchHistory = [];
-    }
-
-    user.watchHistory = user.watchHistory.filter(
-      (item) => item.movieSlug !== historyItem.movieSlug,
-    );
-
-    user.watchHistory.unshift({
+    const newItem = {
       movieSlug: historyItem.movieSlug,
       movieName: historyItem.movieName,
       episodeName: historyItem.episodeName,
       currentTime: historyItem.currentTime,
       duration: historyItem.duration,
       updatedAt: new Date(),
-    });
+    };
 
-    if (user.watchHistory.length > 50) {
-      user.watchHistory = user.watchHistory.slice(0, 50);
-    }
+    // Atomic pull existing entry for this movieSlug to avoid duplicates
+    await this.userModel.updateOne(
+      { _id: userId },
+      { $pull: { watchHistory: { movieSlug: historyItem.movieSlug } } }
+    );
 
-    user.markModified('watchHistory');
-    await user.save();
+    // Atomic push new entry at start ($position: 0) and slice to max 50 ($slice: 50)
+    const updatedUser = await this.userModel.findByIdAndUpdate(
+      userId,
+      {
+        $push: {
+          watchHistory: {
+            $each: [newItem],
+            $position: 0,
+            $slice: 50,
+          },
+        },
+      },
+      { new: true },
+    );
 
-    return { watchHistory: user.watchHistory };
+    return { watchHistory: updatedUser?.watchHistory || [] };
   }
 
   async syncHistory(userId: string, localHistory: any[]) {
@@ -484,28 +485,19 @@ export class AuthService {
   }
 
   async clearHistoryItem(userId: string, movieSlug: string) {
-    const user = await this.userModel.findById(userId);
-    if (!user) {
-      throw new UnauthorizedException('Không tìm thấy người dùng');
-    }
-    if (user.watchHistory) {
-      user.watchHistory = user.watchHistory.filter(
-        (item) => item.movieSlug !== movieSlug,
-      );
-      user.markModified('watchHistory');
-      await user.save();
-    }
-    return { watchHistory: user.watchHistory || [] };
+    const updatedUser = await this.userModel.findByIdAndUpdate(
+      userId,
+      { $pull: { watchHistory: { movieSlug } } },
+      { new: true },
+    );
+    return { watchHistory: updatedUser?.watchHistory || [] };
   }
 
   async clearAllHistory(userId: string) {
-    const user = await this.userModel.findById(userId);
-    if (!user) {
-      throw new UnauthorizedException('Không tìm thấy người dùng');
-    }
-    user.watchHistory = [];
-    user.markModified('watchHistory');
-    await user.save();
+    await this.userModel.updateOne(
+      { _id: userId },
+      { $set: { watchHistory: [] } },
+    );
     return { watchHistory: [] };
   }
 }

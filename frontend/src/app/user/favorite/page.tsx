@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from "react";
 import { Heart, X, Loader2, Play } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { cleanMovieName } from "@/utils/movieUtils";
+import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import Link from "next/link";
 import Pagination from "@/components/Pagination";
 
@@ -39,11 +40,11 @@ export default function UserFavoritePage() {
       try {
         const promises = favorites.map(async (slug) => {
           try {
-            const res = await fetch(`https://ophim1.com/v1/api/phim/${slug}`);
+            const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${slug}`));
             if (!res.ok) return null;
             const data = await res.json();
             if (data.status === true || data.status === "success") {
-              const movie = data.data?.item || data.movie;
+              const movie = data.movie || data.data?.item;
               if (movie) {
                 return {
                   slug: movie.slug,
@@ -78,13 +79,6 @@ export default function UserFavoritePage() {
     e.stopPropagation();
     await toggleFavorite(slug);
     setFavoriteDetails((prev) => prev.filter((m) => m.slug !== slug));
-  };
-
-  const getImageUrl = (path?: string) => {
-    if (!path) return "";
-    if (path.startsWith("http")) return path;
-    const fileName = path.split("/").pop();
-    return `https://img.ophim.live/uploads/movies/${fileName}`;
   };
 
   // Pagination calculation
@@ -161,54 +155,7 @@ export default function UserFavoritePage() {
           <div className="space-y-6">
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
               {paginatedMovies.map((movie) => (
-                <div key={movie.slug} className="group relative flex flex-col gap-2.5">
-                  {/* Card Wrapper */}
-                  <div className="aspect-[2/3] relative rounded-2xl overflow-hidden border border-zinc-800/80 bg-zinc-950 shadow-md group">
-                    <img
-                      src={getImageUrl(movie.thumb_url)}
-                      alt={movie.name}
-                      className="w-full h-full object-cover transition-all duration-350 group-hover:scale-105"
-                      loading="lazy"
-                    />
-
-                    {/* Overlay control */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/35 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-2">
-                      <Link
-                        href={`/movie/${movie.slug}`}
-                        className="w-9 h-9 rounded-full bg-pink-500 hover:bg-pink-600 text-white flex items-center justify-center transition-all shadow-md active:scale-90"
-                      >
-                        <Play size={16} className="fill-white ml-0.5" />
-                      </Link>
-                      <button
-                        onClick={(e) => handleRemoveFavorite(e, movie.slug)}
-                        className="w-9 h-9 rounded-full bg-zinc-900/90 hover:bg-red-500 hover:text-white border border-zinc-800 text-zinc-350 flex items-center justify-center transition-all shadow-md active:scale-90 cursor-pointer"
-                        title="Xóa khỏi yêu thích"
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
-
-                    {/* Episode/Quality Tag */}
-                    <div className="absolute top-2.5 left-2.5 flex flex-col gap-1 select-none">
-                      <span className="bg-pink-500 px-1.5 py-0.5 rounded text-[9px] font-black text-white uppercase shadow-sm">
-                        {movie.quality}
-                      </span>
-                      <span className="bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded text-[9px] font-black text-white border border-zinc-800">
-                        {movie.lang === "Vietsub" ? "P.Đề" : movie.lang}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Title & Origin Title */}
-                  <div className="px-0.5 space-y-0.5 min-h-[46px]">
-                    <h4 className="font-bold text-[13.5px] text-zinc-100 line-clamp-1 group-hover:text-pink-500 transition-colors">
-                      {cleanMovieName(movie.name)}
-                    </h4>
-                    <p className="text-[11px] font-semibold text-zinc-500 truncate">
-                      {movie.origin_name}
-                    </p>
-                  </div>
-                </div>
+                <FavoriteMovieCard key={movie.slug} movie={movie} onRemove={handleRemoveFavorite} />
               ))}
             </div>
 
@@ -234,6 +181,100 @@ export default function UserFavoritePage() {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+function FavoriteMovieCard({
+  movie,
+  onRemove
+}: {
+  movie: any;
+  onRemove: (e: React.MouseEvent, slug: string) => void;
+}) {
+  const initialUrl = getImageUrl(movie.thumb_url || movie.poster_url);
+  const [imgSrc, setImgSrc] = useState<string>(initialUrl);
+  const [attemptCount, setAttemptCount] = useState(0);
+
+  useEffect(() => {
+    setImgSrc(getImageUrl(movie.thumb_url || movie.poster_url));
+    setAttemptCount(0);
+  }, [movie.slug, movie.thumb_url, movie.poster_url]);
+
+  const handleImgError = () => {
+    if (attemptCount === 0 && movie.poster_url && movie.thumb_url && movie.poster_url !== movie.thumb_url) {
+      setAttemptCount(1);
+      setImgSrc(getImageUrl(movie.poster_url));
+      return;
+    }
+
+    if (attemptCount < 2) {
+      setAttemptCount(2);
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      fetch(`${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && (data.posterUrl || data.backdropUrl)) {
+            setImgSrc(data.posterUrl || data.backdropUrl);
+          } else {
+            setImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+          }
+        })
+        .catch(() => {
+          setImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+        });
+    }
+  };
+
+  return (
+    <div className="group relative flex flex-col gap-2.5">
+      {/* Card Wrapper */}
+      <div className="aspect-[2/3] relative rounded-2xl overflow-hidden border border-zinc-800/80 bg-zinc-950 shadow-md group">
+        <img
+          src={imgSrc}
+          alt={movie.name}
+          onError={handleImgError}
+          className="w-full h-full object-cover transition-all duration-350 group-hover:scale-105"
+          loading="lazy"
+        />
+
+        {/* Overlay control */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/35 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-2">
+          <Link
+            href={`/movie/${movie.slug}`}
+            className="w-9 h-9 rounded-full bg-pink-500 hover:bg-pink-600 text-white flex items-center justify-center transition-all shadow-md active:scale-90"
+          >
+            <Play size={16} className="fill-white ml-0.5" />
+          </Link>
+          <button
+            onClick={(e) => onRemove(e, movie.slug)}
+            className="w-9 h-9 rounded-full bg-zinc-900/90 hover:bg-red-500 hover:text-white border border-zinc-800 text-zinc-350 flex items-center justify-center transition-all shadow-md active:scale-90 cursor-pointer"
+            title="Xóa khỏi yêu thích"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Episode/Quality Tag */}
+        <div className="absolute top-2.5 left-2.5 flex flex-col gap-1 select-none">
+          <span className="bg-pink-500 px-1.5 py-0.5 rounded text-[9px] font-black text-white uppercase shadow-sm">
+            {movie.quality}
+          </span>
+          <span className="bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded text-[9px] font-black text-white border border-zinc-800">
+            {movie.lang === "Vietsub" ? "P.Đề" : movie.lang}
+          </span>
+        </div>
+      </div>
+
+      {/* Title & Origin Title */}
+      <div className="px-0.5 space-y-0.5 min-h-[46px]">
+        <h4 className="text-xs font-bold text-zinc-200 line-clamp-1 group-hover:text-pink-400 transition-colors" title={movie.name}>
+          {cleanMovieName(movie.name)}
+        </h4>
+        <p className="text-[10px] text-zinc-500 line-clamp-1 font-semibold" title={movie.origin_name}>
+          {movie.origin_name}
+        </p>
+      </div>
     </div>
   );
 }

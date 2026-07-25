@@ -6,12 +6,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Send, Sparkles, Tv, HelpCircle, Plus, Users, Flag, X, Check } from "lucide-react";
 import CommentRatingSection from "@/components/CommentRatingSection";
 import EpisodeSelector from "@/components/EpisodeSelector";
-import { cleanMovieName } from "@/utils/movieUtils";
+import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
 import MovieCard from "@/components/MovieCard";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { getTmdbApiKey } from "@/utils/tmdb";
-import { getProxyUrl } from "@/utils/api";
+import { getProxyUrl, MOVIE_API_DOMAIN, FALLBACK_API_DOMAIN } from "@/utils/api";
 import "plyr/dist/plyr.css";
 
 interface Episode {
@@ -80,6 +80,7 @@ function WatchContent({ slug }: { slug: string }) {
   const [autoplayNext, setAutoplayNext] = useState(false);
   const [skipIntro, setSkipIntro] = useState(false);
   const [isHlsPlaying, setIsHlsPlaying] = useState(false);
+  const [tmdbCredits, setTmdbCredits] = useState<any[]>([]);
 
   // Custom playlists states
   const [showPlaylistDropdown, setShowPlaylistDropdown] = useState(false);
@@ -205,22 +206,78 @@ function WatchContent({ slug }: { slug: string }) {
           }
           console.error("Lỗi kiểm tra chặn phim:", blockErr);
         }
-
-        // b. Tải phim từ OPhim API
+        // b. Tải phim từ API chính thức
         let ophimDetail: any = null;
         try {
-          const res = await fetch(getProxyUrl(`https://ophim1.com/v1/api/phim/${slug}`));
+          const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${slug}`));
           if (res.ok) {
             const data = await res.json();
             if (data.status === true || data.status === "success") {
-              ophimDetail = data.data?.item || data.movie;
+              ophimDetail = {
+                ...(data.movie || data.data?.item),
+                episodes: data.episodes || data.data?.item?.episodes || []
+              };
             }
           }
         } catch (e) {
-          console.warn("Không tìm thấy trên OPhim hoặc lỗi API, thử tìm phim Custom...");
+          console.warn("Lỗi tải từ API chính thức, thử chi tiết v1...");
+        }
+
+        if (!ophimDetail) {
+          try {
+            const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${slug}`));
+            if (res.ok) {
+              const data = await res.json();
+              if (data.status === true || data.status === "success") {
+                const item = data.movie || data.data?.item;
+                const eps = data.episodes || data.data?.item?.episodes || [];
+                ophimDetail = { ...item, episodes: eps };
+              }
+            }
+          } catch (e) {
+            console.warn("Không tìm thấy trên v1/api/phim...");
+          }
         }
 
         if (ophimDetail) {
+          // Kiểm tra xem episodes của OPhim có bị rỗng hoặc dính link opstream11/dead domain không
+          let needsFallback = false;
+          const firstEp = ophimDetail.episodes?.[0]?.server_data?.[0];
+          const m3u8Url = firstEp?.link_m3u8 || "";
+          const embedUrl = firstEp?.link_embed || "";
+          if (
+            !firstEp ||
+            (!m3u8Url && !embedUrl) ||
+            m3u8Url.includes("opstream11") ||
+            embedUrl.includes("opstream11") ||
+            m3u8Url.includes("opstream1.") ||
+            m3u8Url.includes("opstream2.")
+          ) {
+            needsFallback = true;
+          }
+
+          // Fetch thêm server dự phòng từ PhimAPI
+          try {
+            const fallbackRes = await fetch(`${FALLBACK_API_DOMAIN}/phim/${slug}`);
+            if (fallbackRes.ok) {
+              const fbData = await fallbackRes.json();
+              if ((fbData.status === true || fbData.status === "success" || fbData.status === "true") && fbData.episodes) {
+                const fbServers = fbData.episodes.map((s: any) => ({
+                  ...s,
+                  server_name: s.server_name.includes("Dự Phòng") ? s.server_name : `${s.server_name} (Dự Phòng)`
+                }));
+
+                if (needsFallback) {
+                  ophimDetail.episodes = [...fbServers, ...(ophimDetail.episodes || [])];
+                } else {
+                  ophimDetail.episodes = [...(ophimDetail.episodes || []), ...fbServers];
+                }
+              }
+            }
+          } catch (fbErr) {
+            console.warn("Không thể tải server dự phòng từ PhimAPI:", fbErr);
+          }
+
           setMovie(ophimDetail);
 
           // Cào thêm ảnh nét từ TMDB cho watch page
@@ -240,54 +297,80 @@ function WatchContent({ slug }: { slug: string }) {
                     setTmdbBackdrop(proxyData.posterUrl);
                   }
                 }
+
+                const creditsRes = await fetch(
+                  `${API_URL}/movies/credits/${slug}?title=${encodeURIComponent(ophimDetail.origin_name || ophimDetail.name)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`
+                );
+                if (creditsRes.ok) {
+                  const creditsData = await creditsRes.json();
+                  setTmdbCredits(creditsData);
+                }
               } catch (e) {
-                console.error("Lỗi cào TMDB ảnh cho WatchPage qua proxy:", e);
+                console.error("Lỗi cào TMDB ảnh/diễn viên cho WatchPage qua proxy:", e);
               }
             })();
           }
         } else {
-          // c. Nếu OPhim không có, thử tìm trong Custom Movies
-          const customRes = await fetch(`${API_URL}/movies/custom/${slug}`);
-          if (!customRes.ok) {
-            throw new Error("Không tìm thấy thông tin phim.");
-          }
-          const customData = await customRes.json();
-          // Convert custom data to MovieDetail format
-          const adaptedMovie: MovieDetail = {
-            _id: customData._id,
-            name: customData.name,
-            slug: customData.slug,
-            origin_name: customData.origin_name,
-            content: customData.content || "",
-            type: "single",
-            status: "completed",
-            thumb_url: customData.thumb_url,
-            poster_url: customData.poster_url,
-            time: customData.time || "120 phút",
-            episode_current: customData.quality || "FHD",
-            episode_total: "1",
-            year: customData.year || 2026,
-            actor: [],
-            director: [],
-            category: customData.category || [],
-            country: customData.country || [],
-            episodes: [
-              {
-                server_name: "DlowServer",
-                server_data: [
-                  {
-                    name: "Full",
-                    slug: "full",
-                    filename: customData.name,
-                    link_embed: "",
-                    link_m3u8: customData.link_m3u8,
-                  }
-                ]
+          // c. Nếu OPhim không có, thử tìm trên PhimAPI fallback hoặc Custom Movies
+          try {
+            const fbRes = await fetch(`${FALLBACK_API_DOMAIN}/phim/${slug}`);
+            if (fbRes.ok) {
+              const fbData = await fbRes.json();
+              if ((fbData.status === true || fbData.status === "success" || fbData.status === "true") && fbData.movie) {
+                ophimDetail = {
+                  ...fbData.movie,
+                  episodes: fbData.episodes || []
+                };
+                setMovie(ophimDetail);
               }
-            ],
-            isCustom: true,
-          };
-          setMovie(adaptedMovie);
+            }
+          } catch (e) {
+            console.warn("Không tìm thấy trên PhimAPI fallback");
+          }
+
+          if (!ophimDetail) {
+            const customRes = await fetch(`${API_URL}/movies/custom/${slug}`);
+            if (!customRes.ok) {
+              throw new Error("Không tìm thấy thông tin phim.");
+            }
+            const customData = await customRes.json();
+            // Convert custom data to MovieDetail format
+            const adaptedMovie: MovieDetail = {
+              _id: customData._id,
+              name: customData.name,
+              slug: customData.slug,
+              origin_name: customData.origin_name,
+              content: customData.content || "",
+              type: "single",
+              status: "completed",
+              thumb_url: customData.thumb_url,
+              poster_url: customData.poster_url,
+              time: customData.time || "120 phút",
+              episode_current: customData.quality || "FHD",
+              episode_total: "1",
+              year: customData.year || 2026,
+              actor: [],
+              director: [],
+              category: customData.category || [],
+              country: customData.country || [],
+              episodes: [
+                {
+                  server_name: "DlowServer",
+                  server_data: [
+                    {
+                      name: "Full",
+                      slug: "full",
+                      filename: customData.name,
+                      link_embed: "",
+                      link_m3u8: customData.link_m3u8,
+                    }
+                  ]
+                }
+              ],
+              isCustom: true,
+            };
+            setMovie(adaptedMovie);
+          }
         }
       } catch (err: any) {
         console.error("Lỗi lấy chi tiết phim:", err);
@@ -327,7 +410,7 @@ function WatchContent({ slug }: { slug: string }) {
     if (!slug || movie?.isCustom) return;
     async function fetchKKPhimDetail() {
       try {
-        const res = await fetch(getProxyUrl(`https://phimapi.com/phim/${slug}`));
+        const res = await fetch(getProxyUrl(`${FALLBACK_API_DOMAIN}/phim/${slug}`));
         if (res.ok) {
           const data = await res.json();
           if (data.status === true || data.status === "success") {
@@ -409,7 +492,7 @@ function WatchContent({ slug }: { slug: string }) {
   const activeEpisode = episodesData[activeEpisodeIndex];
   const activeEmbed = activeEpisode?.link_embed || null;
 
-  // Tự động chuyển kiểu player sang HLS nếu tập phim có link m3u8 (ưu tiên HLS Player xịn)
+  // Ưu tiên HLS Player xịn (hls.js + Plyr.js) làm trình phát chính mặc định theo quy chuẩn AGENTS.md
   useEffect(() => {
     if (activeEpisode) {
       if (activeEpisode.link_m3u8) {
@@ -658,7 +741,7 @@ function WatchContent({ slug }: { slug: string }) {
     async function fetchRelated() {
       try {
         setLoadingRelated(true);
-        const res = await fetch(getProxyUrl(`https://ophim1.com/v1/api/the-loai/${genreSlug}?page=1`));
+        const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/the-loai/${genreSlug}?page=1`));
         const data = await res.json();
 
         if (data.status === true || data.status === "success") {
@@ -1277,6 +1360,19 @@ function WatchContent({ slug }: { slug: string }) {
                     <Users size={14} />
                     <span>Xem chung</span>
                   </button>
+
+                  <button
+                    onClick={() => setPlayerType(playerType === "embed" ? "hls" : "embed")}
+                    className={`flex items-center gap-1.5 transition-all cursor-pointer border-none px-2.5 py-1 rounded-lg font-extrabold ${
+                      playerType === "embed"
+                        ? "bg-pink-500/15 text-pink-400 border border-pink-500/30 shadow-sm"
+                        : "text-zinc-400 hover:text-white bg-transparent hover:bg-zinc-800/30"
+                    }`}
+                    title="Bấm để đổi máy chủ phát video nếu bộ phim bị mất tiếng âm thanh AC3/5.1"
+                  >
+                    <Tv size={14} />
+                    <span>{playerType === "embed" ? "Server Embed (Âm thanh HD)" : "Server HLS Player"}</span>
+                  </button>
                 </div>
 
                 <button
@@ -1384,44 +1480,30 @@ function WatchContent({ slug }: { slug: string }) {
 
                   <div className="flex flex-wrap gap-2.5">
                     {servers.map((server, sIdx) => {
-                      const hasHls = server.server_data.some((ep) => ep.link_m3u8);
                       const isServerActive = sIdx === activeServerIndex;
                       const serverLabel = friendlyLabels[sIdx] || server.server_name;
 
                       return (
-                        <React.Fragment key={`combined-source-${sIdx}`}>
-                          {/* VIP (Embed) Source Button */}
-                          <button
-                            onClick={() => {
-                              setActiveServerIndex(sIdx);
+                        <button
+                          key={`source-btn-${sIdx}`}
+                          onClick={() => {
+                            setActiveServerIndex(sIdx);
+                            const currentEp = server.server_data[activeEpisodeIndex] || server.server_data[0];
+                            if (currentEp?.link_m3u8) {
+                              setPlayerType("hls");
+                            } else {
                               setPlayerType("embed");
-                              scrollToPlayer();
-                            }}
-                            className={`px-4 py-2 text-xs font-black rounded-lg transition-all border-none cursor-pointer uppercase ${isServerActive && playerType === "embed"
-                                ? "bg-pink-500 text-white font-extrabold shadow-md shadow-pink-500/20"
-                                : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-zinc-800 hover:text-white"
-                              }`}
-                          >
-                            {serverLabel} (Embed)
-                          </button>
-
-                          {/* HLS (m3u8) Source Button */}
-                          {hasHls && (
-                            <button
-                              onClick={() => {
-                                setActiveServerIndex(sIdx);
-                                setPlayerType("hls");
-                                scrollToPlayer();
-                              }}
-                              className={`px-4 py-2 text-xs font-black rounded-lg transition-all border-none cursor-pointer uppercase ${isServerActive && playerType === "hls"
-                                  ? "bg-pink-500 text-white font-extrabold shadow-md shadow-pink-500/20"
-                                  : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-zinc-800 hover:text-white"
-                                }`}
-                            >
-                              {serverLabel} (HLS)
-                            </button>
-                          )}
-                        </React.Fragment>
+                            }
+                            scrollToPlayer();
+                          }}
+                          className={`px-4 py-2 text-xs font-black rounded-xl transition-all border-none cursor-pointer uppercase ${
+                            isServerActive
+                              ? "bg-pink-500 text-white font-extrabold shadow-md shadow-pink-500/20"
+                              : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-zinc-800 hover:text-white"
+                          }`}
+                        >
+                          {serverLabel}
+                        </button>
                       );
                     })}
                   </div>
@@ -1550,20 +1632,45 @@ function WatchContent({ slug }: { slug: string }) {
             </div>
 
             {/* Diễn viên list */}
-            {movie.actor && movie.actor.filter(a => a && a.trim() && a !== "Đang cập nhật").length > 0 && (
+            {(tmdbCredits.length > 0 || (movie.actor && movie.actor.filter(a => a && a.trim() && a !== "Đang cập nhật").length > 0)) && (
               <div className="space-y-4">
                 <h3 className="text-sm font-black text-zinc-455 uppercase tracking-widest border-b border-zinc-900 pb-2.5">
                   Diễn viên
                 </h3>
                 <div className="grid grid-cols-3 gap-3">
-                  {movie.actor.filter(a => a && a.trim() && a !== "Đang cập nhật").slice(0, 6).map((actor, idx) => (
-                    <div key={`actor-watch-${idx}`} className="flex flex-col items-center text-center gap-1">
-                      <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 bg-zinc-800 flex items-center justify-center font-black text-xs text-white shadow bg-gradient-to-tr from-pink-500/20 to-rose-500/10">
-                        {actor[0].toUpperCase()}
+                  {tmdbCredits.length > 0 ? (
+                    tmdbCredits.slice(0, 6).map((actor, idx) => (
+                      <div
+                        key={`actor-watch-tmdb-${actor.id || idx}`}
+                        onClick={() => router.push(`/search?keyword=${encodeURIComponent(actor.name)}`)}
+                        className="flex flex-col items-center text-center gap-1.5 cursor-pointer group"
+                        title={`Tìm phim của ${actor.name}`}
+                      >
+                        <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 bg-zinc-800 border border-pink-500/30 group-hover:border-pink-500 flex items-center justify-center font-black text-xs text-white shadow transition-all group-hover:scale-105">
+                          {actor.profileUrl ? (
+                            <img src={actor.profileUrl} alt={actor.name} className="w-full h-full object-cover" />
+                          ) : (
+                            actor.name[0].toUpperCase()
+                          )}
+                        </div>
+                        <span className="text-[10px] font-extrabold text-[#a0a5c0] group-hover:text-pink-400 truncate w-full transition-colors">{actor.name}</span>
+                        <span className="text-[8px] font-semibold text-zinc-400 truncate w-full">{actor.character || "Diễn viên"}</span>
                       </div>
-                      <span className="text-[10px] font-extrabold text-[#a0a5c0] truncate w-full">{actor}</span>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    movie.actor.filter(a => a && a.trim() && a !== "Đang cập nhật").slice(0, 6).map((actor, idx) => (
+                      <div
+                        key={`actor-watch-${idx}`}
+                        onClick={() => router.push(`/search?keyword=${encodeURIComponent(actor)}`)}
+                        className="flex flex-col items-center text-center gap-1 cursor-pointer group"
+                      >
+                        <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 bg-zinc-800 flex items-center justify-center font-black text-xs text-white shadow bg-gradient-to-tr from-pink-500/20 to-rose-500/10 group-hover:scale-105 transition-transform">
+                          {actor[0].toUpperCase()}
+                        </div>
+                        <span className="text-[10px] font-extrabold text-[#a0a5c0] group-hover:text-pink-400 truncate w-full transition-colors">{actor}</span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             )}

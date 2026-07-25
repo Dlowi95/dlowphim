@@ -17,11 +17,20 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { clearTmdbApiKeyCache } from "@/utils/tmdb";
 
+interface MovieSource {
+  id: string;
+  name: string;
+  domain: string;
+  crawlUrl: string;
+}
+
 interface SystemSettingsData {
   websiteName: string;
   websiteDescription?: string;
   maintenanceMode: boolean;
   movieCrawlSource?: string;
+  activeMovieSourceId?: string;
+  movieSources?: MovieSource[];
   autoCrawlInterval?: number;
   contactEmail?: string;
   facebookLink?: string;
@@ -42,7 +51,22 @@ export default function SettingsView() {
     websiteName: "DlowPhim",
     websiteDescription: "Trải Nghiệm Điện Ảnh Premium",
     maintenanceMode: false,
-    movieCrawlSource: "https://ophim1.com/danh-sach/phim-moi-cap-nhat",
+    movieCrawlSource: "https://phimapi.com/danh-sach/phim-moi-cap-nhat",
+    activeMovieSourceId: "phimapi",
+    movieSources: [
+      {
+        id: "phimapi",
+        name: "PhimAPI / KKPhim (Khuyên dùng)",
+        domain: "https://phimapi.com",
+        crawlUrl: "https://phimapi.com/danh-sach/phim-moi-cap-nhat",
+      },
+      {
+        id: "ophim",
+        name: "OPhim",
+        domain: "https://ophim1.com",
+        crawlUrl: "https://ophim1.com/danh-sach/phim-moi-cap-nhat",
+      },
+    ],
     autoCrawlInterval: 12,
     contactEmail: "support@dlowphim.com",
     facebookLink: "https://facebook.com/dlowphim",
@@ -249,22 +273,104 @@ export default function SettingsView() {
                   <h4 className="text-xs font-black text-white uppercase tracking-wider">Cấu hình Cào Phim & API Nguồn</h4>
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-3">
                   <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <LinkIcon size={12} />
-                    API Nguồn Phim (Mới Cập Nhật)
+                    <LinkIcon size={12} className="text-pink-500" />
+                    Cài đặt Danh sách các API Nguồn
                   </label>
-                  <input
-                    type="url"
-                    name="movieCrawlSource"
-                    value={settings.movieCrawlSource || ""}
-                    onChange={handleChange}
-                    placeholder="Link API cào phim dạng JSON"
-                    className="w-full bg-zinc-950 border border-zinc-900 hover:border-zinc-800 focus:border-pink-500/50 rounded-xl px-4 py-3 text-xs text-white outline-none transition-all placeholder-zinc-700 font-mono"
-                  />
-                  <span className="text-[9px] font-bold text-zinc-650">
-                    Được sử dụng làm nguồn API cào phim định kỳ tự động và nhập phim thủ công.
-                  </span>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {settings.movieSources?.map((src, index) => {
+                      const isActive = settings.activeMovieSourceId === src.id;
+                      return (
+                        <div
+                          key={src.id}
+                          className={`p-5 rounded-2xl border transition-all duration-300 flex flex-col justify-between gap-4 ${
+                            isActive
+                              ? "bg-pink-500/5 border-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.08)]"
+                              : "bg-zinc-950 border-zinc-900 hover:border-zinc-800"
+                          }`}
+                        >
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className={`w-2 h-2 rounded-full ${
+                                    isActive ? "bg-pink-500 animate-pulse" : "bg-zinc-700"
+                                  }`}
+                                />
+                                <span className="text-[11px] font-black text-white">{src.name}</span>
+                              </div>
+                              {isActive && (
+                                <span className="text-[8px] font-black text-pink-500 uppercase tracking-widest bg-pink-500/10 px-2 py-0.5 rounded">
+                                  Đang Hoạt Động
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="space-y-2.5 pt-1 text-left">
+                              <div className="space-y-1">
+                                <span className="text-[9px] font-black text-zinc-500 uppercase tracking-wider">Tên nguồn</span>
+                                <input
+                                  type="text"
+                                  value={src.name}
+                                  onChange={(e) => {
+                                    const newSources = [...(settings.movieSources || [])];
+                                    newSources[index] = { ...src, name: e.target.value };
+                                    setSettings(prev => ({ ...prev, movieSources: newSources }));
+                                  }}
+                                  className="w-full bg-zinc-900/40 border border-zinc-900 focus:border-pink-500/30 rounded-xl px-3 py-2 text-[11px] text-white outline-none"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <span className="text-[9px] font-black text-zinc-500 uppercase tracking-wider">Tên miền (Domain)</span>
+                                <input
+                                  type="url"
+                                  value={src.domain}
+                                  onChange={(e) => {
+                                    const newSources = [...(settings.movieSources || [])];
+                                    newSources[index] = { ...src, domain: e.target.value };
+                                    setSettings(prev => ({ ...prev, movieSources: newSources }));
+                                  }}
+                                  className="w-full bg-zinc-900/40 border border-zinc-900 focus:border-pink-500/30 rounded-xl px-3 py-2 text-[11px] text-white outline-none font-mono"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <span className="text-[9px] font-black text-zinc-500 uppercase tracking-wider">Đường dẫn cào phim (Crawl URL)</span>
+                                <input
+                                  type="url"
+                                  value={src.crawlUrl}
+                                  onChange={(e) => {
+                                    const newSources = [...(settings.movieSources || [])];
+                                    newSources[index] = { ...src, crawlUrl: e.target.value };
+                                    setSettings(prev => ({ ...prev, movieSources: newSources }));
+                                  }}
+                                  className="w-full bg-zinc-900/40 border border-zinc-900 focus:border-pink-500/30 rounded-xl px-3 py-2 text-[11px] text-white outline-none font-mono"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {!isActive && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSettings(prev => ({
+                                  ...prev,
+                                  activeMovieSourceId: src.id,
+                                  movieCrawlSource: src.crawlUrl
+                                }));
+                                showToast(`Đã chuyển nguồn hoạt động thành ${src.name}. Nhớ nhấn LƯU CẤU HÌNH.`, "success");
+                              }}
+                              className="w-full py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white text-[9px] font-black uppercase tracking-wider transition-all border-none cursor-pointer mt-2"
+                            >
+                              Kích hoạt nguồn này
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 pt-3">

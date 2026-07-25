@@ -4,9 +4,10 @@ import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Play, Heart, Info } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { cleanMovieName } from "@/utils/movieUtils";
+import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 
 interface Movie {
   _id: string;
@@ -57,12 +58,12 @@ export default function MovieHoverPopup({
     async function fetchDetails() {
       try {
         setLoadingDetails(true);
-        const res = await fetch(`https://ophim1.com/v1/api/phim/${movie.slug}`, {
+        const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${movie.slug}`), {
           signal: controller.signal
         });
         const data = await res.json();
         if (data.status === true || data.status === "success") {
-          setDetails(data.data?.item || data.movie || null);
+          setDetails(data.movie || data.data?.item || null);
         }
       } catch (err: any) {
         if (err.name !== "AbortError") {
@@ -88,12 +89,38 @@ export default function MovieHoverPopup({
     return () => window.removeEventListener("scroll", handleScroll);
   }, [onMouseLeave]);
 
-  const getImageUrl = (movieObj: Movie) => {
-    // Hover details banner is always landscape aspect-[16/10], so we prefer poster_url (landscape backdrop in OPhim)
-    const path = movieObj.poster_url || movieObj.thumb_url;
-    if (!path) return "";
-    const fileName = path.split("/").pop();
-    return `https://img.ophim.live/uploads/movies/${fileName}`;
+  const initialPopupUrl = movie.poster_url || movie.thumb_url;
+  const [popupImgSrc, setPopupImgSrc] = useState<string>(() => getImageUrl(initialPopupUrl));
+  const [popupAttempt, setPopupAttempt] = useState(0);
+
+  useEffect(() => {
+    setPopupImgSrc(getImageUrl(initialPopupUrl));
+    setPopupAttempt(0);
+  }, [movie.slug, initialPopupUrl]);
+
+  const handlePopupImgError = () => {
+    if (popupAttempt === 0 && movie.thumb_url && movie.poster_url && movie.thumb_url !== movie.poster_url) {
+      setPopupAttempt(1);
+      setPopupImgSrc(getImageUrl(movie.thumb_url));
+      return;
+    }
+
+    if (popupAttempt < 2) {
+      setPopupAttempt(2);
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      fetch(`${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && (data.backdropUrl || data.posterUrl)) {
+            setPopupImgSrc(data.backdropUrl || data.posterUrl);
+          } else {
+            setPopupImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+          }
+        })
+        .catch(() => {
+          setPopupImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+        });
+    }
   };
 
   const getImdbScore = (name: string) => {
@@ -142,8 +169,9 @@ export default function MovieHoverPopup({
         {/* Aspect Ratio matched image */}
         <div className="relative w-full overflow-hidden bg-[#12131b] rounded-t-2xl aspect-[16/10]">
           <img
-            src={getImageUrl(movie)}
+            src={popupImgSrc}
             alt={cleanedName}
+            onError={handlePopupImgError}
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover"
             decoding="async"

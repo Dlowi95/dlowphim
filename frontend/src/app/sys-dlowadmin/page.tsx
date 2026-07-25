@@ -14,7 +14,6 @@ import BannersManagementView from "@/components/admin/BannersManagementView";
 import MovieReportsView from "@/components/admin/MovieReportsView";
 import NotificationsManagementView from "@/components/admin/NotificationsManagementView";
 import SettingsView from "@/components/admin/SettingsView";
-import FeaturedRidersView from "@/components/admin/FeaturedRidersView";
 
 interface ReportedComment {
   id: string;
@@ -334,9 +333,7 @@ export default function AdminDashboardPage() {
             <SettingsView />
           )}
 
-          {activeTab === "tokusatsu" && (
-            <FeaturedRidersView />
-          )}
+
         </div>
       </div>
     </div>

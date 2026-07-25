@@ -19,8 +19,9 @@ import {
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/context/AuthContext";
+import { getImageUrl } from "@/utils/movieUtils";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import { getTmdbApiKey } from "@/utils/tmdb";
-import { getProxyUrl } from "@/utils/api";
 
 interface Banner {
   _id?: string;
@@ -88,7 +89,7 @@ export default function BannersManagementView() {
       // 3. Fetch OPhim fallback movies (20 items to filter like home page)
       let ophimMovies: any[] = [];
       try {
-        const ophimRes = await fetch(getProxyUrl("https://ophim1.com/danh-sach/phim-moi-cap-nhat?page=1"));
+        const ophimRes = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/danh-sach/phim-moi-cap-nhat?page=1`));
         if (ophimRes.ok) {
           const ophimData = await ophimRes.json();
           ophimMovies = ophimData.items || [];
@@ -104,7 +105,7 @@ export default function BannersManagementView() {
         try {
           const detailPromises = ophimMovies.slice(0, 20).map(async (movie) => {
             try {
-              const detailRes = await fetch(getProxyUrl(`https://ophim1.com/v1/api/phim/${movie.slug}`));
+              const detailRes = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${movie.slug}`));
               if (detailRes.ok) {
                 const detailData = await detailRes.json();
                 const detail = detailData.data?.item || detailData.movie || null;
@@ -155,8 +156,7 @@ export default function BannersManagementView() {
                 }
               }
               if (!backdrop) {
-                const fileName = item.movie.thumb_url.split("/").pop();
-                backdrop = `https://img.ophim.live/uploads/movies/${fileName}`;
+                backdrop = getImageUrl(item.movie.thumb_url || item.movie.poster_url);
               }
               imageCache[item.movie.slug] = backdrop;
 
@@ -182,8 +182,7 @@ export default function BannersManagementView() {
           console.error("Lỗi cào song song ở admin:", e);
           finalFallbackMovies = ophimMovies.slice(0, 5);
           finalFallbackMovies.forEach((movie) => {
-            const fileName = movie.thumb_url.split("/").pop();
-            fallbackImages.push(`https://img.ophim.live/uploads/movies/${fileName}`);
+            fallbackImages.push(getImageUrl(movie.thumb_url || movie.poster_url));
           });
         }
       }

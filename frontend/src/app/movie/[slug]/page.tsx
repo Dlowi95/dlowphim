@@ -4,13 +4,13 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Sparkles, Tv, HelpCircle, Send, Plus, MessageSquare, Image, Users, Flame, ExternalLink, Compass, Check } from "lucide-react";
 import CommentRatingSection from "@/components/CommentRatingSection";
-import { cleanMovieName } from "@/utils/movieUtils";
+import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
 import MovieCard from "@/components/MovieCard";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { getTmdbApiKey } from "@/utils/tmdb";
-import { getProxyUrl } from "@/utils/api";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 
 interface Episode {
   name: string;
@@ -49,6 +49,8 @@ interface MovieDetail {
 
 
 
+
+
 export default function MovieDetail({ params }: { params: { slug: string } }) {
   const slug = params.slug;
   const router = useRouter();
@@ -58,12 +60,13 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tmdbImages, setTmdbImages] = useState<{ backdrop?: string; poster?: string } | null>(null);
+  const [tmdbCredits, setTmdbCredits] = useState<any[]>([]);
   const [averageRating, setAverageRating] = useState<number | null>(null);
 
   // States tương tác
   const isFavorite = user?.favorites?.includes(movie?.slug || "") || false;
   const [shareCopied, setShareCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<"episodes" | "gallery" | "actors" | "recommendations">("episodes");
+  const [activeTab, setActiveTab] = useState<"episodes" | "gallery" | "actors" | "recommendations" | "trailer">("episodes");
   const [selectedEpisodeBatch, setSelectedEpisodeBatch] = useState<number>(0);
 
   // Playlist dropdown states
@@ -113,19 +116,37 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
           // Lỗi mạng hoặc server chặn không cản trở việc load tiếp
           console.error("Lỗi kiểm tra chặn phim:", blockErr);
         }
-
-        // b. Tải phim từ OPhim API
+        // b. Tải phim từ API chính thức
         let ophimDetail: any = null;
         try {
-          const res = await fetch(getProxyUrl(`https://ophim1.com/v1/api/phim/${slug}`));
+          const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${slug}`));
           if (res.ok) {
             const data = await res.json();
             if (data.status === true || data.status === "success") {
-              ophimDetail = data.data?.item || data.movie;
+              ophimDetail = {
+                ...(data.movie || data.data?.item),
+                episodes: data.episodes || data.data?.item?.episodes || []
+              };
             }
           }
         } catch (e) {
-          console.warn("Không tìm thấy trên OPhim hoặc lỗi API, thử tìm phim Custom...");
+          console.warn("Lỗi tải từ API chính thức, thử chi tiết v1...");
+        }
+
+        if (!ophimDetail) {
+          try {
+            const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${slug}`));
+            if (res.ok) {
+              const data = await res.json();
+              if (data.status === true || data.status === "success") {
+                const item = data.movie || data.data?.item;
+                const eps = data.episodes || data.data?.item?.episodes || [];
+                ophimDetail = { ...item, episodes: eps };
+              }
+            }
+          } catch (e) {
+            console.warn("Không tìm thấy trên v1/api/phim...");
+          }
         }
 
         if (ophimDetail) {
@@ -151,19 +172,27 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                   }
                   setTmdbImages(images);
                 }
+
+                // Cào thêm danh sách Diễn viên & Hình ảnh chân thực từ TMDB
+                const creditsRes = await fetch(
+                  `${API_URL}/movies/credits/${slug}?title=${encodeURIComponent(ophimDetail.origin_name || ophimDetail.name)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`
+                );
+                if (creditsRes.ok) {
+                  const creditsData = await creditsRes.json();
+                  setTmdbCredits(creditsData);
+                }
               } catch (e) {
-                console.error("Lỗi cào TMDB ảnh cho MovieDetail qua proxy:", e);
+                console.error("Lỗi cào TMDB ảnh/diễn viên cho MovieDetail qua proxy:", e);
               }
             })();
           }
         } else {
-          // c. Nếu OPhim không có, thử tìm trong Custom Movies
+          // d. Nếu OPhim không có, thử tìm trong Custom Movies của hệ thống
           const customRes = await fetch(`${API_URL}/movies/custom/${slug}`);
           if (!customRes.ok) {
             throw new Error("Không tìm thấy thông tin phim.");
           }
           const customData = await customRes.json();
-          // Convert custom data to MovieDetail format
           const adaptedMovie: MovieDetail = {
             _id: customData._id,
             name: customData.name,
@@ -259,7 +288,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
       try {
         setLoadingRelated(true);
         const genreSlug = movie!.category[0].slug;
-        const res = await fetch(getProxyUrl(`https://ophim1.com/v1/api/the-loai/${genreSlug}?page=1`));
+        const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/the-loai/${genreSlug}?page=1`));
         const data = await res.json();
 
         if (data.status === true || data.status === "success") {
@@ -287,26 +316,23 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
     return score.toFixed(1);
   };
 
-  // Trình biến đổi ảnh gốc thành link ảnh cdn .live cực nét và ổn định
-  const getImageUrl = (path: string) => {
-    if (!path) return "";
-    if (path.startsWith("http")) return path;
-    const fileName = path.split("/").pop();
-    return `https://img.ophim.live/uploads/movies/${fileName}`;
-  };
-
   // Chuyển đổi YouTube URL thành định dạng nhúng
-  const getYoutubeEmbedUrl = (url?: string) => {
-    if (!url) return "";
-    let videoId = "";
-    if (url.includes("v=")) {
-      videoId = url.split("v=")[1]?.split("&")[0];
-    } else if (url.includes("youtu.be/")) {
-      videoId = url.split("youtu.be/")[1]?.split("?")[0];
-    } else if (url.includes("embed/")) {
-      return url;
+  const getYoutubeEmbedUrl = (url?: string, fallbackQuery?: string) => {
+    if (url && url.trim()) {
+      let videoId = "";
+      if (url.includes("v=")) {
+        videoId = url.split("v=")[1]?.split("&")[0];
+      } else if (url.includes("youtu.be/")) {
+        videoId = url.split("youtu.be/")[1]?.split("?")[0];
+      } else if (url.includes("embed/")) {
+        return url;
+      }
+      if (videoId) return `https://www.youtube.com/embed/${videoId}`;
     }
-    return videoId ? `https://www.youtube.com/embed/${videoId}` : "";
+    if (fallbackQuery && fallbackQuery.trim()) {
+      return `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(fallbackQuery + " trailer")}`;
+    }
+    return "";
   };
 
   // Chọn màu gradient cho chữ cái avatar
@@ -428,12 +454,25 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                     <Play size={14} className="fill-white" /> Xem Trailer
                   </button>
                 ) : (
-                  <button
-                    onClick={handleWatchNow}
-                    className="flex items-center gap-2 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-extrabold text-xs md:text-sm px-6 py-3 rounded-full transition-all duration-300 hover:scale-105 hover:shadow-[0_0_25px_rgba(236,72,153,0.7)] active:scale-95 cursor-pointer shadow-lg shadow-pink-500/25"
-                  >
-                    <Play size={14} className="fill-white" /> Xem Ngay
-                  </button>
+                  <>
+                    <button
+                      onClick={handleWatchNow}
+                      className="flex items-center gap-2 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-extrabold text-xs md:text-sm px-6 py-3 rounded-full transition-all duration-300 hover:scale-105 hover:shadow-[0_0_25px_rgba(236,72,153,0.7)] active:scale-95 cursor-pointer shadow-lg shadow-pink-500/25"
+                    >
+                      <Play size={14} className="fill-white" /> Xem Ngay
+                    </button>
+                    {movie.trailer_url && (
+                      <button
+                        onClick={() => {
+                          setActiveTab("trailer");
+                          document.getElementById("right-tabs-area")?.scrollIntoView({ behavior: "smooth" });
+                        }}
+                        className="flex items-center gap-2 border border-zinc-700 bg-zinc-900/40 hover:bg-zinc-800/60 text-zinc-300 hover:text-white font-extrabold text-xs md:text-sm px-6 py-3 rounded-full transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer shadow-lg"
+                      >
+                        <Film size={14} /> Xem Trailer
+                      </button>
+                    )}
+                  </>
                 )}
 
                 {/* Vertical interactive buttons */}
@@ -570,6 +609,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
               <div className="flex border-b border-zinc-900/40 gap-6 text-[11px] md:text-xs select-none pt-2">
                 {[
                   { id: "episodes", label: isTrailerOnly ? "Trailer Phim" : "Tập phim" },
+                  ...(movie.trailer_url && !isTrailerOnly ? [{ id: "trailer", label: "Trailer" }] : []),
                   { id: "gallery", label: "Gallery" },
                   { id: "actors", label: "Diễn viên" },
                   { id: "recommendations", label: "Đề xuất" }
@@ -711,6 +751,24 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
         {/* CỘT PHẢI: Tab Content & Bình luận dưới cùng */}
         <div id="right-tabs-area" className="space-y-6 text-left mt-6 lg:mt-0">
 
+          {/* TAB 0: TRAILER RIÊNG BIỆT */}
+          {activeTab === "trailer" && movie.trailer_url && (
+            <div className="space-y-4">
+              <h3 className="text-base font-bold uppercase tracking-tight flex items-center gap-2">
+                <Film size={16} className="text-pink-500" /> Trailer phim chính thức
+              </h3>
+              <div className="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl bg-black">
+                <iframe
+                  src={getYoutubeEmbedUrl(movie.trailer_url)}
+                  frameBorder="0"
+                  allowFullScreen
+                  className="w-full h-full"
+                  title={`${cleanedName} - Trailer`}
+                />
+              </div>
+            </div>
+          )}
+
           {/* TAB 1: TẬP PHIM / TRAILER */}
           {activeTab === "episodes" && (
             <div className="space-y-5">
@@ -719,33 +777,16 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                   <h3 className="text-base font-bold uppercase tracking-tight flex items-center gap-2">
                     <Film size={16} className="text-pink-500" /> Trailer phim chính thức
                   </h3>
-                  {movie.trailer_url ? (
-                    <div className="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl bg-black">
-                      <iframe
-                        src={getYoutubeEmbedUrl(movie.trailer_url)}
-                        frameBorder="0"
-                        allowFullScreen
-                        className="w-full h-full"
-                        title={`${cleanedName} - Trailer`}
-                      />
-                    </div>
-                  ) : (
-                    <div className="p-8 rounded-xl border border-zinc-800 bg-zinc-950/40 text-center flex flex-col items-center justify-center gap-2.5">
-                      <HelpCircle size={36} className="text-zinc-650 animate-pulse" />
-                      <h4 className="font-extrabold text-xs text-zinc-300">Trailer đang được cập nhật</h4>
-                      <p className="text-[11px] text-zinc-500 max-w-sm">
-                        Hiện phim này chưa có video trailer từ máy chủ. Bạn có thể tìm kiếm trên YouTube nhé!
-                      </p>
-                      <a
-                        href={`https://www.youtube.com/results?search_query=${encodeURIComponent(cleanedName + " trailer")}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-1 text-xs font-black text-pink-500 hover:underline flex items-center gap-1"
-                      >
-                        Tìm kiếm trên YouTube <ExternalLink size={12} />
-                      </a>
-                    </div>
-                  )}
+                  <div className="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl bg-black border border-zinc-800">
+                    <iframe
+                      src={getYoutubeEmbedUrl(movie.trailer_url, cleanedName)}
+                      frameBorder="0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                      className="w-full h-full"
+                      title={`${cleanedName} - Trailer`}
+                    />
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -857,16 +898,50 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
           {activeTab === "actors" && (
             <div className="space-y-4">
               <h3 className="text-base font-bold uppercase tracking-tight flex items-center gap-2">
-                <Users size={16} className="text-pink-500" /> Dàn diễn viên tham gia ({movie.actor?.length || 0})
+                <Users size={16} className="text-pink-500" /> Dàn diễn viên tham gia ({tmdbCredits.length > 0 ? tmdbCredits.length : (movie.actor?.length || 0)})
               </h3>
-              {movie.actor && movie.actor.filter(a => a && a.trim() && a !== "Đang cập nhật").length > 0 ? (
+
+              {tmdbCredits.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                  {tmdbCredits.map((actor, idx) => (
+                    <div
+                      key={`tmdb-actor-${actor.id || idx}`}
+                      onClick={() => router.push(`/search?keyword=${encodeURIComponent(actor.name)}`)}
+                      className="p-3.5 rounded-2xl bg-zinc-950/70 border border-zinc-900/60 flex flex-col items-center text-center gap-2.5 shadow-sm hover:border-pink-500/50 hover:scale-103 transition-all cursor-pointer group"
+                      title={`Tìm phim của ${actor.name}`}
+                    >
+                      <div className="w-16 h-16 rounded-full overflow-hidden shrink-0 bg-zinc-900 border-2 border-pink-500/30 group-hover:border-pink-500 shadow-lg relative">
+                        {actor.profileUrl ? (
+                          <img
+                            src={actor.profileUrl}
+                            alt={actor.name}
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                          />
+                        ) : (
+                          <div className={`w-full h-full font-black text-base flex items-center justify-center bg-gradient-to-tr ${getInitialsGradient(actor.name)} text-white`}>
+                            {actor.name ? actor.name[0].toUpperCase() : "?"}
+                          </div>
+                        )}
+                      </div>
+                      <div className="w-full space-y-0.5">
+                        <span className="text-xs font-black text-zinc-100 line-clamp-1 group-hover:text-pink-400 transition-colors">{actor.name}</span>
+                        <span className="text-[10px] text-zinc-400 font-bold line-clamp-1 italic">{actor.character || "Diễn viên"}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : movie.actor && movie.actor.filter(a => a && a.trim() && a !== "Đang cập nhật").length > 0 ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
                   {movie.actor.filter(a => a && a.trim() && a !== "Đang cập nhật").map((actor, idx) => (
-                    <div key={`actor-list-${idx}`} className="p-3.5 rounded-xl bg-zinc-950/70 border border-zinc-900/60 flex flex-col items-center text-center gap-2.5 shadow-sm hover:border-zinc-800 transition-all hover:-translate-y-0.5 duration-200">
-                      <div className={`w-12 h-12 rounded-full font-black text-sm flex items-center justify-center bg-gradient-to-tr ${getInitialsGradient(actor)} shadow`}>
+                    <div
+                      key={`actor-list-${idx}`}
+                      onClick={() => router.push(`/search?keyword=${encodeURIComponent(actor)}`)}
+                      className="p-3.5 rounded-xl bg-zinc-950/70 border border-zinc-900/60 flex flex-col items-center text-center gap-2.5 shadow-sm hover:border-pink-500/40 transition-all hover:-translate-y-0.5 duration-200 cursor-pointer group"
+                    >
+                      <div className={`w-12 h-12 rounded-full font-black text-sm flex items-center justify-center bg-gradient-to-tr ${getInitialsGradient(actor)} shadow group-hover:scale-105 transition-transform`}>
                         {actor && actor[0] ? actor[0].toUpperCase() : "?"}
                       </div>
-                      <span className="text-[11px] font-extrabold text-zinc-200 leading-snug truncate w-full">{actor}</span>
+                      <span className="text-[11px] font-extrabold text-zinc-200 leading-snug truncate w-full group-hover:text-pink-400 transition-colors">{actor}</span>
                       <span className="text-[8px] text-zinc-650 font-black uppercase tracking-wider">Diễn viên</span>
                     </div>
                   ))}

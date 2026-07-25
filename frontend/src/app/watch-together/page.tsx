@@ -37,7 +37,7 @@ const getImageUrl = (path: string) => {
     return path;
   }
   const fileName = path.split("/").pop();
-  return `https://img.ophim.live/uploads/movies/${fileName}`;
+  return `https://phimimg.com/uploads/movies/${fileName}`;
 };
 
 const isCreatedToday = (dateStr: string) => {
@@ -419,6 +419,35 @@ function RoomCard({ room }: { room: PublicRoom }) {
     } catch (err) {}
   };
 
+  const [roomImgSrc, setRoomImgSrc] = useState<string>(() => getImageUrl(posterUrl));
+  const [roomFailed, setRoomFailed] = useState(false);
+
+  useEffect(() => {
+    setRoomImgSrc(getImageUrl(posterUrl));
+    setRoomFailed(false);
+  }, [posterUrl, room.movieSlug]);
+
+  const handleRoomImgError = () => {
+    if (roomFailed) return;
+    setRoomFailed(true);
+    if (!room.movieSlug) {
+      setRoomImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+      return;
+    }
+    fetch(`${API_URL}/movies/logo/${room.movieSlug}?title=${encodeURIComponent(room.movieName || "")}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && (data.posterUrl || data.backdropUrl)) {
+          setRoomImgSrc(data.posterUrl || data.backdropUrl);
+        } else {
+          setRoomImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+        }
+      })
+      .catch(() => {
+        setRoomImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+      });
+  };
+
   return (
     <Link href={`/watch-together/room/${room.roomId}`} className="group block text-left">
       {/* Thumbnail */}
@@ -426,22 +455,20 @@ function RoomCard({ room }: { room: PublicRoom }) {
         {posterUrl ? (
           <>
             {/* Blurred Background */}
-            <Image
-              src={getImageUrl(posterUrl)}
+            <img
+              src={roomImgSrc}
               alt=""
-              fill
-              className="object-cover blur-[8px] opacity-35"
-              unoptimized
+              onError={handleRoomImgError}
+              className="w-full h-full object-cover blur-[8px] opacity-35"
             />
             {/* Centered Vertical Poster */}
             <div className="absolute inset-0 flex items-center justify-center p-1.5">
               <div className="relative h-full aspect-[2/3] rounded-lg overflow-hidden shadow-2xl">
-                <Image
-                  src={getImageUrl(posterUrl)}
+                <img
+                  src={roomImgSrc}
                   alt={room.movieName}
-                  fill
-                  className="object-cover"
-                  unoptimized
+                  onError={handleRoomImgError}
+                  className="w-full h-full object-cover"
                 />
               </div>
             </div>

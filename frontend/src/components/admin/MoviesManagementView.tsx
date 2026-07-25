@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/context/AuthContext";
+import { getImageUrl } from "@/utils/movieUtils";
 import Pagination from "./Pagination";
 import MoviesOverrideView from "./MoviesOverrideView";
 
@@ -589,7 +590,7 @@ export default function MoviesManagementView() {
                     className="bg-[#0c0d12] border border-zinc-900/60 rounded-2xl p-4 flex gap-4 transition-all hover:border-zinc-800"
                   >
                     <img
-                      src={movie.thumb_url}
+                      src={getImageUrl(movie.thumb_url || movie.poster_url)}
                       alt={movie.name}
                       className="w-16 h-24 object-cover rounded-xl bg-zinc-900 border border-zinc-800/40 shrink-0"
                       onError={(e) => {

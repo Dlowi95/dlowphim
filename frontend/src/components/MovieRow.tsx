@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 
 import Link from "next/link";
 import MovieCard from "@/components/MovieCard";
-import { cleanSlug } from "@/utils/movieUtils";
+import { cleanSlug, getImageUrl } from "@/utils/movieUtils";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 
 interface Movie {
   _id: string;
@@ -59,15 +60,6 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
     }
   };
 
-  const getImageUrl = (movie: Movie) => {
-    const path = movie.poster_url || movie.thumb_url;
-    if (!path) return "";
-    const fileName = path.split("/").pop();
-    return `https://img.ophim.live/uploads/movies/${fileName}`;
-  };
-
-
-
   const getUniqueMovies = (items: Movie[]) => {
     const seen = new Set<string>();
     return items.filter((item) => {
@@ -85,7 +77,7 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
     async function fetchMovies() {
       try {
         setLoading(true);
-        const res = await fetch(`https://ophim1.com/v1/api/quoc-gia/${countrySlug}?page=1`);
+        const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/quoc-gia/${countrySlug}?page=1`));
         const data = await res.json();
         if (data.status === "success" || data.status === true) {
           const items = data.data?.items || data.items || [];
@@ -107,7 +99,7 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
     try {
       setLoadingMore(true);
       const nextPage = page + 1;
-      const res = await fetch(`https://ophim1.com/v1/api/quoc-gia/${countrySlug}?page=${nextPage}`);
+      const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/quoc-gia/${countrySlug}?page=${nextPage}`));
       const data = await res.json();
       if (data.status === "success" || data.status === true) {
         const items = data.data?.items || data.items || [];

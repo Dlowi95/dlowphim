@@ -8,6 +8,7 @@ import Link from "next/link";
 import AuthModal from "./AuthModal";
 import { useAuth } from "@/context/AuthContext";
 import { cleanMovieName, cleanSlug } from "@/utils/movieUtils";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 
 export default function NavbarComponent() {
   const pathname = usePathname();
@@ -92,7 +93,7 @@ export default function NavbarComponent() {
       setIsSearching(true);
       try {
         const res = await fetch(
-          `https://ophim1.com/v1/api/tim-kiem?keyword=${encodeURIComponent(searchQuery.trim())}`
+          getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/tim-kiem?keyword=${encodeURIComponent(searchQuery.trim())}`)
         );
         const data = await res.json();
         if (data.status === "success" || data.status === true) {

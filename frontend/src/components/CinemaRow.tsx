@@ -4,8 +4,9 @@ import React, { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronRight } from "lucide-react";
-import { cleanMovieName, cleanSlug } from "@/utils/movieUtils";
+import { cleanMovieName, cleanSlug, getImageUrl } from "@/utils/movieUtils";
 import MovieHoverPopup from "./MovieHoverPopup";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 
 interface Movie {
   _id: string;
@@ -93,8 +94,7 @@ export default function CinemaRow() {
         setLoading(true);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
-
-        const res = await fetch("https://ophim1.com/v1/api/danh-sach/phim-chieu-rap?page=1", {
+        const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/danh-sach/phim-chieu-rap?page=1`), {
           signal: controller.signal
         });
         clearTimeout(timeoutId);
@@ -106,18 +106,16 @@ export default function CinemaRow() {
             // Deduplicate base slug
             const seen = new Set<string>();
             const uniqueItems = items.filter((item: any) => {
+              // 1. Loại bỏ phim sắp chiếu / chỉ có trailer
+              const epCurrent = (item.episode_current || "").toLowerCase().trim();
+              const isTrailerOnly = epCurrent.includes("trailer") || !item.last_episodes || item.last_episodes.length === 0;
+              if (isTrailerOnly) return false;
+
+              // 2. Deduplicate base slug
               const baseSlug = cleanSlug(item.slug);
               if (seen.has(baseSlug)) return false;
               seen.add(baseSlug);
               return true;
-            });
-
-            // Sort by TMDB popularity (vote count) or year descending
-            uniqueItems.sort((a: Movie, b: Movie) => {
-              const votesA = a.tmdb?.vote_count || 0;
-              const votesB = b.tmdb?.vote_count || 0;
-              if (votesB !== votesA) return votesB - votesA;
-              return (b.year || 2026) - (a.year || 2026);
             });
 
             setMovies(uniqueItems.slice(0, 10));
@@ -257,18 +255,70 @@ function CinemaMovieCard({ movie, wasDraggingRef }: CinemaMovieCardProps) {
   const cleanedOriginName = cleanMovieName(movie.origin_name);
   const ageRating = getAgeRating(movie.name, movie.category);
 
-  useEffect(() => {
-    setMounted(true);
-    return () => {
-      if (hoverTimer.current) clearTimeout(hoverTimer.current);
-      if (closeTimer.current) clearTimeout(closeTimer.current);
-    };
-  }, []);
+  const initialBannerUrl = getImageUrl(movie.poster_url || movie.thumb_url);
+  const initialThumbUrl = getImageUrl(movie.thumb_url || movie.poster_url);
 
-  const getImageUrl = (path?: string) => {
-    if (!path) return "";
-    const fileName = path.split("/").pop();
-    return `https://img.ophim.live/uploads/movies/${fileName}`;
+  const [bannerImgSrc, setBannerImgSrc] = useState<string>(initialBannerUrl);
+  const [thumbImgSrc, setThumbImgSrc] = useState<string>(initialThumbUrl);
+
+  const [bannerAttempt, setBannerAttempt] = useState(0);
+  const [thumbAttempt, setThumbAttempt] = useState(0);
+
+  useEffect(() => {
+    setBannerImgSrc(getImageUrl(movie.poster_url || movie.thumb_url));
+    setThumbImgSrc(getImageUrl(movie.thumb_url || movie.poster_url));
+    setBannerAttempt(0);
+    setThumbAttempt(0);
+  }, [movie.slug, movie.poster_url, movie.thumb_url]);
+
+  const handleBannerImgError = () => {
+    if (bannerAttempt === 0 && movie.thumb_url && movie.poster_url && movie.thumb_url !== movie.poster_url) {
+      setBannerAttempt(1);
+      setBannerImgSrc(getImageUrl(movie.thumb_url));
+      return;
+    }
+
+    if (bannerAttempt < 2) {
+      setBannerAttempt(2);
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      fetch(`${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && (data.backdropUrl || data.posterUrl)) {
+            setBannerImgSrc(data.backdropUrl || data.posterUrl);
+          } else {
+            setBannerImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+          }
+        })
+        .catch(() => {
+          setBannerImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+        });
+    }
+  };
+
+  const handleThumbImgError = () => {
+    if (thumbAttempt === 0 && movie.poster_url && movie.thumb_url && movie.poster_url !== movie.thumb_url) {
+      setThumbAttempt(1);
+      setThumbImgSrc(getImageUrl(movie.poster_url));
+      return;
+    }
+
+    if (thumbAttempt < 2) {
+      setThumbAttempt(2);
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      fetch(`${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && (data.posterUrl || data.backdropUrl)) {
+            setThumbImgSrc(data.posterUrl || data.backdropUrl);
+          } else {
+            setThumbImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+          }
+        })
+        .catch(() => {
+          setThumbImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+        });
+    }
   };
 
   const handleMouseEnter = (e: React.MouseEvent) => {
@@ -351,8 +401,9 @@ function CinemaMovieCard({ movie, wasDraggingRef }: CinemaMovieCardProps) {
         >
           {/* OPhim poster_url is the horizontal landscape backdrop */}
           <img
-            src={getImageUrl(movie.poster_url || movie.thumb_url)}
+            src={bannerImgSrc}
             alt={cleanedName}
+            onError={handleBannerImgError}
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover rounded-2xl transition-transform duration-500"
             loading="lazy"
@@ -380,8 +431,9 @@ function CinemaMovieCard({ movie, wasDraggingRef }: CinemaMovieCardProps) {
           >
             {/* OPhim thumb_url is the vertical portrait poster */}
             <img
-              src={getImageUrl(movie.thumb_url || movie.poster_url)}
+              src={thumbImgSrc}
               alt={cleanedName}
+              onError={handleThumbImgError}
               referrerPolicy="no-referrer"
               className="w-full h-full object-cover rounded-lg"
               loading="lazy"

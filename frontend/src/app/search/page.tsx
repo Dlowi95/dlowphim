@@ -6,7 +6,7 @@ import { Loader2 } from "lucide-react";
 import MovieCard from "@/components/MovieCard";
 import { cleanSlug } from "@/utils/movieUtils";
 import Pagination from "@/components/Pagination";
-import { getProxyUrl } from "@/utils/api";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 
 function SearchContent() {
   const searchParams = useSearchParams();
@@ -30,19 +30,23 @@ function SearchContent() {
         let url = "";
         
         if (keyword) {
-          url = `https://ophim1.com/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&page=${pageUrl}`;
+          url = `${MOVIE_API_DOMAIN}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&page=${pageUrl}`;
         } else if (genre) {
           if (genre === "hoat-hinh" || genre === "phim-chieu-rap") {
-            url = `https://ophim1.com/v1/api/danh-sach/${genre}?page=${pageUrl}`;
+            url = `${MOVIE_API_DOMAIN}/v1/api/danh-sach/${genre}?page=${pageUrl}`;
           } else {
-            url = `https://ophim1.com/v1/api/the-loai/${genre}?page=${pageUrl}`;
+            url = `${MOVIE_API_DOMAIN}/v1/api/the-loai/${genre}?page=${pageUrl}`;
           }
         } else if (country) {
-          url = `https://ophim1.com/v1/api/quoc-gia/${country}?page=${pageUrl}`;
+          url = `${MOVIE_API_DOMAIN}/v1/api/quoc-gia/${country}?page=${pageUrl}`;
         } else if (type) {
-          url = `https://ophim1.com/v1/api/danh-sach/${type}?page=${pageUrl}`;
+          if (type === "phim-sap-chieu") {
+            url = `https://ophim1.com/v1/api/danh-sach/phim-sap-chieu?page=${pageUrl}`;
+          } else {
+            url = `${MOVIE_API_DOMAIN}/v1/api/danh-sach/${type}?page=${pageUrl}`;
+          }
         } else {
-          url = `https://ophim1.com/v1/api/danh-sach/phim-moi-cap-nhat?page=${pageUrl}`;
+          url = `${MOVIE_API_DOMAIN}/v1/api/danh-sach/phim-moi-cap-nhat?page=${pageUrl}`;
         }
 
         const controller = new AbortController();
@@ -51,11 +55,25 @@ function SearchContent() {
           controller.abort();
         }, 6000); // 6 seconds timeout
 
-        const res = await fetch(getProxyUrl(url), { signal: controller.signal });
-        clearTimeout(timeoutId);
-        const data = await res.json();
+        let data: any = null;
+        let fetchSuccess = false;
 
-        if (data.status === "success" || data.status === true) {
+        try {
+          const res = await fetch(getProxyUrl(url), { signal: controller.signal });
+          if (res.ok) {
+            data = await res.json();
+            if (data.status === "success" || data.status === true) {
+              const items = data.data?.items || data.items || [];
+              if (items.length > 0) {
+                fetchSuccess = true;
+              }
+            }
+          }
+        } catch (e) {}
+
+        clearTimeout(timeoutId);
+
+        if (fetchSuccess && data) {
           const items = data.data?.items || data.items || [];
           
           // Deduplicate based on base slug to avoid showing duplicate seasons/parts of the same series

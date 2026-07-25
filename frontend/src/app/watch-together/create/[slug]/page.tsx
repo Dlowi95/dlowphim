@@ -8,7 +8,7 @@ import { ArrowLeft, Film, Play, Calendar, EyeOff, Sparkles, AlertCircle } from "
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { cleanMovieName } from "@/utils/movieUtils";
-import { getProxyUrl } from "@/utils/api";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -49,7 +49,7 @@ export default function CreateRoomPage() {
     async function fetchMovieDetail() {
       try {
         setLoading(true);
-        const res = await fetch(getProxyUrl(`https://ophim1.com/v1/api/phim/${slug}`));
+        const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${slug}`));
         if (res.ok) {
           const data = await res.json();
           if (data.status === true || data.status === "success") {
@@ -86,7 +86,7 @@ export default function CreateRoomPage() {
     if (!path) return "";
     if (path.startsWith("http")) return path;
     const fileName = path.split("/").pop();
-    return `https://img.ophim.live/uploads/movies/${fileName}`;
+    return `https://phimimg.com/uploads/movies/${fileName}`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

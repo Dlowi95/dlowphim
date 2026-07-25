@@ -227,6 +227,68 @@ export class MoviesService {
     return { logoUrl, backdropUrl, posterUrl };
   }
 
+  // ─── GET MOVIE ACTORS & CREDITS FROM TMDB ───
+  async getMovieCredits(slug: string, title?: string, tmdbId?: string, tmdbType?: string): Promise<any[]> {
+    const trimmedSlug = slug.trim().toLowerCase();
+
+    // 1. Kiểm tra cache trong DB
+    try {
+      const cached = await this.movieLogoModel.findOne({ slug: trimmedSlug }).exec();
+      if (cached && cached.credits && cached.credits.length > 0) {
+        return cached.credits;
+      }
+    } catch (e) {}
+
+    let credits: any[] = [];
+    try {
+      const settings = await this.settingsService.getSettings();
+      let apiKey = settings.tmdbApiKey && settings.tmdbApiKey.trim() ? settings.tmdbApiKey.trim() : '591c025bb1641315ae087330271132bc';
+
+      let targetId = tmdbId ? tmdbId.trim() : '';
+      let targetType = tmdbType ? tmdbType.trim() : 'movie';
+
+      // Nếu chưa có TMDB ID, tìm kiếm qua title
+      if (!targetId && title) {
+        const searchUrl = `https://api.themoviedb.org/3/search/multi?api_key=${apiKey}&query=${encodeURIComponent(title)}&language=vi-VN`;
+        const sRes = await fetch(searchUrl);
+        if (sRes.ok) {
+          const sData = await sRes.json();
+          const match = sData.results?.[0];
+          if (match) {
+            targetId = match.id;
+            targetType = match.media_type || 'movie';
+          }
+        }
+      }
+
+      if (targetId) {
+        const creditsUrl = `https://api.themoviedb.org/3/${targetType}/${targetId}/credits?api_key=${apiKey}&language=vi-VN`;
+        const cRes = await fetch(creditsUrl);
+        if (cRes.ok) {
+          const cData = await cRes.json();
+          credits = (cData.cast || []).slice(0, 18).map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            character: c.character || 'Diễn viên',
+            profileUrl: c.profile_path ? `https://image.tmdb.org/t/p/w185${c.profile_path}` : null,
+          }));
+        }
+      }
+
+      if (credits.length > 0) {
+        await this.movieLogoModel.findOneAndUpdate(
+          { slug: trimmedSlug },
+          { credits },
+          { upsert: true, returnDocument: 'after' }
+        ).exec();
+      }
+    } catch (err: any) {
+      console.warn(`[TMDB] Không thể kết nối lấy diễn viên cho "${trimmedSlug}" (Có thể bị nhà mạng chặn):`, err.message || err);
+    }
+
+    return credits;
+  }
+
   // ─── OPHIM API PROXY CACHE ───
   private ophimCache = new Map<string, { data: any; expiry: number }>();
 
@@ -238,11 +300,22 @@ export class MoviesService {
     if (cached && cached.expiry > now) {
       data = JSON.parse(JSON.stringify(cached.data));
     } else {
-      // Lấy domain nguồn cào từ Settings
-      let baseDomain = 'https://ophim1.com';
+      // Lấy nguồn phim đang active từ Settings
+      let baseDomain = 'https://phimapi.com'; // Default to phimapi
+      let activeSourceId = 'phimapi';
+
       try {
         const settings = await this.settingsService.getSettings();
-        if (settings.movieCrawlSource) {
+        if (settings.activeMovieSourceId) {
+          activeSourceId = settings.activeMovieSourceId;
+        }
+
+        if (settings.movieSources && settings.movieSources.length > 0) {
+          const activeSrc = settings.movieSources.find(s => s.id === activeSourceId);
+          if (activeSrc) {
+            baseDomain = activeSrc.domain;
+          }
+        } else if (settings.movieCrawlSource) {
           const url = new URL(settings.movieCrawlSource);
           baseDomain = url.origin;
         }
@@ -250,14 +323,26 @@ export class MoviesService {
         // url không hợp lệ hoặc lỗi settings
       }
 
-      const targetUrl = `${baseDomain}${path}`;
+      // Smart Proxy Path Rewriter
+      let finalPath = path;
+      if (activeSourceId === 'phimapi') {
+        if (finalPath.startsWith('/v1/api/phim/')) {
+          finalPath = finalPath.replace('/v1/api/phim/', '/phim/');
+        }
+      } else if (activeSourceId === 'ophim') {
+        if (finalPath.startsWith('/phim/') && !finalPath.startsWith('/phim-')) {
+          finalPath = finalPath.replace('/phim/', '/v1/api/phim/');
+        }
+      }
+
+      const targetUrl = `${baseDomain}${finalPath}`;
       try {
         const res = await fetch(targetUrl);
         if (!res.ok) {
           if (cached) {
             data = JSON.parse(JSON.stringify(cached.data));
           } else {
-            throw new Error(`Failed to fetch from source: ${res.statusText}`);
+            data = { status: false, message: `Phim không tồn tại trên nguồn cào: ${res.statusText}` };
           }
         } else {
           data = await res.json();
@@ -277,7 +362,7 @@ export class MoviesService {
 
     // ─── TRANSLATION & OVERRIDE INTERCEPTOR ───
     if (data) {
-      const isDetailMatch = path.match(/^\/v1\/api\/phim\/([^/?#]+)/);
+      const isDetailMatch = path.match(/^\/(?:v1\/api\/)?phim\/([^/?#]+)/);
       if (isDetailMatch) {
         const slug = isDetailMatch[1].trim().toLowerCase();
         const movie = data.data?.item || data.movie;

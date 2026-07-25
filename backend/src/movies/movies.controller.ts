@@ -39,6 +39,16 @@ export class MoviesController {
     return this.moviesService.getMovieLogo(slug, title, tmdbId, tmdbType);
   }
 
+  @Get('credits/:slug')
+  async getMovieCredits(
+    @Param('slug') slug: string,
+    @Query('title') title?: string,
+    @Query('tmdbId') tmdbId?: string,
+    @Query('tmdbType') tmdbType?: string,
+  ) {
+    return this.moviesService.getMovieCredits(slug, title, tmdbId, tmdbType);
+  }
+
   @Get('ophim-proxy')
   async fetchOphimProxy(@Query('path') path: string) {
     return this.moviesService.fetchOphimProxy(path);

@@ -7,18 +7,17 @@ import { useRouter } from "next/navigation";
 import Interests from "@/components/Interests";
 import MovieRow from "@/components/MovieRow";
 import MovieCard from "@/components/MovieCard";
-import { cleanMovieName } from "@/utils/movieUtils";
+import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
 import Top10Row from "@/components/Top10Row";
 import UpcomingRow from "@/components/UpcomingRow";
 import CinemaRow from "@/components/CinemaRow";
 import AnimeRow from "@/components/AnimeRow";
-import KamenRiderRow from "@/components/KamenRiderRow";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 import Image from "next/image";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { getTmdbApiKey } from "@/utils/tmdb";
-import { getProxyUrl } from "@/utils/api";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 
 const FALLBACK_CANDIDATES = [
   {
@@ -148,6 +147,33 @@ export default function HomePage() {
 
   const isFavorited = user?.favorites?.includes(heroCandidates[activeHeroIndex]?.slug || "") || false;
 
+  const activeMovieCandidate = heroCandidates[activeHeroIndex];
+  const heroDetailCandidate = detailsCache[activeMovieCandidate?.slug || ""];
+  const initialHeroUrl = backdropCache[activeMovieCandidate?.slug || ""] || getImageUrl(heroDetailCandidate?.poster_url || activeMovieCandidate?.poster_url || heroDetailCandidate?.thumb_url || activeMovieCandidate?.thumb_url);
+  const [heroBackdropSrc, setHeroBackdropSrc] = useState<string>(initialHeroUrl);
+
+  useEffect(() => {
+    if (activeMovieCandidate) {
+      setHeroBackdropSrc(backdropCache[activeMovieCandidate.slug] || getImageUrl(heroDetailCandidate?.poster_url || activeMovieCandidate?.poster_url || heroDetailCandidate?.thumb_url || activeMovieCandidate?.thumb_url));
+    }
+  }, [activeMovieCandidate?.slug, heroDetailCandidate?.poster_url, heroDetailCandidate?.thumb_url, backdropCache]);
+
+  const handleHeroBackdropError = () => {
+    if (!activeMovieCandidate) return;
+    fetch(`${API_URL}/movies/logo/${activeMovieCandidate.slug}?title=${encodeURIComponent(activeMovieCandidate.origin_name || activeMovieCandidate.name)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && (data.backdropUrl || data.posterUrl)) {
+          setHeroBackdropSrc(data.backdropUrl || data.posterUrl);
+        } else {
+          setHeroBackdropSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+        }
+      })
+      .catch(() => {
+        setHeroBackdropSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+      });
+  };
+
   // 1. Fetch banners & danh sách phim
   useEffect(() => {
     async function fetchData() {
@@ -174,7 +200,7 @@ export default function HomePage() {
         const timeoutId = setTimeout(() => controller.abort(), 6000);
 
         try {
-          const res = await fetch(getProxyUrl("https://ophim1.com/danh-sach/phim-moi-cap-nhat?page=1"), {
+          const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/danh-sach/phim-moi-cap-nhat?page=1`), {
             signal: controller.signal
           });
           clearTimeout(timeoutId);
@@ -196,7 +222,7 @@ export default function HomePage() {
           try {
             const detailPromises = ophimMovies.slice(0, 20).map(async (movie) => {
               try {
-                const detailRes = await fetch(getProxyUrl(`https://ophim1.com/v1/api/phim/${movie.slug}`));
+                const detailRes = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${movie.slug}`));
                 if (detailRes.ok) {
                   const detailData = await detailRes.json();
                   const detail = detailData.data?.item || detailData.movie || null;
@@ -324,7 +350,7 @@ export default function HomePage() {
 
     async function prefetchDetail(movie: any) {
       try {
-        const res = await fetch(getProxyUrl(`https://ophim1.com/v1/api/phim/${movie.slug}`));
+        const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${movie.slug}`));
         const data = await res.json();
         if (data.status === "success" || data.status === true) {
           const detail = data.data?.item || data.movie || null;
@@ -417,17 +443,7 @@ export default function HomePage() {
 
 
 
-  // Trình biến đổi ảnh gốc thành link ảnh cdn .live cực nét và ổn định
-  const getImageUrl = (path: string) => {
-    if (!path) return "";
-    if (path.startsWith("http://") || path.startsWith("https://")) {
-      return path;
-    }
-    const fileName = path.split("/").pop();
-    return `https://img.ophim.live/uploads/movies/${fileName}`;
-  };
-
-  // Hàm loại bỏ thẻ HTML từ phần mô tả phim
+  // Chuyển đổi YouTube URL thành định dạng nhúng mô tả phim
   const cleanContentHtml = (html: string) => {
     if (!html) return "";
     return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
@@ -516,14 +532,14 @@ export default function HomePage() {
 
           {/* Ảnh nền Full-width trong suốt và sáng đẹp giống hệt mockup */}
           <div className="absolute inset-0 z-0 select-none bg-black">
-            <Image
-              src={backdropCache[activeMovie.slug] || getImageUrl(heroDetail?.poster_url || activeMovie?.poster_url || heroDetail?.thumb_url || activeMovie?.thumb_url)}
+            <img
+              src={heroBackdropSrc}
               alt={activeMovie.name}
-              fill
-              priority
-              className={`object-cover transition-all duration-500 ease-in-out ${isTransitioning ? "opacity-0 scale-102 blur-[4px]" : "opacity-100 scale-100 blur-0"
+              onError={handleHeroBackdropError}
+              loading="eager"
+              decoding="async"
+              className={`w-full h-full object-cover transition-all duration-500 ease-in-out ${isTransitioning ? "opacity-0 scale-102 blur-[4px]" : "opacity-100 scale-100 blur-0"
                 }`}
-              sizes="100vw"
             />
             {/* Halftone dot grid pattern overlay to make the image look crisp and textured */}
             <HalftoneOverlay />
@@ -653,12 +669,15 @@ export default function HomePage() {
                     : "border border-zinc-800/80 opacity-50 hover:opacity-90 hover:scale-[1.02]"
                     }`}
                 >
-                  <Image
+                  <img
                     src={backdropCache[movie.slug] || getImageUrl(movie.thumb_url || movie.poster_url)}
                     alt={movie.name}
-                    fill
-                    className="object-cover"
-                    sizes="(max-width: 768px) 112px, 112px"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80";
+                    }}
+                    loading="lazy"
+                    decoding="async"
+                    className="w-full h-full object-cover"
                   />
                   <div className="absolute inset-0 bg-black/10 hover:bg-transparent transition-colors" />
                 </div>
@@ -689,9 +708,6 @@ export default function HomePage() {
 
       {/* 2.8. MÃN NHÃN VỚI PHIM CHIẾU RẠP */}
       <CinemaRow />
-
-      {/* 2.85. ĐẠI LỘ SIÊU NHÂN TOKUSATSU (KAMEN RIDER) */}
-      <KamenRiderRow />
 
       {/* 2.9. KHO TÀNG ANIME MỚI NHẤT */}
       <AnimeRow />

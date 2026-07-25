@@ -36,3 +36,42 @@ export function cleanSlug(slug: string): string {
   cleaned = cleaned.replace(/[\s\-:/\\]+$/, "").trim();
   return cleaned;
 }
+
+export function getImageUrl(path?: string): string {
+  if (!path) return "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80";
+  let url = path.trim();
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    return url;
+  }
+  const cleanPath = url.replace(/^\/+/, "");
+  if (cleanPath.startsWith("public/")) {
+    return `https://phim.nguonc.com/${cleanPath}`;
+  }
+  // Nếu là tên file tương đối đơn thuần của OPhim (không chứa dấu gạch chéo /)
+  if (!cleanPath.includes("/")) {
+    return `https://img.ophim.live/uploads/movies/${cleanPath}`;
+  }
+  return `https://phimimg.com/${cleanPath}`;
+}
+
+export function isValidMovieImage(path?: string): boolean {
+  if (!path || !path.trim()) return false;
+  const p = path.toLowerCase().trim();
+  if (p.endsWith("-1.png")) return false;
+  if (p.includes("no-image") || p.includes("placeholder") || p.includes("default")) return false;
+  return true;
+}
+
+export function getBestMovieImage(movie: any, preferAspect: 'poster' | 'thumb' = 'thumb'): string {
+  if (!movie) return "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80";
+  const poster = movie.poster_url || movie.poster;
+  const thumb = movie.thumb_url || movie.thumbnail;
+
+  const validPoster = isValidMovieImage(poster) ? poster : null;
+  const validThumb = isValidMovieImage(thumb) ? thumb : null;
+
+  if (preferAspect === 'poster') {
+    return getImageUrl(validPoster || validThumb || poster || thumb);
+  }
+  return getImageUrl(validThumb || validPoster || thumb || poster);
+}

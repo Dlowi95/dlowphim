@@ -3,11 +3,17 @@
 import React, { useState, useEffect, useRef } from "react";
 import Cookies from "js-cookie";
 import { Plus, Trash2, Edit2, GripVertical, Image as ImageIcon, Upload, X, Check, Eye, EyeOff } from "lucide-react";
+import { getImageUrl } from "@/utils/movieUtils";
 
 interface GalleryItem {
   name: string;
   color: string;
   imageUrl: string;
+  symbol?: string;
+  weapon?: string;
+  power?: number;
+  actor?: string;
+  description?: string;
 }
 
 interface FeaturedRider {
@@ -282,7 +288,14 @@ export default function FeaturedRidersView() {
             {/* Poster preview */}
             <div className="w-12 h-16 rounded-lg overflow-hidden bg-zinc-800 flex-shrink-0 border border-zinc-700">
               {rider.posterUrl ? (
-                <img src={rider.posterUrl} alt={rider.name} className="w-full h-full object-cover" />
+                <img
+                  src={getImageUrl(rider.posterUrl)}
+                  alt={rider.name}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80";
+                  }}
+                  className="w-full h-full object-cover"
+                />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
                   <ImageIcon size={16} className="text-zinc-600" />
@@ -293,7 +306,14 @@ export default function FeaturedRidersView() {
             {/* Banner preview */}
             <div className="w-24 h-16 rounded-lg overflow-hidden bg-zinc-800 flex-shrink-0 border border-zinc-700">
               {rider.bannerUrl ? (
-                <img src={rider.bannerUrl} alt={rider.name} className="w-full h-full object-cover" />
+                <img
+                  src={getImageUrl(rider.bannerUrl)}
+                  alt={rider.name}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80";
+                  }}
+                  className="w-full h-full object-cover"
+                />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
                   <ImageIcon size={16} className="text-zinc-600" />
@@ -588,63 +608,143 @@ export default function FeaturedRidersView() {
                   Dán URL ảnh nhân vật chuẩn HD cho từng Siêu Nhân. Để trống URL ảnh thì hệ thống sẽ tự dùng poster phim chính.
                 </p>
 
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
                   {(form.gallery || []).map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-2 bg-zinc-800/80 p-2 rounded-xl border border-zinc-700/60">
-                      <input
-                        type="color"
-                        value={item.color || "#EF4444"}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setForm((f) => {
-                            const newG = [...(f.gallery || [])];
-                            newG[idx] = { ...newG[idx], color: val };
-                            return { ...f, gallery: newG };
-                          });
-                        }}
-                        className="w-7 h-7 rounded border-0 cursor-pointer bg-transparent p-0"
-                        title="Chọn màu sắc chủ đạo"
-                      />
+                    <div key={idx} className="bg-zinc-800/90 p-3 rounded-2xl border border-zinc-700/80 space-y-2">
+                      {/* Dòng 1: Màu sắc, Tên Siêu Nhân, URL Ảnh & Nút Xóa */}
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={item.color || "#EF4444"}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setForm((f) => {
+                              const newG = [...(f.gallery || [])];
+                              newG[idx] = { ...newG[idx], color: val };
+                              return { ...f, gallery: newG };
+                            });
+                          }}
+                          className="w-7 h-7 rounded border-0 cursor-pointer bg-transparent p-0 flex-shrink-0"
+                          title="Chọn màu sắc chủ đạo"
+                        />
+                        <input
+                          type="text"
+                          value={item.name}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setForm((f) => {
+                              const newG = [...(f.gallery || [])];
+                              newG[idx] = { ...newG[idx], name: val };
+                              return { ...f, gallery: newG };
+                            });
+                          }}
+                          placeholder="Tên Siêu Nhân (VD: Gao Đỏ)"
+                          className="w-36 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-white"
+                        />
+                        <input
+                          type="text"
+                          value={item.imageUrl || ""}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setForm((f) => {
+                              const newG = [...(f.gallery || [])];
+                              newG[idx] = { ...newG[idx], imageUrl: val };
+                              return { ...f, gallery: newG };
+                            });
+                          }}
+                          placeholder="URL Ảnh Siêu Nhân (chân dung)..."
+                          className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForm((f) => ({
+                              ...f,
+                              gallery: (f.gallery || []).filter((_, i) => i !== idx)
+                            }));
+                          }}
+                          className="text-zinc-500 hover:text-red-400 p-1 flex-shrink-0"
+                          title="Xóa Siêu Nhân này"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+
+                      {/* Dòng 2: Linh thú, Diễn viên, Vũ khí, Sức mạnh */}
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <input
+                          type="text"
+                          value={item.symbol || ""}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setForm((f) => {
+                              const newG = [...(f.gallery || [])];
+                              newG[idx] = { ...newG[idx], symbol: val };
+                              return { ...f, gallery: newG };
+                            });
+                          }}
+                          placeholder="Linh thú (VD: 🦅 Diều Hâu)"
+                          className="bg-zinc-900 border border-zinc-700/80 rounded-lg px-2 py-1 text-[11px] text-white placeholder-zinc-500"
+                        />
+                        <input
+                          type="text"
+                          value={item.actor || ""}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setForm((f) => {
+                              const newG = [...(f.gallery || [])];
+                              newG[idx] = { ...newG[idx], actor: val };
+                              return { ...f, gallery: newG };
+                            });
+                          }}
+                          placeholder="Diễn viên (VD: Shane Clarke)"
+                          className="bg-zinc-900 border border-zinc-700/80 rounded-lg px-2 py-1 text-[11px] text-white placeholder-zinc-500"
+                        />
+                        <input
+                          type="text"
+                          value={item.weapon || ""}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setForm((f) => {
+                              const newG = [...(f.gallery || [])];
+                              newG[idx] = { ...newG[idx], weapon: val };
+                              return { ...f, gallery: newG };
+                            });
+                          }}
+                          placeholder="Vũ khí (VD: Kiếm Phong Nhẫn)"
+                          className="bg-zinc-900 border border-zinc-700/80 rounded-lg px-2 py-1 text-[11px] text-white placeholder-zinc-500"
+                        />
+                        <input
+                          type="number"
+                          value={item.power || 95}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setForm((f) => {
+                              const newG = [...(f.gallery || [])];
+                              newG[idx] = { ...newG[idx], power: val };
+                              return { ...f, gallery: newG };
+                            });
+                          }}
+                          placeholder="Sức mạnh (1-100)"
+                          className="bg-zinc-900 border border-zinc-700/80 rounded-lg px-2 py-1 text-[11px] text-white placeholder-zinc-500"
+                        />
+                      </div>
+
+                      {/* Dòng 3: Mô tả nhân vật */}
                       <input
                         type="text"
-                        value={item.name}
+                        value={item.description || ""}
                         onChange={(e) => {
                           const val = e.target.value;
                           setForm((f) => {
                             const newG = [...(f.gallery || [])];
-                            newG[idx] = { ...newG[idx], name: val };
+                            newG[idx] = { ...newG[idx], description: val };
                             return { ...f, gallery: newG };
                           });
                         }}
-                        placeholder="VD: Gao Đỏ"
-                        className="w-24 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-white"
+                        placeholder="Mô tả tiểu sử Siêu Nhân..."
+                        className="w-full bg-zinc-900 border border-zinc-700/80 rounded-lg px-2 py-1 text-[11px] text-white placeholder-zinc-500"
                       />
-                      <input
-                        type="text"
-                        value={item.imageUrl}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setForm((f) => {
-                            const newG = [...(f.gallery || [])];
-                            newG[idx] = { ...newG[idx], imageUrl: val };
-                            return { ...f, gallery: newG };
-                          });
-                        }}
-                        placeholder="URL ảnh Siêu Nhân..."
-                        className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-white"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setForm((f) => ({
-                            ...f,
-                            gallery: (f.gallery || []).filter((_, i) => i !== idx)
-                          }));
-                        }}
-                        className="text-zinc-500 hover:text-red-400 p-1"
-                      >
-                        <Trash2 size={13} />
-                      </button>
                     </div>
                   ))}
                 </div>

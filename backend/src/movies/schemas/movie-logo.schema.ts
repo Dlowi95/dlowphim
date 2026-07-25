@@ -16,6 +16,9 @@ export class MovieLogo {
 
   @Prop({ default: '' })
   posterUrl: string; // link ảnh poster dọc nét căng từ TMDB
+
+  @Prop({ type: Array, default: [] })
+  credits: any[]; // danh sách dàn diễn viên nét từ TMDB [{ id, name, character, profileUrl }]
 }
 
 export const MovieLogoSchema = SchemaFactory.createForClass(MovieLogo);

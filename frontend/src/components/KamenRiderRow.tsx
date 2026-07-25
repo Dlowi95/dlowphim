@@ -3,10 +3,10 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Play, Heart, Monitor, Flame, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
-import { cleanMovieName } from "@/utils/movieUtils";
+import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
 import { useAuth } from "@/context/AuthContext";
 import Image from "next/image";
-import { getProxyUrl } from "@/utils/api";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 
 interface Movie {
@@ -335,10 +335,10 @@ export default function KamenRiderRow() {
         const results = await Promise.allSettled(
           TARGET_RIDERS.map(async ({ slug, fallback }) => {
             try {
-              const res = await fetch(getProxyUrl(`https://ophim1.com/v1/api/phim/${slug}`));
+              const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${slug}`));
               const data = await res.json();
               if (data.status === true || data.status === "success") {
-                const item = data.data?.item || data.movie;
+                const item = data.movie || data.data?.item;
                 if (item) {
                   return {
                     _id: item._id || fallback._id,
@@ -417,13 +417,13 @@ export default function KamenRiderRow() {
         setBackdropUrl(null);
         setTmdbPosterUrl(null);
 
-        // a. Lấy chi tiết OPhim
+        // a. Lấy chi tiết Phim
         let detailData = detailsCache[currentMovie.slug];
         if (!detailData) {
-          const res = await fetch(getProxyUrl(`https://ophim1.com/v1/api/phim/${currentMovie.slug}`));
+          const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${currentMovie.slug}`));
           const data = await res.json();
           if (data.status === true || data.status === "success") {
-            detailData = data.data?.item || data.movie;
+            detailData = data.movie || data.data?.item;
             if (active) {
               setDetailsCache(prev => ({ ...prev, [currentMovie.slug]: detailData }));
             }
@@ -496,13 +496,6 @@ export default function KamenRiderRow() {
     setTouchStartX(null);
   };
 
-  const getImageUrl = (path: string) => {
-    if (!path) return "";
-    if (path.startsWith("http")) return path;
-    const fileName = path.split("/").pop();
-    return `https://img.ophim.live/uploads/movies/${fileName}`;
-  };
-
   const handleFavoriteToggle = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -525,8 +518,9 @@ export default function KamenRiderRow() {
   const gallery = activeMovie._gallery || [];
   const currentRanger = gallery[activeGalleryIndex];
 
-  // Ưu tiên: Ranger được chọn từ Gallery → Custom Poster (Admin DB) → TMDB poster → OPhim poster
-  const activePoster = currentRanger?.imageUrl || activeMovie._customPoster || tmdbPosterUrl || activeMovie.poster_url || details?.poster_url;
+  // Poster phim chính trên Hero Stage (Giữ cố định ảnh poster phim chính)
+  const activePoster = activeMovie._customPoster || tmdbPosterUrl || activeMovie.poster_url || details?.poster_url;
+  const rangerPoster = currentRanger?.imageUrl || activePoster;
   const activeAccentColor = currentRanger?.color || theme.accent;
 
   return (
@@ -611,13 +605,15 @@ export default function KamenRiderRow() {
               }}
             >
               {activePoster ? (
-                <Image
+                <img
                   src={getImageUrl(activePoster)}
                   alt={activeMovie.name}
-                  fill
-                  className="object-cover transition-all duration-500"
-                  sizes="240px"
-                  unoptimized
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80";
+                  }}
+                  loading="lazy"
+                  decoding="async"
+                  className="w-full h-full object-cover transition-all duration-500"
                 />
               ) : (
                 <div className="w-full h-full bg-zinc-900 flex items-center justify-center">
@@ -820,13 +816,15 @@ export default function KamenRiderRow() {
               >
                 {/* Image background */}
                 {cardPoster ? (
-                  <Image
+                  <img
                     src={getImageUrl(cardPoster)}
                     alt={movie.name}
-                    fill
-                    className="object-cover transition-transform duration-700 group-hover/card:scale-110"
-                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 16vw"
-                    unoptimized
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80";
+                    }}
+                    loading="lazy"
+                    decoding="async"
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover/card:scale-110"
                   />
                 ) : (
                   <div
@@ -943,13 +941,15 @@ export default function KamenRiderRow() {
                       boxShadow: `0 0 30px ${activeAccentColor}88`
                     }}
                   >
-                    <Image
-                      src={getImageUrl(activePoster)}
+                    <img
+                      src={getImageUrl(rangerPoster)}
                       alt={currentRanger.name}
-                      fill
-                      className="object-cover"
-                      sizes="210px"
-                      unoptimized
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80";
+                      }}
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-cover"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                     <div className="absolute bottom-3 left-3 right-3 text-center">

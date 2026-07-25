@@ -4,7 +4,8 @@ import React, { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronRight } from "lucide-react";
-import { cleanMovieName, cleanSlug } from "@/utils/movieUtils";
+import { cleanMovieName, cleanSlug, getImageUrl } from "@/utils/movieUtils";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 
 interface Movie {
   _id: string;
@@ -14,57 +15,6 @@ interface Movie {
   poster_url?: string;
   thumb_url?: string;
 }
-
-const FALLBACK_UPCOMING: Movie[] = [
-  {
-    _id: "upcoming-1",
-    name: "Chuyện Chăn Gối",
-    slug: "chuyen-chan-goi",
-    origin_name: "Bedways",
-    poster_url: "chuyen-chan-goi-poster.jpg",
-    thumb_url: "chuyen-chan-goi-thumb.jpg",
-  },
-  {
-    _id: "upcoming-2",
-    name: "Siêu Quậy Marsupilami",
-    slug: "sieu-quay-marsupilami",
-    origin_name: "Marsupilami",
-    poster_url: "sieu-quay-marsupilami-poster.jpg",
-    thumb_url: "sieu-quay-marsupilami-thumb.jpg",
-  },
-  {
-    _id: "upcoming-3",
-    name: "Yêu Nữ Thích Hàng Hiệu 2",
-    slug: "yeu-nu-thich-hang-hieu-2",
-    origin_name: "The Devil Wears Prada 2",
-    poster_url: "yeu-nu-thich-hang-hieu-2-poster.jpg",
-    thumb_url: "yeu-nu-thich-hang-hieu-2-thumb.jpg",
-  },
-  {
-    _id: "upcoming-4",
-    name: "Avatar 3: Lửa và Tro Tàn",
-    slug: "avatar-3-lua-va-tro-tan",
-    origin_name: "Avatar: Fire and Ash",
-    poster_url: "avatar-3-poster.jpg",
-    thumb_url: "avatar-3-thumb.jpg",
-  },
-  {
-    _id: "upcoming-5",
-    name: "Vây Hãm: Kẻ Trừng Phạt",
-    slug: "vay-ham-ke-trung-phat",
-    origin_name: "The Roundup: Punishment",
-    poster_url: "vay-ham-4-poster.jpg",
-    thumb_url: "vay-ham-4-thumb.jpg",
-  },
-  {
-    _id: "upcoming-6",
-    name: "Kẻ Săn Tin Đen",
-    slug: "ke-san-tin-den",
-    origin_name: "Nightcrawler",
-    poster_url: "ke-san-tin-den-poster.jpg",
-    thumb_url: "ke-san-tin-den-thumb.jpg",
-  }
-];
 
 export default function UpcomingRow() {
   const [movies, setMovies] = useState<Movie[]>([]);
@@ -83,37 +33,27 @@ export default function UpcomingRow() {
     async function fetchUpcoming() {
       try {
         setLoading(true);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
-
-        const res = await fetch("https://ophim1.com/v1/api/danh-sach/phim-sap-chieu?page=1", {
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-
-        const data = await res.json();
-        if (data.status === "success" || data.status === true) {
-          const items = data.data?.items || data.items || [];
-          if (items.length > 0) {
-            // Deduplicate based on clean base slug to prevent multiple seasons/parts from repeating
-            const seen = new Set<string>();
-            const uniqueItems = items.filter((item: any) => {
-              const baseSlug = cleanSlug(item.slug);
-              if (seen.has(baseSlug)) return false;
-              seen.add(baseSlug);
-              return true;
-            });
-            // Fetch up to 10 upcoming movies for scrolling
-            setMovies(uniqueItems.slice(0, 10));
-          } else {
-            setMovies(FALLBACK_UPCOMING);
+        let items: any[] = [];
+        
+        try {
+          // Luôn fetch từ OPhim đối với danh mục sắp chiếu vì PhimAPI không hỗ trợ danh mục này
+          const res = await fetch(getProxyUrl(`https://ophim1.com/v1/api/danh-sach/phim-sap-chieu?page=1`));
+          if (res.ok) {
+            const data = await res.json();
+            items = data.data?.items || data.items || [];
           }
-        } else {
-          setMovies(FALLBACK_UPCOMING);
-        }
+        } catch (e) {}
+
+        const seen = new Set<string>();
+        const uniqueItems = items.filter((item: any) => {
+          const baseSlug = cleanSlug(item.slug);
+          if (seen.has(baseSlug)) return false;
+          seen.add(baseSlug);
+          return true;
+        });
+        setMovies(uniqueItems.slice(0, 10));
       } catch (err) {
-        console.error("Lỗi lấy danh sách phim sắp tới, chuyển sang dự phòng:", err);
-        setMovies(FALLBACK_UPCOMING);
+        console.error("Lỗi lấy danh sách phim đề xuất:", err);
       } finally {
         setLoading(false);
       }
@@ -162,12 +102,9 @@ export default function UpcomingRow() {
     router.push(`/movie/${slug}`);
   };
 
-  const getImageUrl = (movieObj: Movie) => {
-    // Landscape preferred (poster_url is landscape backdrop in OPhim API)
+  const getUpcomingImageUrl = (movieObj: Movie) => {
     const path = movieObj.poster_url || movieObj.thumb_url;
-    if (!path) return "";
-    const fileName = path.split("/").pop();
-    return `https://img.ophim.live/uploads/movies/${fileName}`;
+    return getImageUrl(path);
   };
 
   if (loading) {
@@ -193,7 +130,7 @@ export default function UpcomingRow() {
       {/* Tiêu đề & Nút Xem thêm */}
       <div className="flex items-center gap-2 mb-6">
         <h3 className="text-xl md:text-2xl font-black text-zinc-100 uppercase tracking-tight">
-          Phim hay sắp tới
+          Phim Sắp Chiếu
         </h3>
         
         {/* Custom tooltip arrow */}
@@ -225,52 +162,99 @@ export default function UpcomingRow() {
           scrollbarWidth: "none"
         }}
       >
-        {movies.map((movie) => {
-          const cleanedName = cleanMovieName(movie.name);
-          const cleanedOrigin = cleanMovieName(movie.origin_name);
-          const cardWidthClass = "w-[280px] sm:w-[320px] md:w-[360px] shrink-0";
-          return (
-            <div
-              key={movie._id || movie.slug}
-              onClick={() => handleCardClick(movie.slug)}
-              className={`${cardWidthClass} group/upcoming flex flex-col gap-3 cursor-pointer`}
-            >
-              {/* Khung ảnh aspect-[16/10] */}
-              <div 
-                className="relative overflow-hidden w-full aspect-[16/10] bg-zinc-900 border border-zinc-800/60 rounded-2xl transition-all duration-300 ease-out"
-                style={{
-                  WebkitMaskImage: "-webkit-radial-gradient(white, black)",
-                  maskImage: "radial-gradient(white, black)"
-                }}
-              >
-                <img
-                  src={getImageUrl(movie)}
-                  alt={cleanedName}
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover rounded-2xl transition-transform duration-500 group-hover/upcoming:scale-105"
-                  loading="lazy"
-                  decoding="async"
-                />
+        {movies.map((movie) => (
+          <UpcomingMovieCard
+            key={movie._id || movie.slug}
+            movie={movie}
+            wasDraggingRef={wasDraggingRef}
+            router={router}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
 
-                
-                {/* Badge Sắp chiếu bottom-left */}
-                <div className="absolute bottom-3 left-3 bg-white text-zinc-900 text-[10px] font-extrabold px-2 py-0.5 rounded uppercase tracking-wider shadow-md">
-                  Sắp chiếu
-                </div>
-              </div>
+function UpcomingMovieCard({ movie, wasDraggingRef, router }: { movie: Movie; wasDraggingRef: React.MutableRefObject<boolean>; router: any }) {
+  const cleanedName = cleanMovieName(movie.name);
+  const cleanedOrigin = cleanMovieName(movie.origin_name);
+  const cardWidthClass = "w-[280px] sm:w-[320px] md:w-[360px] shrink-0";
 
-              {/* Tên phim dưới card */}
-              <div className="px-1 text-left">
-                <h4 className="font-extrabold text-sm md:text-base text-zinc-100 truncate group-hover/upcoming:text-pink-500 transition-colors">
-                  {cleanedName}
-                </h4>
-                <p className="text-xs text-zinc-500 truncate font-bold mt-0.5">
-                  {cleanedOrigin}
-                </p>
-              </div>
-            </div>
-          );
-        })}
+  const getUpcomingImageUrl = (movieObj: Movie) => {
+    const path = movieObj.poster_url || movieObj.thumb_url;
+    return getImageUrl(path);
+  };
+
+  const [imgSrc, setImgSrc] = useState<string>(() => getUpcomingImageUrl(movie));
+  const [attemptCount, setAttemptCount] = useState(0);
+
+  useEffect(() => {
+    setImgSrc(getUpcomingImageUrl(movie));
+    setAttemptCount(0);
+  }, [movie.slug, movie.poster_url, movie.thumb_url]);
+
+  const handleImgError = () => {
+    if (attemptCount === 0 && movie.thumb_url && movie.poster_url && movie.thumb_url !== movie.poster_url) {
+      setAttemptCount(1);
+      setImgSrc(getImageUrl(movie.thumb_url));
+      return;
+    }
+
+    if (attemptCount < 2) {
+      setAttemptCount(2);
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      fetch(`${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && (data.backdropUrl || data.posterUrl)) {
+            setImgSrc(data.backdropUrl || data.posterUrl);
+          } else {
+            setImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+          }
+        })
+        .catch(() => {
+          setImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+        });
+    }
+  };
+
+  const handleCardClick = () => {
+    if (wasDraggingRef.current) return;
+    router.push(`/movie/${movie.slug}`);
+  };
+
+  return (
+    <div
+      onClick={handleCardClick}
+      className={`${cardWidthClass} group/upcoming flex flex-col gap-3 cursor-pointer`}
+    >
+      <div 
+        className="relative overflow-hidden w-full aspect-[16/10] bg-zinc-900 border border-zinc-800/60 rounded-2xl transition-all duration-300 ease-out"
+        style={{
+          WebkitMaskImage: "-webkit-radial-gradient(white, black)",
+          maskImage: "radial-gradient(white, black)"
+        }}
+      >
+        <img
+          src={imgSrc}
+          alt={cleanedName}
+          onError={handleImgError}
+          referrerPolicy="no-referrer"
+          className="w-full h-full object-cover rounded-2xl transition-transform duration-500 group-hover/upcoming:scale-105"
+          loading="lazy"
+          decoding="async"
+        />
+        <div className="absolute bottom-3 left-3 bg-white text-zinc-900 text-[10px] font-extrabold px-2 py-0.5 rounded uppercase tracking-wider shadow-md">
+          Sắp Chiếu
+        </div>
+      </div>
+      <div className="px-1 text-left">
+        <h4 className="font-extrabold text-sm md:text-base text-zinc-100 truncate group-hover/upcoming:text-pink-500 transition-colors">
+          {cleanedName}
+        </h4>
+        <p className="text-xs text-zinc-500 truncate font-bold mt-0.5">
+          {cleanedOrigin}
+        </p>
       </div>
     </div>
   );
