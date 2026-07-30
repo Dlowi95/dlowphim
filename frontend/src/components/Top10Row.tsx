@@ -549,17 +549,18 @@ function Top10MovieCard({ movie, index, wasDraggingRef, tmdbCache }: Top10MovieC
     );
   };
 
-  // Sizing of cards: slightly wider and prominent so 1 to 5 fits nicely
-  const cardWidthClass = "w-[210px] sm:w-[245px] md:w-[284px] shrink-0";
+  // Card Sizing: Exact Cobephim 5-card full-container span
+  const cardWidthClass = "w-[255px] sm:w-[280px] md:w-[295px] lg:w-[310px] shrink-0";
   const zIndexStyle = isHovered ? 999 : 10;
 
-  // Odd ranks tilt right (rotateY negative), Even ranks tilt left (rotateY positive)
-  // Perspective restored to 1000px and rotateY reduced to 15deg (gentler, premium 3D wave accordion look)
-  // Odd ranks tilt left (rotateY positive), Even ranks tilt right (rotateY negative) to match Cobephim layout
+  // Exact Cobephim 3D Ziczac Wave Rotation:
+  // Odd cards (1, 3, 5, 7, 9) tilt left: rotateY(10deg)
+  // Even cards (2, 4, 6, 8, 10) tilt right: rotateY(-10deg)
+  // Continuous 3D accordion wave flow!
   const isOdd = (index + 1) % 2 !== 0;
   const defaultTransform = isOdd
-    ? "rotateY(22deg) rotateX(1deg) rotateZ(1deg) scale(0.95)"
-    : "rotateY(-22deg) rotateX(1deg) rotateZ(-1deg) scale(0.95)";
+    ? "perspective(1000px) rotateY(10deg) rotateX(1deg) scale(0.96)"
+    : "perspective(1000px) rotateY(-10deg) rotateX(1deg) scale(0.96)";
 
   return (
     <div
@@ -567,21 +568,21 @@ function Top10MovieCard({ movie, index, wasDraggingRef, tmdbCache }: Top10MovieC
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onClick={handleClick}
-      className={`${cardWidthClass} cursor-pointer select-none relative group/top10 -mx-1.5 sm:-mx-2 md:-mx-2.5`}
+      className={`${cardWidthClass} -mx-1.5 sm:-mx-2 md:-mx-2.5 cursor-pointer select-none relative group/top10 transition-all duration-300`}
       style={{ zIndex: zIndexStyle }}
     >
       <div className="relative flex flex-col h-full">
         
-        {/* Tilted Poster Frame (Odd -> Right, Even -> Left), straightens & scale-up + thick pink neon shadow on hover */}
+        {/* Exact Cobephim 3D Wave Poster Frame (aspect-[2/3], rounded-2xl, origin-center) */}
         <div
-          className="relative overflow-hidden w-full aspect-[2/3] bg-zinc-900 border-[3px] border-zinc-800/60 rounded-2xl transition-all duration-300 ease-out origin-center group-hover/top10:rotate-0 group-hover/top10:skew-y-0 group-hover/top10:scale-105 group-hover/top10:border-pink-500"
+          className="relative overflow-hidden w-full aspect-[2/3] bg-zinc-900 border-[2px] border-zinc-800/60 rounded-2xl transition-all duration-300 ease-out origin-center group-hover/top10:rotate-0 group-hover/top10:scale-105 group-hover/top10:border-pink-500"
           style={{
             transform: isHovered
-              ? "rotateY(0deg) rotateX(0deg) rotateZ(0deg) scale(1.05)"
+              ? "perspective(1000px) rotateY(0deg) rotateX(0deg) scale(1.05)"
               : defaultTransform,
             boxShadow: isHovered 
               ? "0 0 35px 8px rgba(236, 72, 153, 0.85), 0 0 15px 3px rgba(236, 72, 153, 0.45)" 
-              : "0 4px 12px rgba(0,0,0,0.5)",
+              : "0 10px 24px rgba(0,0,0,0.65)",
             WebkitMaskImage: "-webkit-radial-gradient(white, black)",
             maskImage: "radial-gradient(white, black)"
           }}
