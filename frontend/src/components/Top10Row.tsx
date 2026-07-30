@@ -251,12 +251,25 @@ export default function Top10Row() {
           const top10 = uniqueItems.slice(0, 10);
           setMovies(top10);
 
-          // Cào thêm ảnh sắc nét từ TMDB song song qua backend proxy cache
+          // Cào thêm ảnh Poster/Backdrop chuẩn quốc tế từ TMDB song song qua backend proxy cache
           const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
           const tmdbPromises = top10.map(async (movie) => {
             try {
+              let originTitle = movie.origin_name || movie.name;
+              let tmdbId = "";
+
+              const detailRes = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${movie.slug}`));
+              if (detailRes.ok) {
+                const detailData = await detailRes.json();
+                const detail = detailData.data?.item || detailData.movie;
+                if (detail) {
+                  originTitle = detail.origin_name || originTitle;
+                  tmdbId = detail.tmdb?.id || "";
+                }
+              }
+
               const tmdbRes = await fetch(
-                `${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`
+                `${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.name)}&originTitle=${encodeURIComponent(originTitle)}&tmdbId=${tmdbId}`
               );
               if (tmdbRes.ok) {
                 const tmdbData = await tmdbRes.json();
@@ -418,12 +431,12 @@ function Top10MovieCard({ movie, index, wasDraggingRef, tmdbCache }: Top10MovieC
     return getImageUrl(path);
   };
 
-  const initialTop10Url = tmdbCache[movie.slug]?.posterUrl || getTop10ImageUrl(movie);
+  const initialTop10Url = tmdbCache[movie.slug]?.posterUrl || tmdbCache[movie.slug]?.backdropUrl || getTop10ImageUrl(movie);
   const [top10ImgSrc, setTop10ImgSrc] = useState<string>(initialTop10Url);
   const [top10Attempt, setTop10Attempt] = useState(0);
 
   useEffect(() => {
-    setTop10ImgSrc(tmdbCache[movie.slug]?.posterUrl || getTop10ImageUrl(movie));
+    setTop10ImgSrc(tmdbCache[movie.slug]?.posterUrl || tmdbCache[movie.slug]?.backdropUrl || getTop10ImageUrl(movie));
     setTop10Attempt(0);
   }, [movie.slug, tmdbCache, movie.thumb_url, movie.poster_url]);
 
