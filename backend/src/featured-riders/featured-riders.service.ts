@@ -147,7 +147,7 @@ export class FeaturedRidersService implements OnModuleInit {
         await this.riderModel.findOneAndUpdate(
           { slug: sentai.slug },
           { $set: sentai },
-          { upsert: true, new: true }
+          { upsert: true, returnDocument: 'after' }
         ).exec();
       }
       console.log('[FeaturedRidersService] Super Sentai / Siêu Nhân series initialized!');

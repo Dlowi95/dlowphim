@@ -66,6 +66,7 @@ function WatchContent({ slug }: { slug: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tmdbBackdrop, setTmdbBackdrop] = useState<string | null>(null);
+  const [tmdbPoster, setTmdbPoster] = useState<string | null>(null);
 
   const { user, toggleFavorite: toggleFavoriteCtx, showToast, createPlaylist, toggleMovieInPlaylist, updateWatchHistory } = useAuth();
 
@@ -206,24 +207,24 @@ function WatchContent({ slug }: { slug: string }) {
           }
           console.error("Lỗi kiểm tra chặn phim:", blockErr);
         }
-        // b. Tải phim từ API chính thức
-        let ophimDetail: any = null;
+        // b. Tải phim từ API PhimAPI chính thức
+        let movieDetail: any = null;
         try {
           const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${slug}`));
           if (res.ok) {
             const data = await res.json();
             if (data.status === true || data.status === "success") {
-              ophimDetail = {
+              movieDetail = {
                 ...(data.movie || data.data?.item),
                 episodes: data.episodes || data.data?.item?.episodes || []
               };
             }
           }
         } catch (e) {
-          console.warn("Lỗi tải từ API chính thức, thử chi tiết v1...");
+          console.warn("Lỗi tải từ PhimAPI chính thức, thử v1/api/phim...");
         }
 
-        if (!ophimDetail) {
+        if (!movieDetail) {
           try {
             const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${slug}`));
             if (res.ok) {
@@ -231,63 +232,49 @@ function WatchContent({ slug }: { slug: string }) {
               if (data.status === true || data.status === "success") {
                 const item = data.movie || data.data?.item;
                 const eps = data.episodes || data.data?.item?.episodes || [];
-                ophimDetail = { ...item, episodes: eps };
+                movieDetail = { ...item, episodes: eps };
               }
             }
           } catch (e) {
-            console.warn("Không tìm thấy trên v1/api/phim...");
+            console.warn("Không tìm thấy trên PhimAPI v1...");
           }
         }
 
-        if (ophimDetail) {
-          // Kiểm tra xem episodes của OPhim có bị rỗng hoặc dính link opstream11/dead domain không
-          let needsFallback = false;
-          const firstEp = ophimDetail.episodes?.[0]?.server_data?.[0];
-          const m3u8Url = firstEp?.link_m3u8 || "";
-          const embedUrl = firstEp?.link_embed || "";
-          if (
-            !firstEp ||
-            (!m3u8Url && !embedUrl) ||
-            m3u8Url.includes("opstream11") ||
-            embedUrl.includes("opstream11") ||
-            m3u8Url.includes("opstream1.") ||
-            m3u8Url.includes("opstream2.")
-          ) {
-            needsFallback = true;
-          }
+        if (movieDetail) {
+          // Kiểm tra nếu nguồn chính PhimAPI bị trống tập hoặc lỗi link
+          const firstEp = movieDetail.episodes?.[0]?.server_data?.[0];
+          const hasValidLink = !!(firstEp && (firstEp.link_m3u8 || firstEp.link_embed));
 
-          // Fetch thêm server dự phòng từ PhimAPI
-          try {
-            const fallbackRes = await fetch(`${FALLBACK_API_DOMAIN}/phim/${slug}`);
-            if (fallbackRes.ok) {
-              const fbData = await fallbackRes.json();
-              if ((fbData.status === true || fbData.status === "success" || fbData.status === "true") && fbData.episodes) {
-                const fbServers = fbData.episodes.map((s: any) => ({
-                  ...s,
-                  server_name: s.server_name.includes("Dự Phòng") ? s.server_name : `${s.server_name} (Dự Phòng)`
-                }));
-
-                if (needsFallback) {
-                  ophimDetail.episodes = [...fbServers, ...(ophimDetail.episodes || [])];
-                } else {
-                  ophimDetail.episodes = [...(ophimDetail.episodes || []), ...fbServers];
+          // Chỉ khi PhimAPI không có link hợp lệ mới nạp nguồn dự phòng từ OPhim
+          if (!hasValidLink) {
+            try {
+              const fallbackRes = await fetch(`${FALLBACK_API_DOMAIN}/v1/api/phim/${slug}`);
+              if (fallbackRes.ok) {
+                const fbData = await fallbackRes.json();
+                const fbEps = fbData.data?.item?.episodes || fbData.episodes || [];
+                if (fbEps.length > 0) {
+                  const fbServers = fbEps.map((s: any) => ({
+                    ...s,
+                    server_name: s.server_name.includes("Dự Phòng") ? s.server_name : `${s.server_name} (Dự Phòng)`
+                  }));
+                  movieDetail.episodes = [...fbServers, ...(movieDetail.episodes || [])];
                 }
               }
+            } catch (fbErr) {
+              console.warn("Không thể tải server dự phòng:", fbErr);
             }
-          } catch (fbErr) {
-            console.warn("Không thể tải server dự phòng từ PhimAPI:", fbErr);
           }
 
-          setMovie(ophimDetail);
+          setMovie(movieDetail);
 
           // Cào thêm ảnh nét từ TMDB cho watch page
-          const tmdbId = ophimDetail.tmdb?.id;
-          const tmdbType = ophimDetail.tmdb?.type || "movie";
-          if (tmdbId || ophimDetail.name) {
+          const tmdbId = movieDetail.tmdb?.id;
+          const tmdbType = movieDetail.tmdb?.type || "movie";
+          if (tmdbId || movieDetail.name) {
             (async () => {
               try {
                 const proxyRes = await fetch(
-                  `${API_URL}/movies/logo/${slug}?title=${encodeURIComponent(ophimDetail.origin_name || ophimDetail.name)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`
+                  `${API_URL}/movies/logo/${slug}?title=${encodeURIComponent(movieDetail.origin_name || movieDetail.name)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`
                 );
                 if (proxyRes.ok) {
                   const proxyData = await proxyRes.json();
@@ -296,10 +283,13 @@ function WatchContent({ slug }: { slug: string }) {
                   } else if (proxyData.posterUrl) {
                     setTmdbBackdrop(proxyData.posterUrl);
                   }
+                  if (proxyData.posterUrl) {
+                    setTmdbPoster(proxyData.posterUrl);
+                  }
                 }
 
                 const creditsRes = await fetch(
-                  `${API_URL}/movies/credits/${slug}?title=${encodeURIComponent(ophimDetail.origin_name || ophimDetail.name)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`
+                  `${API_URL}/movies/credits/${slug}?title=${encodeURIComponent(movieDetail.origin_name || movieDetail.name)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`
                 );
                 if (creditsRes.ok) {
                   const creditsData = await creditsRes.json();
@@ -311,24 +301,24 @@ function WatchContent({ slug }: { slug: string }) {
             })();
           }
         } else {
-          // c. Nếu OPhim không có, thử tìm trên PhimAPI fallback hoặc Custom Movies
+          // c. Nếu nguồn chính không có, thử tìm trên fallback hoặc Custom Movies
           try {
             const fbRes = await fetch(`${FALLBACK_API_DOMAIN}/phim/${slug}`);
             if (fbRes.ok) {
               const fbData = await fbRes.json();
               if ((fbData.status === true || fbData.status === "success" || fbData.status === "true") && fbData.movie) {
-                ophimDetail = {
+                movieDetail = {
                   ...fbData.movie,
                   episodes: fbData.episodes || []
                 };
-                setMovie(ophimDetail);
+                setMovie(movieDetail);
               }
             }
           } catch (e) {
             console.warn("Không tìm thấy trên PhimAPI fallback");
           }
 
-          if (!ophimDetail) {
+          if (!movieDetail) {
             const customRes = await fetch(`${API_URL}/movies/custom/${slug}`);
             if (!customRes.ok) {
               throw new Error("Không tìm thấy thông tin phim.");
@@ -497,11 +487,11 @@ function WatchContent({ slug }: { slug: string }) {
     if (activeEpisode) {
       if (activeEpisode.link_m3u8) {
         setPlayerType("hls");
-      } else {
+      } else if (activeEpisode.link_embed) {
         setPlayerType("embed");
       }
     }
-  }, [activeEpisode]);
+  }, [activeEpisode?.name, activeServerIndex]);
 
   // 1.7. Đồng bộ đánh giá theo phim qua Backend
   useEffect(() => {
@@ -539,10 +529,12 @@ function WatchContent({ slug }: { slug: string }) {
       return;
     }
 
-    // Tìm tập có tên khớp với queryEp
-    const foundIdx = currentServer.server_data.findIndex(
-      (ep) => ep.name.toLowerCase() === queryEp.toLowerCase()
-    );
+    // Tìm tập có tên khớp với queryEp (chuẩn hóa so sánh Tập 1 vs 1)
+    const targetQuery = (queryEp || "").toLowerCase().replace(/tập\s*/gi, "").trim();
+    const foundIdx = currentServer.server_data.findIndex((ep) => {
+      const epName = (ep.name || "").toLowerCase().replace(/tập\s*/gi, "").trim();
+      return epName === targetQuery || ep.name.toLowerCase() === queryEp.toLowerCase();
+    });
 
     if (foundIdx !== -1) {
       setActiveEpisodeIndex(foundIdx);
@@ -590,6 +582,24 @@ function WatchContent({ slug }: { slug: string }) {
           hls.loadSource(activeEpisode.link_m3u8);
           hls.attachMedia(video);
           hlsRef.current = hls;
+
+          // Tự động chuyển Embed Server nếu luồng m3u8 bị lỗi 522 / Network Error / Timeout
+          hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
+            if (!active) return;
+            if (data && data.fatal) {
+              console.warn("[HLS Error Handler] Fatal network error (522/Timeout), switching to Embed fallback...", data);
+              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                if (activeEpisode?.link_embed) {
+                  setPlayerType("embed");
+                }
+              } else {
+                try { hls.destroy(); } catch (e) {}
+                if (activeEpisode?.link_embed) {
+                  setPlayerType("embed");
+                }
+              }
+            }
+          });
 
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             if (!active) return;
@@ -1087,7 +1097,7 @@ function WatchContent({ slug }: { slug: string }) {
                 )
               ) : (
                 activeEpisode?.link_m3u8 ? (
-                  <>
+                  <div key={`hls-player-wrap-${activeEpisode.name}-${activeServerIndex}`} className="w-full h-full">
                     <video
                       id="dlow-hls-video"
                       ref={videoRef}
@@ -1096,7 +1106,7 @@ function WatchContent({ slug }: { slug: string }) {
                       className="w-full h-full bg-black"
                       title="DlowPhim HLS Video Player"
                     />
-                  </>
+                  </div>
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-zinc-900">
                     <Tv size={44} className="text-zinc-650 animate-pulse" />
@@ -1361,18 +1371,6 @@ function WatchContent({ slug }: { slug: string }) {
                     <span>Xem chung</span>
                   </button>
 
-                  <button
-                    onClick={() => setPlayerType(playerType === "embed" ? "hls" : "embed")}
-                    className={`flex items-center gap-1.5 transition-all cursor-pointer border-none px-2.5 py-1 rounded-lg font-extrabold ${
-                      playerType === "embed"
-                        ? "bg-pink-500/15 text-pink-400 border border-pink-500/30 shadow-sm"
-                        : "text-zinc-400 hover:text-white bg-transparent hover:bg-zinc-800/30"
-                    }`}
-                    title="Bấm để đổi máy chủ phát video nếu bộ phim bị mất tiếng âm thanh AC3/5.1"
-                  >
-                    <Tv size={14} />
-                    <span>{playerType === "embed" ? "Server Embed (Âm thanh HD)" : "Server HLS Player"}</span>
-                  </button>
                 </div>
 
                 <button
@@ -1399,7 +1397,7 @@ function WatchContent({ slug }: { slug: string }) {
               {/* Poster */}
               <div className="w-24 sm:w-28 aspect-[2/3] shrink-0 rounded-xl overflow-hidden shadow-md bg-zinc-900">
                 <img
-                  src={getImageUrl(movie.poster_url || movie.thumb_url)}
+                  src={tmdbPoster || getImageUrl(movie.poster_url || movie.thumb_url)}
                   alt={cleanedName}
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
@@ -1479,32 +1477,39 @@ function WatchContent({ slug }: { slug: string }) {
                   </span>
 
                   <div className="flex flex-wrap gap-2.5">
-                    {servers.map((server, sIdx) => {
-                      const isServerActive = sIdx === activeServerIndex;
-                      const serverLabel = friendlyLabels[sIdx] || server.server_name;
+                    {servers.flatMap((server, sIdx) => {
+                      const currentEp = server.server_data[activeEpisodeIndex] || server.server_data[0];
+                      const baseLabel = friendlyLabels[sIdx] || server.server_name;
+                      const options: { type: "embed" | "hls"; label: string }[] = [];
 
-                      return (
-                        <button
-                          key={`source-btn-${sIdx}`}
-                          onClick={() => {
-                            setActiveServerIndex(sIdx);
-                            const currentEp = server.server_data[activeEpisodeIndex] || server.server_data[0];
-                            if (currentEp?.link_m3u8) {
-                              setPlayerType("hls");
-                            } else {
-                              setPlayerType("embed");
-                            }
-                            scrollToPlayer();
-                          }}
-                          className={`px-4 py-2 text-xs font-black rounded-xl transition-all border-none cursor-pointer uppercase ${
-                            isServerActive
-                              ? "bg-pink-500 text-white font-extrabold shadow-md shadow-pink-500/20"
-                              : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-zinc-800 hover:text-white"
-                          }`}
-                        >
-                          {serverLabel}
-                        </button>
-                      );
+                      if (currentEp?.link_m3u8) {
+                        options.push({ type: "hls", label: `${baseLabel} (HLS)` });
+                      }
+                      if (currentEp?.link_embed) {
+                        options.push({ type: "embed", label: `${baseLabel} (EMBED)` });
+                      }
+
+                      return options.map((opt) => {
+                        const isOptionActive = sIdx === activeServerIndex && playerType === opt.type;
+
+                        return (
+                          <button
+                            key={`source-btn-${sIdx}-${opt.type}`}
+                            onClick={() => {
+                              setActiveServerIndex(sIdx);
+                              setPlayerType(opt.type);
+                              scrollToPlayer();
+                            }}
+                            className={`px-4 py-2 text-xs font-black rounded-xl transition-all border-none cursor-pointer uppercase ${
+                              isOptionActive
+                                ? "bg-pink-500 text-white font-extrabold shadow-md shadow-pink-500/20"
+                                : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-zinc-800 hover:text-white"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      });
                     })}
                   </div>
                 </div>

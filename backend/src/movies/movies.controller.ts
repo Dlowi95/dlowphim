@@ -35,8 +35,9 @@ export class MoviesController {
     @Query('title') title?: string,
     @Query('tmdbId') tmdbId?: string,
     @Query('tmdbType') tmdbType?: string,
+    @Query('originTitle') originTitle?: string,
   ) {
-    return this.moviesService.getMovieLogo(slug, title, tmdbId, tmdbType);
+    return this.moviesService.getMovieLogo(slug, title, tmdbId, tmdbType, originTitle);
   }
 
   @Get('credits/:slug')

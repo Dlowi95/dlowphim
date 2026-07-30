@@ -227,6 +227,25 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.broadcastViewerCount(roomId);
   }
 
+  // Sự kiện chủ phòng chủ động bấm nút đóng phòng
+  @SubscribeMessage('close_room')
+  async handleCloseRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { roomId: string },
+  ) {
+    const { roomId } = data;
+    console.log(`[Socket] Host explicitly closed Room: ${roomId}`);
+    
+    // Phát sự kiện đóng phòng tới TOÀN BỘ CLIENTS trong phòng ngay lập tức
+    this.server.to(roomId).emit('room_closed');
+
+    const timeout = this.hostDisconnectTimeouts.get(roomId);
+    if (timeout) {
+      clearTimeout(timeout);
+      this.hostDisconnectTimeouts.delete(roomId);
+    }
+  }
+
   // Sự kiện gửi tín hiệu nhắc nhở chủ phòng (chuông công chiếu)
   @SubscribeMessage('request_start_movie')
   async handleRequestStartMovie(
@@ -239,9 +258,20 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       await this.roomsService.notifyHost(roomId, guestName);
       // Gửi sự kiện cho toàn bộ phòng (hoặc host) để hiện thông báo realtime
       this.server.to(roomId).emit('host_reminder', { guestName });
-    } catch (e) {
-      console.error('[Socket] Request start movie error:', e.message);
+    } catch (err) {
+      console.error('Lỗi khi gửi thông báo nhắc nhở host:', err);
     }
+  }
+
+  // Sự kiện chủ phòng bấm bắt đầu chiếu phim ngay (cho phòng hẹn giờ)
+  @SubscribeMessage('start_scheduled_movie')
+  async handleStartScheduledMovie(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { roomId: string },
+  ) {
+    const { roomId } = data;
+    console.log(`[Socket] Host started scheduled movie early for Room: ${roomId}`);
+    this.server.to(roomId).emit('movie_started');
   }
 
   // Sự kiện gửi tin nhắn trò chuyện

@@ -194,33 +194,35 @@ export default function HomePage() {
           console.error("Lỗi khi fetch banners từ database:", e);
         }
 
-        // 2. Fetch new movies from OPhim
-        let ophimMovies: any[] = [];
+        // 2. Fetch latest dynamic movies from API source via MOVIE_API_DOMAIN Proxy (Quét 5 trang API mới nhất)
+        let latestMovies: any[] = [];
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
 
         try {
-          const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/danh-sach/phim-moi-cap-nhat?page=1`), {
-            signal: controller.signal
-          });
+          const pagePromises = [1, 2, 3, 4, 5].map(page =>
+            fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/danh-sach/phim-moi-cap-nhat?page=${page}`), { signal: controller.signal })
+              .then(res => res.json())
+              .then(data => (data.status && data.items ? data.items : []))
+              .catch(() => [])
+          );
           clearTimeout(timeoutId);
-          const data = await res.json();
-          if (data.status && data.items && data.items.length > 0) {
-            ophimMovies = data.items;
-          }
+          const pageResults = await Promise.all(pagePromises);
+          latestMovies = pageResults.flat();
         } catch (error) {
-          console.error("Lỗi khi kết nối API OPhim:", error);
+          console.error("Lỗi khi kết nối API danh sách phim:", error);
         }
 
-        // Tải trước thông tin chi tiết ngầm của 20 phim đầu tiên song song để lọc phim trailer và phim có logo đẹp
         const preloadedDetails: Record<string, any> = {};
         const preloadedLogos: Record<string, string | null> = {};
         const preloadedBackdrops: Record<string, string | null> = {};
-        let nonTrailerMovies: any[] = [];
-        let trailerOrNoLogoMovies: any[] = []; // dự phòng nếu không đủ 5 phim có logo đẹp
-        if (ophimMovies.length > 0) {
+        let moviesWithLogo: any[] = [];
+        let otherMoviesFromApi: any[] = [];
+
+        if (latestMovies.length > 0) {
           try {
-            const detailPromises = ophimMovies.slice(0, 20).map(async (movie) => {
+            // Quét song song chi tiết các phim từ API để phân loại logo TMDB
+            const detailPromises = latestMovies.map(async (movie) => {
               try {
                 const detailRes = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${movie.slug}`));
                 if (detailRes.ok) {
@@ -228,63 +230,87 @@ export default function HomePage() {
                   const detail = detailData.data?.item || detailData.movie || null;
 
                   if (detail) {
-                    // Gọi API Logo/Backdrop Proxy song song của backend
                     const tmdbId = detail.tmdb?.id;
                     const tmdbType = detail.tmdb?.type || "movie";
-                    const movieTitleQuery = detail.origin_name || detail.name;
+                    const movieTitleQuery = detail.name;
+                    const originTitleQuery = detail.origin_name || "";
 
                     try {
                       const tmdbRes = await fetch(
-                        `${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movieTitleQuery)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`
+                        `${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movieTitleQuery)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}&originTitle=${encodeURIComponent(originTitleQuery)}`
                       );
                       if (tmdbRes.ok) {
                         const tmdbData = await tmdbRes.json();
                         return { movie, detail, tmdbData };
                       }
                     } catch (tmdbErr) {
-                      // Bỏ qua lỗi TMDB lẻ
                     }
                     return { movie, detail, tmdbData: null };
                   }
                   return { movie, detail, tmdbData: null };
                 }
               } catch (e) {
-                // bỏ qua lỗi fetch lẻ
               }
               return { movie, detail: null, tmdbData: null };
             });
             const results = await Promise.all(detailPromises);
 
+            const seenMovieNames = new Set<string>();
+
             for (const item of results) {
               if (item.movie) {
+                const rawName = item.detail?.name || item.movie?.name || "";
+                const cleanNameKey = cleanMovieName(rawName).toLowerCase().trim();
+                const originNameKey = (item.detail?.origin_name || item.movie?.origin_name || "").toLowerCase().trim();
+
+                // Lọc bỏ 100% trùng lặp giữa các bộ phim có cùng tên hoặc cùng series
+                if (cleanNameKey && seenMovieNames.has(cleanNameKey)) {
+                  continue;
+                }
+                if (originNameKey && seenMovieNames.has(originNameKey)) {
+                  continue;
+                }
+
                 const currentEpisode = (item.detail?.episode_current || "").toLowerCase();
                 const isTrailer = currentEpisode.includes("trailer");
-                const hasLogo = item.tmdbData && item.tmdbData.logoUrl;
+                const hasLogo = !!(item.tmdbData && item.tmdbData.logoUrl && item.tmdbData.logoUrl.length > 5);
 
-                if (item.detail) {
-                  preloadedDetails[item.movie.slug] = item.detail;
-                }
-                if (item.tmdbData) {
-                  if (item.tmdbData.logoUrl) {
-                    preloadedLogos[item.movie.slug] = item.tmdbData.logoUrl;
-                  }
-                  if (item.tmdbData.backdropUrl) {
-                    preloadedBackdrops[item.movie.slug] = item.tmdbData.backdropUrl;
-                  } else if (item.tmdbData.posterUrl) {
-                    preloadedBackdrops[item.movie.slug] = item.tmdbData.posterUrl;
-                  }
-                }
+                // Lọc bỏ Anime / Hoạt hình khỏi HeroBanner chính
+                const categories = item.detail?.category || item.movie?.category || [];
+                const categorySlugs = categories.map((c: any) => (c.slug || c.name || c || "").toString().toLowerCase());
+                const movieType = (item.detail?.type || item.movie?.type || "").toString().toLowerCase();
+                const isAnimeOrHoatHinh =
+                  movieType === "hoathinh" ||
+                  categorySlugs.some((s: string) => s.includes("hoat-hinh") || s.includes("anime"));
 
-                if (!isTrailer && hasLogo) {
-                  nonTrailerMovies.push(item.movie);
-                } else if (!isTrailer) {
-                  trailerOrNoLogoMovies.push(item.movie);
+                if (!isTrailer && !isAnimeOrHoatHinh) {
+                  if (cleanNameKey) seenMovieNames.add(cleanNameKey);
+                  if (originNameKey) seenMovieNames.add(originNameKey);
+
+                  if (item.detail) {
+                    preloadedDetails[item.movie.slug] = item.detail;
+                  }
+                  if (item.tmdbData) {
+                    if (item.tmdbData.logoUrl) {
+                      preloadedLogos[item.movie.slug] = item.tmdbData.logoUrl;
+                    }
+                    if (item.tmdbData.backdropUrl) {
+                      preloadedBackdrops[item.movie.slug] = item.tmdbData.backdropUrl;
+                    } else if (item.tmdbData.posterUrl) {
+                      preloadedBackdrops[item.movie.slug] = item.tmdbData.posterUrl;
+                    }
+                  }
+
+                  if (hasLogo) {
+                    moviesWithLogo.push(item.movie);
+                  } else {
+                    otherMoviesFromApi.push(item.movie);
+                  }
                 }
               }
             }
           } catch (e) {
             console.error("Lỗi khi cào song song thông tin chi tiết:", e);
-            nonTrailerMovies = ophimMovies;
           }
         }
 
@@ -293,15 +319,19 @@ export default function HomePage() {
         setLogoCache(prev => ({ ...prev, ...preloadedLogos }));
         setBackdropCache(prev => ({ ...prev, ...preloadedBackdrops }));
 
-        // Lấy danh sách phim cho Hero: Ưu tiên phim có logo trước, nếu thiếu thì bù phim không logo
-        let finalFallbackMovies = [...nonTrailerMovies];
-        if (finalFallbackMovies.length < 5) {
-          const needed = 5 - finalFallbackMovies.length;
-          finalFallbackMovies = [...finalFallbackMovies, ...trailerOrNoLogoMovies.slice(0, needed)];
-        }
-
-        const fallbackMovies = finalFallbackMovies.length > 0 ? finalFallbackMovies : FALLBACK_CANDIDATES;
         const finalHeroCandidates: any[] = [];
+        const addedCandidateNames = new Set<string>();
+        const addedSlugs = new Set<string>();
+
+        // Gom danh sách ưu tiên hoàn toàn ĐỘNG từ API: Phim có logo TMDB lên trước, nối bằng các phim mới thực tế từ API nếu chưa đủ 5
+        let candidatePool = [...moviesWithLogo];
+        if (candidatePool.length < 5) {
+          const needed = 5 - candidatePool.length;
+          candidatePool = [...candidatePool, ...otherMoviesFromApi.slice(0, needed)];
+        }
+        if (candidatePool.length === 0) {
+          candidatePool = FALLBACK_CANDIDATES;
+        }
 
         for (let i = 1; i <= 5; i++) {
           const custom = dbBanners.find((b: any) => b.order === i && b.isActive);
@@ -316,11 +346,29 @@ export default function HomePage() {
               content: custom.description || "",
               isCustomBanner: true
             });
+            if (custom.movieSlug) addedSlugs.add(custom.movieSlug);
+            if (custom.title) addedCandidateNames.add(cleanMovieName(custom.title).toLowerCase().trim());
           } else {
-            const movie = fallbackMovies[i - 1];
-            if (movie) {
+            // Tìm bộ phim DUY NHẤT chưa từng xuất hiện trong Hero Banner
+            const nextUniqueMovie = candidatePool.find((m: any) => {
+              if (!m || !m.slug) return false;
+              if (addedSlugs.has(m.slug)) return false;
+              const cleanName = cleanMovieName(m.name || m.title || "").toLowerCase().trim();
+              const originName = (m.origin_name || "").toLowerCase().trim();
+              if (cleanName && addedCandidateNames.has(cleanName)) return false;
+              if (originName && addedCandidateNames.has(originName)) return false;
+              return true;
+            });
+
+            if (nextUniqueMovie) {
+              addedSlugs.add(nextUniqueMovie.slug);
+              const cName = cleanMovieName(nextUniqueMovie.name || "").toLowerCase().trim();
+              const oName = (nextUniqueMovie.origin_name || "").toLowerCase().trim();
+              if (cName) addedCandidateNames.add(cName);
+              if (oName) addedCandidateNames.add(oName);
+
               finalHeroCandidates.push({
-                ...movie,
+                ...nextUniqueMovie,
                 isCustomBanner: false
               });
             }
@@ -329,8 +377,8 @@ export default function HomePage() {
 
         setHeroCandidates(finalHeroCandidates);
 
-        // Use OPhim movies for the grid below
-        const gridMovies = ophimMovies.length > 5 ? ophimMovies.slice(5, 13) : ophimMovies.slice(0, 8);
+        // Use PhimAPI movies for the grid below
+        const gridMovies = latestMovies.length > 5 ? latestMovies.slice(5, 13) : latestMovies.slice(0, 8);
         setMovieList(gridMovies.length > 0 ? gridMovies : FALLBACK_CANDIDATES);
       } catch (error) {
         console.error("Lỗi đồng bộ dữ liệu trang chủ:", error);

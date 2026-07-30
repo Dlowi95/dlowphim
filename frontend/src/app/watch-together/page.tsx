@@ -3,8 +3,8 @@
 import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Plus, Users, Radio, Clock, X, Film, ChevronRight, Search, Bell, VideoOff } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Plus, Users, Radio, Clock, X, Film, ChevronRight, Search, Bell, VideoOff, AlertCircle } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 
@@ -70,11 +70,24 @@ function getEpisodeLabel(ep: string): string {
 export default function WatchTogetherPage() {
   const { user } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isClosedParam = searchParams.get("closed") === "1";
+
   const [rooms, setRooms] = useState<PublicRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [showHowTo, setShowHowTo] = useState(false);
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [closedToast, setClosedToast] = useState(isClosedParam);
+
+  useEffect(() => {
+    if (closedToast) {
+      const timer = setTimeout(() => {
+        setClosedToast(false);
+      }, 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [closedToast]);
 
   // Reset về trang 1 khi gõ tìm kiếm
   useEffect(() => {
@@ -124,6 +137,27 @@ export default function WatchTogetherPage() {
 
   return (
     <div className="min-h-screen bg-[#07070a] text-white">
+      {/* Toast thông báo chủ phòng đã đóng phòng */}
+      {closedToast && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[9999] animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="bg-[#12131d]/95 backdrop-blur-xl border border-pink-500/30 text-white px-5 py-3 rounded-2xl shadow-[0_20px_50px_rgba(236,72,153,0.2)] flex items-center gap-3 border-l-4 border-l-pink-500">
+            <div className="w-8 h-8 rounded-xl bg-pink-500/10 flex items-center justify-center shrink-0">
+              <AlertCircle size={18} className="text-pink-400" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-pink-400 uppercase tracking-wider">Thông báo phòng xem chung</p>
+              <p className="text-xs text-zinc-200 font-bold">Chủ phòng đã đóng phòng rồi!</p>
+            </div>
+            <button
+              onClick={() => setClosedToast(false)}
+              className="ml-3 text-zinc-400 hover:text-white p-1 transition-colors cursor-pointer border-none bg-transparent"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes bobbing {
           0%, 100% { transform: translateY(0); }

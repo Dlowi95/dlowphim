@@ -19,17 +19,17 @@ export class SystemSettingsService {
         websiteDescription: 'Trải Nghiệm Điện Ảnh Premium',
         maintenanceMode: false,
         movieCrawlSource: 'https://ophim1.com/danh-sach/phim-moi-cap-nhat',
-        activeMovieSourceId: 'ophim',
+        activeMovieSourceId: 'phimapi',
         movieSources: [
           {
             id: 'phimapi',
-            name: 'PhimAPI / KKPhim',
+            name: 'PhimAPI / KKPhim (Khuyên dùng)',
             domain: 'https://phimapi.com',
             crawlUrl: 'https://phimapi.com/danh-sach/phim-moi-cap-nhat',
           },
           {
             id: 'ophim',
-            name: 'OPhim (Khuyên dùng)',
+            name: 'OPhim',
             domain: 'https://ophim1.com',
             crawlUrl: 'https://ophim1.com/danh-sach/phim-moi-cap-nhat',
           },
@@ -43,13 +43,13 @@ export class SystemSettingsService {
       });
       await settings.save();
     } else {
-      // Check and add backward compatibility / migration to OPhim default
+      // Check and add backward compatibility
       let updated = false;
       
-      // Khôi phục OPhim làm nguồn hoạt động mặc định theo yêu cầu của user
-      if (!settings.activeMovieSourceId || settings.activeMovieSourceId === 'phimapi') {
-        settings.activeMovieSourceId = 'ophim';
-        settings.movieCrawlSource = 'https://ophim1.com/danh-sach/phim-moi-cap-nhat';
+      // Tự động chuyển activeMovieSourceId sang phimapi
+      if (!settings.activeMovieSourceId || settings.activeMovieSourceId === 'ophim') {
+        settings.activeMovieSourceId = 'phimapi';
+        settings.movieCrawlSource = 'https://phimapi.com/danh-sach/phim-moi-cap-nhat';
         updated = true;
       }
       
@@ -57,28 +57,27 @@ export class SystemSettingsService {
         settings.movieSources = [
           {
             id: 'phimapi',
-            name: 'PhimAPI / KKPhim',
+            name: 'PhimAPI / KKPhim (Khuyên dùng)',
             domain: 'https://phimapi.com',
             crawlUrl: 'https://phimapi.com/danh-sach/phim-moi-cap-nhat',
           },
           {
             id: 'ophim',
-            name: 'OPhim (Khuyên dùng)',
+            name: 'OPhim',
             domain: 'https://ophim1.com',
             crawlUrl: 'https://ophim1.com/danh-sach/phim-moi-cap-nhat',
           },
         ];
         updated = true;
       } else {
-        // Cập nhật nhãn OPhim (Khuyên dùng) trong danh sách nguồn nếu cần
-        const ophimSrc = settings.movieSources.find(s => s.id === 'ophim');
-        if (ophimSrc && !ophimSrc.name.includes('Khuyên dùng')) {
-          ophimSrc.name = 'OPhim (Khuyên dùng)';
+        const phimapiSrc = settings.movieSources.find(s => s.id === 'phimapi');
+        if (phimapiSrc && !phimapiSrc.name.includes('Khuyên dùng')) {
+          phimapiSrc.name = 'PhimAPI / KKPhim (Khuyên dùng)';
           updated = true;
         }
-        const phimapiSrc = settings.movieSources.find(s => s.id === 'phimapi');
-        if (phimapiSrc && phimapiSrc.name.includes('Khuyên dùng')) {
-          phimapiSrc.name = 'PhimAPI / KKPhim';
+        const ophimSrc = settings.movieSources.find(s => s.id === 'ophim');
+        if (ophimSrc && ophimSrc.name.includes('Khuyên dùng')) {
+          ophimSrc.name = 'OPhim';
           updated = true;
         }
       }

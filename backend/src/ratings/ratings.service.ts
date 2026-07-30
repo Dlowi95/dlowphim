@@ -45,7 +45,7 @@ export class RatingsService {
     await this.ratingModel.findOneAndUpdate(
       { movieSlug, userId: userIdObj },
       { score },
-      { upsert: true, new: true },
+      { upsert: true, returnDocument: 'after' },
     );
 
     return this.getMovieRating(movieSlug, userId);

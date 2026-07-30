@@ -7,7 +7,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import AuthModal from "./AuthModal";
 import { useAuth } from "@/context/AuthContext";
-import { cleanMovieName, cleanSlug } from "@/utils/movieUtils";
+import { cleanMovieName, cleanSlug, getImageUrl } from "@/utils/movieUtils";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 
 export default function NavbarComponent() {
@@ -262,8 +262,7 @@ export default function NavbarComponent() {
                   ) : (
                     <div className="space-y-3">
                       {suggestions.map((movie) => {
-                        const fileName = movie.thumb_url ? movie.thumb_url.split("/").pop() : "";
-                        const thumbUrl = `https://img.ophim.live/uploads/movies/${fileName}`;
+                        const thumbUrl = getImageUrl(movie.poster_url || movie.thumb_url);
 
                         return (
                           <div

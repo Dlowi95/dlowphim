@@ -632,35 +632,33 @@ function AnimeThumbCard({
   const title = cleanMovieName(movie.name);
   const initialUrl = getBestMovieImage(movie, 'poster');
   const [imgSrc, setImgSrc] = useState<string>(initialUrl);
-  const [attemptCount, setAttemptCount] = useState(0);
 
   useEffect(() => {
-    setImgSrc(getBestMovieImage(movie, 'poster'));
-    setAttemptCount(0);
-  }, [movie.slug, movie.thumb_url, movie.poster_url]);
+    let isMounted = true;
+    const baseImg = getBestMovieImage(movie, 'poster');
+    setImgSrc(baseImg);
+
+    // Tự động cào ảnh Poster đứng nét căng chuẩn từ TMDB Proxy
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+    fetch(`${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (isMounted && data && data.posterUrl) {
+          setImgSrc(data.posterUrl);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, [movie.slug, movie.origin_name, movie.name, movie.thumb_url, movie.poster_url]);
 
   const handleImgError = () => {
-    if (attemptCount === 0 && movie.poster_url && movie.thumb_url && movie.poster_url !== movie.thumb_url) {
-      setAttemptCount(1);
+    if (movie.poster_url && movie.thumb_url && movie.poster_url !== movie.thumb_url) {
       setImgSrc(getImageUrl(movie.poster_url));
-      return;
-    }
-
-    if (attemptCount < 2) {
-      setAttemptCount(2);
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-      fetch(`${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (data && (data.posterUrl || data.backdropUrl)) {
-            setImgSrc(data.posterUrl || data.backdropUrl);
-          } else {
-            setImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
-          }
-        })
-        .catch(() => {
-          setImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
-        });
+    } else {
+      setImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
     }
   };
 
@@ -682,7 +680,7 @@ function AnimeThumbCard({
         onError={handleImgError}
         loading="lazy"
         decoding="async"
-        className="w-full h-full object-cover"
+        className="w-full h-full object-cover object-[center_top]"
       />
       <div className="absolute inset-0 bg-black/10 hover:bg-black/0 transition-colors" />
     </div>

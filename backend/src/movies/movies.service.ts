@@ -131,24 +131,37 @@ export class MoviesService {
       .replace(/^-+|-+$/g, '');
   }
 
+  // Helper fetch an toàn có timeout 3 giây tránh bị nghẽn mạng TMDB
+  private async safeFetchTmdb(url: string): Promise<any> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      return res;
+    } catch (e) {
+      return null;
+    }
+  }
+
   // ─── MOVIE LOGO PROXY CACHE ───
-  async getMovieLogo(slug: string, title?: string, tmdbId?: string, tmdbType?: string): Promise<any> {
+  async getMovieLogo(slug: string, title?: string, tmdbId?: string, tmdbType?: string, originTitle?: string): Promise<any> {
     const trimmedSlug = slug.trim().toLowerCase();
     
-    // 1. Kiểm tra trong DB
+    // 1. Kiểm tra trong DB (Chỉ dùng lại cache khi ĐÃ CÓ LOGO URL hợp lệ)
     const existing = await this.movieLogoModel.findOne({ slug: trimmedSlug }).exec();
-    if (existing) {
+    if (existing && existing.logoUrl && existing.logoUrl.length > 5) {
       return {
-        logoUrl: existing.logoUrl || '',
+        logoUrl: existing.logoUrl,
         backdropUrl: (existing as any).backdropUrl || '',
         posterUrl: (existing as any).posterUrl || '',
       };
     }
 
-    // 2. Nếu chưa có, cào từ TMDB
+    // 2. Nếu chưa có hoặc logoUrl bị rỗng, cào mới từ TMDB
     let logoUrl = '';
-    let backdropUrl = '';
-    let posterUrl = '';
+    let backdropUrl = (existing as any)?.backdropUrl || '';
+    let posterUrl = (existing as any)?.posterUrl || '';
     try {
       const settings = await this.settingsService.getSettings();
       const apiKey = settings.tmdbApiKey || '591c025bb1641315ae087330271132bc';
@@ -156,25 +169,43 @@ export class MoviesService {
       let targetId = tmdbId;
       let targetType = tmdbType === 'tv' ? 'tv' : 'movie';
 
-      // 2a. Nếu không có tmdbId, search TMDB theo tên
-      if (!targetId && title) {
-        const searchRes = await fetch(
-          `https://api.themoviedb.org/3/search/multi?api_key=${apiKey}&query=${encodeURIComponent(title)}&language=vi`
-        );
-        if (searchRes.ok) {
-          const searchData = await searchRes.json();
-          const firstResult = searchData.results?.[0];
-          if (firstResult) {
-            targetId = firstResult.id;
-            targetType = firstResult.media_type === 'tv' ? 'tv' : 'movie';
+      // 2a. Nếu không có tmdbId, search TMDB theo tên (Thử danh sách từ khóa tìm kiếm thông minh)
+      if (!targetId) {
+        const cleanSlugQuery = slug.split('-phat-hang')[0]?.split('-phan-')[0]?.split('-season-')[0]?.replace(/-/g, ' ');
+        const cleanTitleQuery = title ? title.split('(')[0]?.split('-')[0]?.trim() : '';
+
+        const queryCandidates = Array.from(new Set([
+          originTitle,
+          title,
+          cleanTitleQuery,
+          cleanSlugQuery,
+          slug.replace(/-/g, ' ')
+        ])).filter((q): q is string => !!q && q.trim().length > 1);
+
+        for (const query of queryCandidates) {
+          if (targetId) break;
+          try {
+            const searchRes = await this.safeFetchTmdb(
+              `https://api.themoviedb.org/3/search/multi?api_key=${apiKey}&query=${encodeURIComponent(query)}`
+            );
+            if (searchRes && searchRes.ok) {
+              const searchData = await searchRes.json();
+              const firstResult = searchData.results?.find((r: any) => r.media_type === 'movie' || r.media_type === 'tv') || searchData.results?.[0];
+              if (firstResult) {
+                targetId = firstResult.id;
+                targetType = firstResult.media_type === 'tv' ? 'tv' : 'movie';
+              }
+            }
+          } catch (e) {
+            // thử từ khóa tiếp theo
           }
         }
       }
 
       if (targetId) {
         // 2b. Lấy danh sách logos
-        const logosRes = await fetch(`https://api.themoviedb.org/3/${targetType}/${targetId}/images?api_key=${apiKey}`);
-        if (logosRes.ok) {
+        const logosRes = await this.safeFetchTmdb(`https://api.themoviedb.org/3/${targetType}/${targetId}/images?api_key=${apiKey}`);
+        if (logosRes && logosRes.ok) {
           const data = await logosRes.json();
           const logos = data.logos || [];
           if (logos.length > 0) {
@@ -196,8 +227,8 @@ export class MoviesService {
         }
 
         // 2c. Lấy chi tiết phim từ TMDB để lấy backdrop & poster
-        const infoRes = await fetch(`https://api.themoviedb.org/3/${targetType}/${targetId}?api_key=${apiKey}&language=vi`);
-        if (infoRes.ok) {
+        const infoRes = await this.safeFetchTmdb(`https://api.themoviedb.org/3/${targetType}/${targetId}?api_key=${apiKey}&language=vi`);
+        if (infoRes && infoRes.ok) {
           const infoData = await infoRes.json();
           if (infoData.backdrop_path) {
             backdropUrl = `https://image.tmdb.org/t/p/w1280${infoData.backdrop_path}`;
@@ -210,7 +241,7 @@ export class MoviesService {
         }
       }
     } catch (err) {
-      console.error('Lỗi lấy thông tin từ TMDB trong MoviesService:', err);
+      // im lặng nếu không kết nối được TMDB
     }
 
     // 3. Lưu vào DB để cache
@@ -218,10 +249,10 @@ export class MoviesService {
       await this.movieLogoModel.findOneAndUpdate(
         { slug: trimmedSlug },
         { logoUrl, backdropUrl, posterUrl },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
       ).exec();
     } catch (saveErr) {
-      console.error('Lỗi lưu cache logo vào DB:', saveErr.message);
+      // im lặng khi lưu cache lỗi
     }
 
     return { logoUrl, backdropUrl, posterUrl };

@@ -188,7 +188,7 @@ export default function CreateRoomPage() {
           <div className="lg:col-span-5 bg-[#0e0f17]/40 rounded-3xl overflow-hidden p-6 space-y-5">
             <div className="aspect-[2/3] w-full rounded-2xl overflow-hidden relative shadow-2xl">
               <img
-                src={getImageUrl(movie.poster_url || movie.thumb_url)}
+                src={getImageUrl(selectedPoster || movie.poster_url || movie.thumb_url)}
                 alt={cleanedName}
                 className="w-full h-full object-cover"
                 referrerPolicy="no-referrer"

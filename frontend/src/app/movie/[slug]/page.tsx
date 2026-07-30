@@ -454,25 +454,12 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                     <Play size={14} className="fill-white" /> Xem Trailer
                   </button>
                 ) : (
-                  <>
-                    <button
-                      onClick={handleWatchNow}
-                      className="flex items-center gap-2 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-extrabold text-xs md:text-sm px-6 py-3 rounded-full transition-all duration-300 hover:scale-105 hover:shadow-[0_0_25px_rgba(236,72,153,0.7)] active:scale-95 cursor-pointer shadow-lg shadow-pink-500/25"
-                    >
-                      <Play size={14} className="fill-white" /> Xem Ngay
-                    </button>
-                    {movie.trailer_url && (
-                      <button
-                        onClick={() => {
-                          setActiveTab("trailer");
-                          document.getElementById("right-tabs-area")?.scrollIntoView({ behavior: "smooth" });
-                        }}
-                        className="flex items-center gap-2 border border-zinc-700 bg-zinc-900/40 hover:bg-zinc-800/60 text-zinc-300 hover:text-white font-extrabold text-xs md:text-sm px-6 py-3 rounded-full transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer shadow-lg"
-                      >
-                        <Film size={14} /> Xem Trailer
-                      </button>
-                    )}
-                  </>
+                  <button
+                    onClick={handleWatchNow}
+                    className="flex items-center gap-2 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-extrabold text-xs md:text-sm px-6 py-3 rounded-full transition-all duration-300 hover:scale-105 hover:shadow-[0_0_25px_rgba(236,72,153,0.7)] active:scale-95 cursor-pointer shadow-lg shadow-pink-500/25"
+                  >
+                    <Play size={14} className="fill-white" /> Xem Ngay
+                  </button>
                 )}
 
                 {/* Vertical interactive buttons */}
