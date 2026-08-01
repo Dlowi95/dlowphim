@@ -227,8 +227,15 @@ export class MoviesService {
       }
 
       if (targetId) {
-        // 2b. Lấy danh sách logos
-        const logosRes = await this.safeFetchTmdb(`https://api.themoviedb.org/3/${targetType}/${targetId}/images?api_key=${apiKey}`);
+        // Logo và metadata độc lập nên lấy song song để giảm thời gian cold start.
+        const [logosRes, infoRes] = await Promise.all([
+          this.safeFetchTmdb(
+            `https://api.themoviedb.org/3/${targetType}/${targetId}/images?api_key=${apiKey}`,
+          ),
+          this.safeFetchTmdb(
+            `https://api.themoviedb.org/3/${targetType}/${targetId}?api_key=${apiKey}&language=vi`,
+          ),
+        ]);
         if (logosRes && logosRes.ok) {
           const data = await logosRes.json();
           const logos = data.logos || [];
@@ -249,9 +256,6 @@ export class MoviesService {
             }
           }
         }
-
-        // 2c. Lấy chi tiết phim từ TMDB để lấy backdrop & poster
-        const infoRes = await this.safeFetchTmdb(`https://api.themoviedb.org/3/${targetType}/${targetId}?api_key=${apiKey}&language=vi`);
         if (infoRes && infoRes.ok) {
           const infoData = await infoRes.json();
           tmdbTitle = infoData.title || infoData.name || tmdbTitle;

@@ -5,6 +5,7 @@ import { BannersService } from './banners.service';
 import { Banner, BannerSchema } from './schemas/banner.schema';
 import { User, UserSchema } from '../auth/schemas/user.schema';
 import { AuthModule } from '../auth/auth.module';
+import { MoviesModule } from '../movies/movies.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { AuthModule } from '../auth/auth.module';
       { name: User.name, schema: UserSchema },
     ]),
     AuthModule,
+    MoviesModule,
   ],
   controllers: [BannersController],
   providers: [BannersService],

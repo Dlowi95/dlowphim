@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+} from '@nestjs/common';
 import { BannersService } from './banners.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -11,6 +20,17 @@ export class BannersController {
   @Get()
   async getActiveBanners() {
     return this.bannersService.findAllActive();
+  }
+
+  @Get('hero')
+  async getResolvedHero() {
+    return this.bannersService.getResolvedHero(false);
+  }
+
+  @Get('hero/admin')
+  @UseGuards(AuthGuard, RolesGuard)
+  async getResolvedHeroForAdmin() {
+    return this.bannersService.getResolvedHero(true);
   }
 
   // Admin endpoints (protected by AuthGuard and RolesGuard)

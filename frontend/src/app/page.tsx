@@ -195,7 +195,11 @@ export default function HomePage() {
         const slug = slot.movie.slug;
         if (slot.detail) preloadedDetails[slug] = slot.detail;
         if (slot.tmdbData?.logoUrl) preloadedLogos[slug] = slot.tmdbData.logoUrl;
-        if (slot.tmdbData?.backdropUrl) preloadedBackdrops[slug] = slot.tmdbData.backdropUrl;
+        if (slot.isCustomBanner) {
+          preloadedBackdrops[slug] = slot.movie.poster_url || slot.movie.thumb_url;
+        } else if (slot.tmdbData?.backdropUrl) {
+          preloadedBackdrops[slug] = slot.tmdbData.backdropUrl;
+        }
       }
 
       setDetailsCache((previous) => ({ ...previous, ...preloadedDetails }));
@@ -218,9 +222,8 @@ export default function HomePage() {
     if (heroCandidates.length === 0) return;
 
     async function prefetchDetail(movie: any) {
-      // Dynamic candidates were already preloaded by fetchData(). Only custom
-      // banners still need a detail lookup here.
-      if (!movie.isCustomBanner && detailsCache[movie.slug]) return;
+      // Endpoint batch đã trả sẵn detail cho cả banner hệ thống và tùy biến.
+      if (detailsCache[movie.slug]) return;
 
       try {
         const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${movie.slug}`));
