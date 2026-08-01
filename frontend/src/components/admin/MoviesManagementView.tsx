@@ -23,6 +23,7 @@ import {
 import { createPortal } from "react-dom";
 import { useAuth } from "@/context/AuthContext";
 import { getImageUrl } from "@/utils/movieUtils";
+import { getProxyUrl } from "@/utils/api";
 import Pagination from "./Pagination";
 import MoviesOverrideView from "./MoviesOverrideView";
 
@@ -108,7 +109,7 @@ export default function MoviesManagementView() {
 
   // Auto Import Form state
   const [importSlug, setImportSlug] = useState("");
-  const [importSource, setImportSource] = useState<"ophim" | "kkphim">("ophim");
+  const [importSource, setImportSource] = useState<"phimapi" | "ophim">("phimapi");
   const [importing, setImporting] = useState(false);
 
   // Rating stats state
@@ -169,6 +170,17 @@ export default function MoviesManagementView() {
     if (subTab === "ratings") fetchRatings();
   }, [subTab, searchCustom]);
 
+  useEffect(() => {
+    fetch(`${API_URL}/system-settings`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.activeMovieSourceId === "ophim" || data?.activeMovieSourceId === "phimapi") {
+          setImportSource(data.activeMovieSourceId);
+        }
+      })
+      .catch(() => undefined);
+  }, [API_URL]);
+
   // Reset pagination on tab change or search changes
   useEffect(() => {
     setCustomPage(1);
@@ -179,96 +191,43 @@ export default function MoviesManagementView() {
   // ─── AUTO IMPORT (CRAWL DATA) ───
   const handleAutoImport = async () => {
     if (!importSlug) {
-      showToast("Vui lòng nhập slug phim từ OPhim hoặc KKPhim", "warning");
+      showToast("Vui lòng nhập slug phim từ PhimAPI hoặc OPhim", "warning");
       return;
     }
 
     try {
       setImporting(true);
-      let url = "";
-      if (importSource === "ophim") {
-        url = `https://ophim18.cc/api/phim/${importSlug.trim().toLowerCase()}`;
-      } else {
-        url = `https://kkphim1.com/api/phim/${importSlug.trim().toLowerCase()}`;
-      }
-
-      const res = await fetch(url);
+      const cleanSlug = importSlug.trim().toLowerCase();
+      const res = await fetch(getProxyUrl(`/phim/${cleanSlug}`, importSource));
       if (!res.ok) {
         throw new Error("Không thể kết nối máy chủ phim gốc.");
       }
       const data = await res.json();
-
-      if (importSource === "ophim") {
-        if (data.status === true || data.status === "success") {
-          const item = data.data?.item || data.movie;
-          if (item) {
-            setFormName(item.name || "");
-            setFormOriginName(item.origin_name || "");
-            setFormSlug(item.slug || "");
-
-            // Format images
-            const getOphimImage = (path: string) => {
-              if (!path) return "";
-              if (path.startsWith("http")) return path;
-              const fileName = path.split("/").pop();
-              return `https://img.ophim.live/uploads/movies/${fileName}`;
-            };
-            setFormThumbUrl(getOphimImage(item.thumb_url));
-            setFormPosterUrl(getOphimImage(item.poster_url));
-
-            setFormYear(item.year || 2026);
-            setFormTime(item.time || "120 phút");
-            setFormQuality(item.quality || "FHD");
-            setFormLang(item.lang || "Vietsub");
-            setFormContent(item.content || "");
-            setFormCategory(item.category?.[0]?.name || "Hành động");
-            setFormCountry(item.country?.[0]?.name || "Âu Mỹ");
-
-            // Find streaming link
-            const link = item.episodes?.[0]?.server_data?.[0]?.link_m3u8 || "";
-            setFormLink(link);
-            showToast("Tự động lấy dữ liệu từ OPhim thành công!", "success");
-          } else {
-            throw new Error("Không tìm thấy thông tin phim.");
-          }
-        } else {
-          throw new Error("Dữ liệu phim từ OPhim bị lỗi.");
-        }
-      } else {
-        // KKPhim
-        if (data.status === true || data.status === "success") {
-          const movie = data.movie;
-          if (movie) {
-            setFormName(movie.name || "");
-            setFormOriginName(movie.origin_name || "");
-            setFormSlug(movie.slug || "");
-
-            const getKkImage = (path: string) => {
-              if (!path) return "";
-              if (path.startsWith("http")) return path;
-              return `https://phimimg.com/${path}`;
-            };
-            setFormThumbUrl(getKkImage(movie.thumb_url));
-            setFormPosterUrl(getKkImage(movie.poster_url));
-
-            setFormYear(movie.year || 2026);
-            setFormTime(movie.time || "120 phút");
-            setFormQuality(movie.quality || "FHD");
-            setFormLang(movie.lang || "Vietsub");
-            setFormContent(movie.content || "");
-            setFormCategory(movie.category?.[0]?.name || "Hành động");
-            setFormCountry(movie.country?.[0]?.name || "Âu Mỹ");
-
-            const link = data.episodes?.[0]?.server_data?.[0]?.link_m3u8 || "";
-            setFormLink(link);
-            showToast("Tự động lấy dữ liệu từ KKPhim thành công!", "success");
-          } else {
-            throw new Error("Không tìm thấy thông tin phim.");
-          }
-        } else {
-          throw new Error("Dữ liệu phim từ KKPhim bị lỗi.");
-        }
+      if (data.status !== true && data.status !== "success") {
+        throw new Error(data.message || "Dữ liệu phim từ nguồn đang chọn bị lỗi.");
       }
+
+      const movie = data.movie || data.data?.item;
+      if (!movie) throw new Error("Không tìm thấy thông tin phim.");
+
+      const episodes = data.episodes || data.data?.item?.episodes || movie.episodes || [];
+      setFormName(movie.name || "");
+      setFormOriginName(movie.origin_name || "");
+      setFormSlug(movie.slug || cleanSlug);
+      setFormThumbUrl(getImageUrl(movie.thumb_url));
+      setFormPosterUrl(getImageUrl(movie.poster_url));
+      setFormYear(movie.year || 2026);
+      setFormTime(movie.time || "120 phút");
+      setFormQuality(movie.quality || "FHD");
+      setFormLang(movie.lang || "Vietsub");
+      setFormContent(movie.content || "");
+      setFormCategory(movie.category?.[0]?.name || "Hành động");
+      setFormCountry(movie.country?.[0]?.name || "Âu Mỹ");
+      setFormLink(episodes[0]?.server_data?.[0]?.link_m3u8 || "");
+      showToast(
+        `Tự động lấy dữ liệu từ ${importSource === "phimapi" ? "PhimAPI" : "OPhim"} thành công!`,
+        "success"
+      );
     } catch (err: any) {
       console.error(err);
       showToast(err.message || "Lỗi tự động lấy tin", "error");
@@ -926,7 +885,7 @@ export default function MoviesManagementView() {
                       <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[9px] font-extrabold text-zinc-500">
                         <span>Nếu chưa biết slug phim, tra cứu tại:</span>
                         <a
-                          href="https://ophim18.cc/"
+                          href="https://ophim1.com/"
                           target="_blank"
                           rel="noreferrer"
                           className="text-pink-500 hover:underline flex items-center gap-1"
@@ -935,12 +894,12 @@ export default function MoviesManagementView() {
                         </a>
                         <span className="text-zinc-800">|</span>
                         <a
-                          href="https://kkphim1.com/"
+                          href="https://phimapi.com/"
                           target="_blank"
                           rel="noreferrer"
                           className="text-pink-500 hover:underline flex items-center gap-1"
                         >
-                          Tra KKPhim API <ExternalLink size={9} />
+                          Tra PhimAPI <ExternalLink size={9} />
                         </a>
                       </div>
                     </div>
@@ -950,19 +909,19 @@ export default function MoviesManagementView() {
                     <div className="flex rounded-xl bg-zinc-950 border border-zinc-900 p-0.5 overflow-hidden shrink-0">
                       <button
                         type="button"
+                        onClick={() => setImportSource("phimapi")}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border-none cursor-pointer ${importSource === "phimapi" ? "bg-pink-500 text-white" : "bg-transparent text-zinc-500"
+                          }`}
+                      >
+                        PhimAPI
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setImportSource("ophim")}
                         className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border-none cursor-pointer ${importSource === "ophim" ? "bg-pink-500 text-white" : "bg-transparent text-zinc-500"
                           }`}
                       >
                         OPhim
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setImportSource("kkphim")}
-                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border-none cursor-pointer ${importSource === "kkphim" ? "bg-pink-500 text-white" : "bg-transparent text-zinc-500"
-                          }`}
-                      >
-                        KKPhim
                       </button>
                     </div>
 

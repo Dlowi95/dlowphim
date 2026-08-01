@@ -16,11 +16,15 @@ export class SystemSetting {
   maintenanceMode: boolean;
 
   // Movie Crawling config
-  @Prop({ default: 'https://ophim1.com/danh-sach/phim-moi-cap-nhat' })
+  @Prop({ default: 'https://phimapi.com/danh-sach/phim-moi-cap-nhat' })
   movieCrawlSource?: string;
 
-  @Prop({ default: 'ophim' })
+  @Prop({ default: 'phimapi' })
   activeMovieSourceId: string;
+
+  // One-time migration marker. Admin selections must not be overwritten on read.
+  @Prop({ type: Number, default: 0 })
+  movieSourceConfigVersion: number;
 
   @Prop({
     type: [
@@ -34,13 +38,13 @@ export class SystemSetting {
     default: [
       {
         id: 'phimapi',
-        name: 'PhimAPI / KKPhim',
+        name: 'PhimAPI / KKPhim (Khuyên dùng)',
         domain: 'https://phimapi.com',
         crawlUrl: 'https://phimapi.com/danh-sach/phim-moi-cap-nhat',
       },
       {
         id: 'ophim',
-        name: 'OPhim (Khuyên dùng)',
+        name: 'OPhim',
         domain: 'https://ophim1.com',
         crawlUrl: 'https://ophim1.com/danh-sach/phim-moi-cap-nhat',
       },

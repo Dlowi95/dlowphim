@@ -1,4 +1,9 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { BlockedMovie, BlockedMovieDocument } from './schemas/blocked-movie.schema';
@@ -133,14 +138,15 @@ export class MoviesService {
 
   // Helper fetch an toàn có timeout 3 giây tránh bị nghẽn mạng TMDB
   private async safeFetchTmdb(url: string): Promise<any> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
       const res = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeoutId);
       return res;
     } catch (e) {
       return null;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -148,20 +154,35 @@ export class MoviesService {
   async getMovieLogo(slug: string, title?: string, tmdbId?: string, tmdbType?: string, originTitle?: string): Promise<any> {
     const trimmedSlug = slug.trim().toLowerCase();
     
-    // 1. Kiểm tra trong DB (Chỉ dùng lại cache khi ĐÃ CÓ LOGO URL hợp lệ)
+    // 1. Dùng lại cache khi đã có metadata và backdrop ngang chuẩn từ TMDB.
     const existing = await this.movieLogoModel.findOne({ slug: trimmedSlug }).exec();
-    if (existing && existing.logoUrl && existing.logoUrl.length > 5) {
+    if (
+      existing &&
+      existing.backdropUrl &&
+      (existing as any).tmdbTitle
+    ) {
       return {
         logoUrl: existing.logoUrl,
         backdropUrl: (existing as any).backdropUrl || '',
         posterUrl: (existing as any).posterUrl || '',
+        tmdbTitle: (existing as any).tmdbTitle || '',
+        tmdbOriginalTitle: (existing as any).tmdbOriginalTitle || '',
+        tmdbId: (existing as any).tmdbId || '',
+        tmdbType: (existing as any).tmdbType || 'movie',
       };
     }
 
-    // 2. Nếu chưa có hoặc logoUrl bị rỗng, cào mới từ TMDB
+    // 2. Nếu metadata/backdrop chưa đủ thì lấy lại từ TMDB.
+    const hasCurrentTmdbMetadata = Boolean((existing as any)?.tmdbTitle);
     let logoUrl = '';
-    let backdropUrl = (existing as any)?.backdropUrl || '';
+    // Cache cũ từng ghi poster dọc vào backdropUrl. Chỉ tái sử dụng backdrop
+    // sau khi record đã được chuẩn hóa bằng metadata TMDB mới.
+    let backdropUrl = hasCurrentTmdbMetadata ? (existing as any)?.backdropUrl || '' : '';
     let posterUrl = (existing as any)?.posterUrl || '';
+    let tmdbTitle = (existing as any)?.tmdbTitle || '';
+    let tmdbOriginalTitle = (existing as any)?.tmdbOriginalTitle || '';
+    let resolvedTmdbId = (existing as any)?.tmdbId || '';
+    let resolvedTmdbType = (existing as any)?.tmdbType || 'movie';
     try {
       const settings = await this.settingsService.getSettings();
       const apiKey = settings.tmdbApiKey || '591c025bb1641315ae087330271132bc';
@@ -194,6 +215,9 @@ export class MoviesService {
               if (firstResult) {
                 targetId = firstResult.id;
                 targetType = firstResult.media_type === 'tv' ? 'tv' : 'movie';
+                tmdbTitle = firstResult.title || firstResult.name || '';
+                tmdbOriginalTitle =
+                  firstResult.original_title || firstResult.original_name || '';
               }
             }
           } catch (e) {
@@ -230,10 +254,13 @@ export class MoviesService {
         const infoRes = await this.safeFetchTmdb(`https://api.themoviedb.org/3/${targetType}/${targetId}?api_key=${apiKey}&language=vi`);
         if (infoRes && infoRes.ok) {
           const infoData = await infoRes.json();
+          tmdbTitle = infoData.title || infoData.name || tmdbTitle;
+          tmdbOriginalTitle =
+            infoData.original_title || infoData.original_name || tmdbOriginalTitle;
+          resolvedTmdbId = String(infoData.id || targetId || '');
+          resolvedTmdbType = targetType;
           if (infoData.backdrop_path) {
             backdropUrl = `https://image.tmdb.org/t/p/w1280${infoData.backdrop_path}`;
-          } else if (infoData.poster_path) {
-            backdropUrl = `https://image.tmdb.org/t/p/w1280${infoData.poster_path}`;
           }
           if (infoData.poster_path) {
             posterUrl = `https://image.tmdb.org/t/p/w500${infoData.poster_path}`;
@@ -248,14 +275,30 @@ export class MoviesService {
     try {
       await this.movieLogoModel.findOneAndUpdate(
         { slug: trimmedSlug },
-        { logoUrl, backdropUrl, posterUrl },
+        {
+          logoUrl,
+          backdropUrl,
+          posterUrl,
+          tmdbTitle,
+          tmdbOriginalTitle,
+          tmdbId: resolvedTmdbId,
+          tmdbType: resolvedTmdbType,
+        },
         { upsert: true, returnDocument: 'after' }
       ).exec();
     } catch (saveErr) {
       // im lặng khi lưu cache lỗi
     }
 
-    return { logoUrl, backdropUrl, posterUrl };
+    return {
+      logoUrl,
+      backdropUrl,
+      posterUrl,
+      tmdbTitle,
+      tmdbOriginalTitle,
+      tmdbId: resolvedTmdbId,
+      tmdbType: resolvedTmdbType,
+    };
   }
 
   // ─── GET MOVIE ACTORS & CREDITS FROM TMDB ───
@@ -320,64 +363,94 @@ export class MoviesService {
     return credits;
   }
 
-  // ─── OPHIM API PROXY CACHE ───
-  private ophimCache = new Map<string, { data: any; expiry: number }>();
+  // ─── DYNAMIC MOVIE API PROXY CACHE ───
+  private movieApiCache = new Map<string, { data: any; expiry: number }>();
+  private readonly movieApiCacheMaxEntries = 500;
 
-  async fetchOphimProxy(path: string): Promise<any> {
+  async fetchOphimProxy(path: string, sourcePreference = 'active'): Promise<any> {
+    if (!path || !path.startsWith('/') || path.startsWith('//')) {
+      throw new BadRequestException('Đường dẫn API phim không hợp lệ');
+    }
+
+    const settings = await this.settingsService.getSettings();
+    const configuredSources =
+      settings.movieSources && settings.movieSources.length > 0
+        ? settings.movieSources
+        : [
+            {
+              id: 'phimapi',
+              name: 'PhimAPI / KKPhim',
+              domain: 'https://phimapi.com',
+              crawlUrl: 'https://phimapi.com/danh-sach/phim-moi-cap-nhat',
+            },
+            {
+              id: 'ophim',
+              name: 'OPhim',
+              domain: 'https://ophim1.com',
+              crawlUrl: 'https://ophim1.com/danh-sach/phim-moi-cap-nhat',
+            },
+          ];
+
+    const activeSource =
+      configuredSources.find((source) => source.id === settings.activeMovieSourceId) ||
+      configuredSources.find((source) => source.id === 'phimapi') ||
+      configuredSources[0];
+
+    let selectedSource = activeSource;
+    if (sourcePreference === 'fallback') {
+      selectedSource =
+        configuredSources.find((source) => source.id !== activeSource.id) || activeSource;
+    } else if (sourcePreference !== 'active') {
+      selectedSource =
+        configuredSources.find((source) => source.id === sourcePreference) || activeSource;
+    }
+
+    const baseDomain = new URL(selectedSource.domain).origin;
+    let finalPath = path;
+    if (selectedSource.id === 'phimapi' && finalPath.startsWith('/v1/api/phim/')) {
+      finalPath = finalPath.replace('/v1/api/phim/', '/phim/');
+    } else if (
+      selectedSource.id === 'ophim' &&
+      finalPath.startsWith('/phim/') &&
+      !finalPath.startsWith('/phim-')
+    ) {
+      finalPath = finalPath.replace('/phim/', '/v1/api/phim/');
+    }
+
     const now = Date.now();
+    const cacheKey = `${selectedSource.id}:${finalPath}`;
+    const cached = this.movieApiCache.get(cacheKey);
     let data: any = null;
-    const cached = this.ophimCache.get(path);
 
     if (cached && cached.expiry > now) {
       data = JSON.parse(JSON.stringify(cached.data));
     } else {
-      // Lấy nguồn phim đang active từ Settings
-      let baseDomain = 'https://phimapi.com'; // Default to phimapi
-      let activeSourceId = 'phimapi';
-
-      try {
-        const settings = await this.settingsService.getSettings();
-        if (settings.activeMovieSourceId) {
-          activeSourceId = settings.activeMovieSourceId;
-        }
-
-        if (settings.movieSources && settings.movieSources.length > 0) {
-          const activeSrc = settings.movieSources.find(s => s.id === activeSourceId);
-          if (activeSrc) {
-            baseDomain = activeSrc.domain;
-          }
-        } else if (settings.movieCrawlSource) {
-          const url = new URL(settings.movieCrawlSource);
-          baseDomain = url.origin;
-        }
-      } catch (e) {
-        // url không hợp lệ hoặc lỗi settings
+      if (cached) this.movieApiCache.delete(cacheKey);
+      for (const [key, entry] of this.movieApiCache) {
+        if (entry.expiry <= now) this.movieApiCache.delete(key);
       }
 
-      // Smart Proxy Path Rewriter
-      let finalPath = path;
-      if (activeSourceId === 'phimapi') {
-        if (finalPath.startsWith('/v1/api/phim/')) {
-          finalPath = finalPath.replace('/v1/api/phim/', '/phim/');
-        }
-      } else if (activeSourceId === 'ophim') {
-        if (finalPath.startsWith('/phim/') && !finalPath.startsWith('/phim-')) {
-          finalPath = finalPath.replace('/phim/', '/v1/api/phim/');
-        }
-      }
-
-      const targetUrl = `${baseDomain}${finalPath}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
       try {
-        const res = await fetch(targetUrl);
+        const res = await fetch(`${baseDomain}${finalPath}`, {
+          signal: controller.signal,
+        });
         if (!res.ok) {
-          if (cached) {
-            data = JSON.parse(JSON.stringify(cached.data));
-          } else {
-            data = { status: false, message: `Phim không tồn tại trên nguồn cào: ${res.statusText}` };
-          }
+          data = {
+            status: false,
+            message: `Nguồn ${selectedSource.name} phản hồi lỗi ${res.status}`,
+            _sourceId: selectedSource.id,
+          };
         } else {
           data = await res.json();
-          this.ophimCache.set(path, {
+          if (data && typeof data === 'object') data._sourceId = selectedSource.id;
+
+          if (this.movieApiCache.size >= this.movieApiCacheMaxEntries) {
+            const oldestKey = this.movieApiCache.keys().next().value as string | undefined;
+            if (oldestKey) this.movieApiCache.delete(oldestKey);
+          }
+          this.movieApiCache.set(cacheKey, {
             data: JSON.parse(JSON.stringify(data)),
             expiry: now + 10 * 60 * 1000,
           });
@@ -388,6 +461,8 @@ export class MoviesService {
         } else {
           throw error;
         }
+      } finally {
+        clearTimeout(timeoutId);
       }
     }
 

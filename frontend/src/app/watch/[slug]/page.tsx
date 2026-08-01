@@ -11,7 +11,7 @@ import MovieCard from "@/components/MovieCard";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { getTmdbApiKey } from "@/utils/tmdb";
-import { getProxyUrl, MOVIE_API_DOMAIN, FALLBACK_API_DOMAIN } from "@/utils/api";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import "plyr/dist/plyr.css";
 
 interface Episode {
@@ -47,6 +47,8 @@ interface MovieDetail {
   country: { name: string; slug: string }[];
   episodes: Server[];
   isCustom?: boolean;
+  sourceId?: string;
+  fallbackOnly?: boolean;
 }
 
 
@@ -103,6 +105,8 @@ function WatchContent({ slug }: { slug: string }) {
   const hasSkippedIntro = React.useRef(false);
   const lastHistorySavedTime = React.useRef<number>(0);
   const [kkServers, setKkServers] = useState<Server[]>([]);
+  const [fallbackSourceId, setFallbackSourceId] = useState<string>("");
+  const [preferFallbackServers, setPreferFallbackServers] = useState(false);
 
   const [showEpisodeDrawer, setShowEpisodeDrawer] = useState(false);
 
@@ -185,12 +189,13 @@ function WatchContent({ slug }: { slug: string }) {
     hasSkippedIntro.current = false;
   }, [playerType, activeEpisodeIndex, activeServerIndex]);
 
-  // 1. Fetch thông tin phim từ OPhim API hoặc Custom API
+  // 1. Fetch movie data from the source selected in admin settings.
   useEffect(() => {
     async function fetchMovieDetail() {
       try {
         setLoading(true);
         setError(null);
+        setPreferFallbackServers(false);
 
         // a. Kiểm tra xem phim có bị Block (Ẩn) hay không
         try {
@@ -207,7 +212,7 @@ function WatchContent({ slug }: { slug: string }) {
           }
           console.error("Lỗi kiểm tra chặn phim:", blockErr);
         }
-        // b. Tải phim từ API PhimAPI chính thức
+        // b. Load from the active movie source.
         let movieDetail: any = null;
         try {
           const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${slug}`));
@@ -216,12 +221,13 @@ function WatchContent({ slug }: { slug: string }) {
             if (data.status === true || data.status === "success") {
               movieDetail = {
                 ...(data.movie || data.data?.item),
-                episodes: data.episodes || data.data?.item?.episodes || []
+                episodes: data.episodes || data.data?.item?.episodes || [],
+                sourceId: data._sourceId,
               };
             }
           }
         } catch (e) {
-          console.warn("Lỗi tải từ PhimAPI chính thức, thử v1/api/phim...");
+          console.warn("Lỗi tải từ nguồn phim chính, thử route chi tiết v1...");
         }
 
         if (!movieDetail) {
@@ -232,38 +238,22 @@ function WatchContent({ slug }: { slug: string }) {
               if (data.status === true || data.status === "success") {
                 const item = data.movie || data.data?.item;
                 const eps = data.episodes || data.data?.item?.episodes || [];
-                movieDetail = { ...item, episodes: eps };
+                movieDetail = { ...item, episodes: eps, sourceId: data._sourceId };
               }
             }
           } catch (e) {
-            console.warn("Không tìm thấy trên PhimAPI v1...");
+            console.warn("Không tìm thấy phim trên route chi tiết v1...");
           }
         }
 
         if (movieDetail) {
-          // Kiểm tra nếu nguồn chính PhimAPI bị trống tập hoặc lỗi link
+          // Check whether the active source has an immediately playable link.
           const firstEp = movieDetail.episodes?.[0]?.server_data?.[0];
           const hasValidLink = !!(firstEp && (firstEp.link_m3u8 || firstEp.link_embed));
 
-          // Chỉ khi PhimAPI không có link hợp lệ mới nạp nguồn dự phòng từ OPhim
-          if (!hasValidLink) {
-            try {
-              const fallbackRes = await fetch(`${FALLBACK_API_DOMAIN}/v1/api/phim/${slug}`);
-              if (fallbackRes.ok) {
-                const fbData = await fallbackRes.json();
-                const fbEps = fbData.data?.item?.episodes || fbData.episodes || [];
-                if (fbEps.length > 0) {
-                  const fbServers = fbEps.map((s: any) => ({
-                    ...s,
-                    server_name: s.server_name.includes("Dự Phòng") ? s.server_name : `${s.server_name} (Dự Phòng)`
-                  }));
-                  movieDetail.episodes = [...fbServers, ...(movieDetail.episodes || [])];
-                }
-              }
-            } catch (fbErr) {
-              console.warn("Không thể tải server dự phòng:", fbErr);
-            }
-          }
+          // The fallback source is fetched once by the source-merging effect.
+          // Put it first only when the active source has no playable link.
+          setPreferFallbackServers(!hasValidLink);
 
           setMovie(movieDetail);
 
@@ -303,19 +293,21 @@ function WatchContent({ slug }: { slug: string }) {
         } else {
           // c. Nếu nguồn chính không có, thử tìm trên fallback hoặc Custom Movies
           try {
-            const fbRes = await fetch(`${FALLBACK_API_DOMAIN}/phim/${slug}`);
+            const fbRes = await fetch(getProxyUrl(`/phim/${slug}`, "fallback"));
             if (fbRes.ok) {
               const fbData = await fbRes.json();
               if ((fbData.status === true || fbData.status === "success" || fbData.status === "true") && fbData.movie) {
                 movieDetail = {
                   ...fbData.movie,
-                  episodes: fbData.episodes || []
+                  episodes: fbData.episodes || [],
+                  sourceId: fbData._sourceId,
+                  fallbackOnly: true,
                 };
                 setMovie(movieDetail);
               }
             }
           } catch (e) {
-            console.warn("Không tìm thấy trên PhimAPI fallback");
+            console.warn("Không tìm thấy phim trên nguồn dự phòng");
           }
 
           if (!movieDetail) {
@@ -395,12 +387,14 @@ function WatchContent({ slug }: { slug: string }) {
     }
   }, [loading, movie]);
 
-  // Fetch thêm nguồn từ KKPhim song song
+  // Fetch the provider opposite to the active admin source in parallel.
   useEffect(() => {
-    if (!slug || movie?.isCustom) return;
+    setKkServers([]);
+    setFallbackSourceId("");
+    if (!slug || movie?.isCustom || movie?.fallbackOnly) return;
     async function fetchKKPhimDetail() {
       try {
-        const res = await fetch(getProxyUrl(`${FALLBACK_API_DOMAIN}/phim/${slug}`));
+        const res = await fetch(getProxyUrl(`/phim/${slug}`, "fallback"));
         if (res.ok) {
           const data = await res.json();
           if (data.status === true || data.status === "success") {
@@ -416,30 +410,42 @@ function WatchContent({ slug }: { slug: string }) {
               })),
             }));
             setKkServers(servers);
+            setFallbackSourceId(data._sourceId || "");
           }
         }
       } catch (err) {
         console.error("Lỗi lấy chi tiết phim từ KKPhim:", err);
       }
     }
-    setKkServers([]);
     fetchKKPhimDetail();
-  }, [slug, movie?.isCustom]);
+  }, [slug, movie?.isCustom, movie?.fallbackOnly]);
 
 
   const cleanedName = movie ? cleanMovieName(movie.name) : "";
 
-  // Merge servers từ OPhim và KKPhim
-  const combinedServers: Server[] = [
-    ...(movie?.episodes || []).map((srv) => ({
-      server_name: srv.server_name.toLowerCase().includes("ophim") ? srv.server_name : `OPhim - ${srv.server_name}`,
+  const primarySourceLabel = movie?.isCustom
+    ? "DlowServer"
+    : movie?.sourceId === "ophim"
+      ? "OPhim"
+      : "PhimAPI";
+  const fallbackSourceLabel = fallbackSourceId === "ophim" ? "OPhim" : "PhimAPI";
+
+  // Merge servers from the configured primary source and its fallback.
+  const primaryServers: Server[] = (movie?.episodes || []).map((srv) => ({
+      server_name: srv.server_name.toLowerCase().includes(primarySourceLabel.toLowerCase())
+        ? srv.server_name
+        : `${primarySourceLabel} - ${srv.server_name}`,
       server_data: srv.server_data,
-    })),
-    ...kkServers.map((srv) => ({
-      server_name: srv.server_name.toLowerCase().includes("kkphim") ? srv.server_name : `KKPhim - ${srv.server_name}`,
+    }));
+  const fallbackServers: Server[] = kkServers.map((srv) => ({
+      server_name: srv.server_name.toLowerCase().includes(fallbackSourceLabel.toLowerCase())
+        ? srv.server_name
+        : `${fallbackSourceLabel} - ${srv.server_name}`,
       server_data: srv.server_data,
-    })),
-  ];
+    }));
+  const combinedServers: Server[] = preferFallbackServers
+    ? [...fallbackServers, ...primaryServers]
+    : [...primaryServers, ...fallbackServers];
 
   const servers = combinedServers;
   const currentServer = servers[activeServerIndex];

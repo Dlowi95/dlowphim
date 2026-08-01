@@ -8,7 +8,7 @@ import Cookies from "js-cookie";
 import Link from "next/link";
 import Pagination from "@/components/Pagination";
 import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
-import { getProxyUrl, MOVIE_API_DOMAIN, FALLBACK_API_DOMAIN } from "@/utils/api";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 
 interface HistoryItem {
   movieSlug: string;
@@ -88,7 +88,7 @@ export default function UserHistoryPage() {
           if (movieDetails[item.movieSlug]) return null;
           try {
             let movie: any = null;
-            // 1. Thử OPhim chính
+            // 1. Try the source currently selected by admin.
             let res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${item.movieSlug}`));
             if (res.ok) {
               const data = await res.json();
@@ -106,9 +106,9 @@ export default function UserHistoryPage() {
                 }
               }
             }
-            // 3. Thử PhimAPI fallback
+            // 3. Try the provider opposite to the active source.
             if (!movie) {
-              res = await fetch(`${FALLBACK_API_DOMAIN}/phim/${item.movieSlug}`);
+              res = await fetch(getProxyUrl(`/phim/${item.movieSlug}`, "fallback"));
               if (res.ok) {
                 const data = await res.json();
                 if (data.status === true || data.status === "success") {

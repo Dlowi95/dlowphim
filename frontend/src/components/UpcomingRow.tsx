@@ -37,7 +37,9 @@ export default function UpcomingRow() {
         
         try {
           // Luôn fetch từ OPhim đối với danh mục sắp chiếu vì PhimAPI không hỗ trợ danh mục này
-          const res = await fetch(getProxyUrl(`https://ophim1.com/v1/api/danh-sach/phim-sap-chieu?page=1`));
+          const res = await fetch(
+            getProxyUrl(`/v1/api/danh-sach/phim-sap-chieu?page=1`, "ophim")
+          );
           if (res.ok) {
             const data = await res.json();
             items = data.data?.items || data.items || [];

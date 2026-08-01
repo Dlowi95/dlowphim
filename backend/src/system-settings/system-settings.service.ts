@@ -5,6 +5,21 @@ import { SystemSetting, SystemSettingDocument } from './schemas/system-setting.s
 
 @Injectable()
 export class SystemSettingsService {
+  private readonly defaultMovieSources = [
+    {
+      id: 'phimapi',
+      name: 'PhimAPI / KKPhim (Khuyên dùng)',
+      domain: 'https://phimapi.com',
+      crawlUrl: 'https://phimapi.com/danh-sach/phim-moi-cap-nhat',
+    },
+    {
+      id: 'ophim',
+      name: 'OPhim',
+      domain: 'https://ophim1.com',
+      crawlUrl: 'https://ophim1.com/danh-sach/phim-moi-cap-nhat',
+    },
+  ];
+
   constructor(
     @InjectModel(SystemSetting.name)
     private readonly systemSettingModel: Model<SystemSettingDocument>,
@@ -18,22 +33,10 @@ export class SystemSettingsService {
         websiteName: 'DlowPhim',
         websiteDescription: 'Trải Nghiệm Điện Ảnh Premium',
         maintenanceMode: false,
-        movieCrawlSource: 'https://ophim1.com/danh-sach/phim-moi-cap-nhat',
+        movieCrawlSource: 'https://phimapi.com/danh-sach/phim-moi-cap-nhat',
         activeMovieSourceId: 'phimapi',
-        movieSources: [
-          {
-            id: 'phimapi',
-            name: 'PhimAPI / KKPhim (Khuyên dùng)',
-            domain: 'https://phimapi.com',
-            crawlUrl: 'https://phimapi.com/danh-sach/phim-moi-cap-nhat',
-          },
-          {
-            id: 'ophim',
-            name: 'OPhim',
-            domain: 'https://ophim1.com',
-            crawlUrl: 'https://ophim1.com/danh-sach/phim-moi-cap-nhat',
-          },
-        ],
+        movieSourceConfigVersion: 1,
+        movieSources: this.defaultMovieSources,
         autoCrawlInterval: 12,
         contactEmail: 'support@dlowphim.com',
         facebookLink: 'https://facebook.com/dlowphim',
@@ -43,31 +46,19 @@ export class SystemSettingsService {
       });
       await settings.save();
     } else {
-      // Check and add backward compatibility
+      // Migrate old databases once. After this, preserve the source selected
+      // by the administrator instead of changing it whenever settings are read.
       let updated = false;
-      
-      // Tự động chuyển activeMovieSourceId sang phimapi
-      if (!settings.activeMovieSourceId || settings.activeMovieSourceId === 'ophim') {
+
+      if (!settings.movieSourceConfigVersion) {
         settings.activeMovieSourceId = 'phimapi';
         settings.movieCrawlSource = 'https://phimapi.com/danh-sach/phim-moi-cap-nhat';
+        settings.movieSourceConfigVersion = 1;
         updated = true;
       }
-      
+
       if (!settings.movieSources || settings.movieSources.length === 0) {
-        settings.movieSources = [
-          {
-            id: 'phimapi',
-            name: 'PhimAPI / KKPhim (Khuyên dùng)',
-            domain: 'https://phimapi.com',
-            crawlUrl: 'https://phimapi.com/danh-sach/phim-moi-cap-nhat',
-          },
-          {
-            id: 'ophim',
-            name: 'OPhim',
-            domain: 'https://ophim1.com',
-            crawlUrl: 'https://ophim1.com/danh-sach/phim-moi-cap-nhat',
-          },
-        ];
+        settings.movieSources = this.defaultMovieSources;
         updated = true;
       } else {
         const phimapiSrc = settings.movieSources.find(s => s.id === 'phimapi');
@@ -92,10 +83,18 @@ export class SystemSettingsService {
   async updateSettings(dto: Partial<SystemSetting>): Promise<SystemSettingDocument> {
     let settings = await this.systemSettingModel.findOne().exec();
     if (!settings) {
-      settings = new this.systemSettingModel(dto);
+      settings = new this.systemSettingModel({
+        activeMovieSourceId: 'phimapi',
+        movieCrawlSource: 'https://phimapi.com/danh-sach/phim-moi-cap-nhat',
+        movieSourceConfigVersion: 1,
+        movieSources: this.defaultMovieSources,
+        ...dto,
+      });
     } else {
       Object.assign(settings, dto);
     }
+
+    settings.movieSourceConfigVersion = 1;
 
     // Sync crawl source with the active source if it was changed
     if (settings.activeMovieSourceId && settings.movieSources) {

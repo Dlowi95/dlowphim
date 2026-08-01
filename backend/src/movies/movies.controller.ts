@@ -51,8 +51,11 @@ export class MoviesController {
   }
 
   @Get('ophim-proxy')
-  async fetchOphimProxy(@Query('path') path: string) {
-    return this.moviesService.fetchOphimProxy(path);
+  async fetchOphimProxy(
+    @Query('path') path: string,
+    @Query('source') source = 'active',
+  ) {
+    return this.moviesService.fetchOphimProxy(path, source);
   }
 
   @Get('override/:slug')

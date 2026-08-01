@@ -6,7 +6,7 @@ import { Loader2 } from "lucide-react";
 import MovieCard from "@/components/MovieCard";
 import { cleanSlug } from "@/utils/movieUtils";
 import Pagination from "@/components/Pagination";
-import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
+import { getProxyUrl, MOVIE_API_DOMAIN, MovieSourcePreference } from "@/utils/api";
 
 function SearchContent() {
   const searchParams = useSearchParams();
@@ -28,6 +28,7 @@ function SearchContent() {
       try {
         setLoading(true);
         let url = "";
+        let sourcePreference: MovieSourcePreference = "active";
         
         if (keyword) {
           url = `${MOVIE_API_DOMAIN}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&page=${pageUrl}`;
@@ -41,7 +42,8 @@ function SearchContent() {
           url = `${MOVIE_API_DOMAIN}/v1/api/quoc-gia/${country}?page=${pageUrl}`;
         } else if (type) {
           if (type === "phim-sap-chieu") {
-            url = `https://ophim1.com/v1/api/danh-sach/phim-sap-chieu?page=${pageUrl}`;
+            url = `/v1/api/danh-sach/phim-sap-chieu?page=${pageUrl}`;
+            sourcePreference = "ophim";
           } else {
             url = `${MOVIE_API_DOMAIN}/v1/api/danh-sach/${type}?page=${pageUrl}`;
           }
@@ -59,7 +61,7 @@ function SearchContent() {
         let fetchSuccess = false;
 
         try {
-          const res = await fetch(getProxyUrl(url), { signal: controller.signal });
+          const res = await fetch(getProxyUrl(url, sourcePreference), { signal: controller.signal });
           if (res.ok) {
             data = await res.json();
             if (data.status === "success" || data.status === true) {

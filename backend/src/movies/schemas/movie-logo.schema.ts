@@ -17,6 +17,18 @@ export class MovieLogo {
   @Prop({ default: '' })
   posterUrl: string; // link ảnh poster dọc nét căng từ TMDB
 
+  @Prop({ default: '' })
+  tmdbTitle: string;
+
+  @Prop({ default: '' })
+  tmdbOriginalTitle: string;
+
+  @Prop({ default: '' })
+  tmdbId: string;
+
+  @Prop({ default: 'movie' })
+  tmdbType: string;
+
   @Prop({ type: Array, default: [] })
   credits: any[]; // danh sách dàn diễn viên nét từ TMDB [{ id, name, character, profileUrl }]
 }

@@ -18,6 +18,7 @@ import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { getTmdbApiKey } from "@/utils/tmdb";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
+import { useResolvedHeroBanners } from "@/hooks/useResolvedHeroBanners";
 
 const FALLBACK_CANDIDATES = [
   {
@@ -131,6 +132,12 @@ const fetchTmdbLogoSmart = async (slug: string, movieTitle: string, apiUrl: stri
 
 export default function HomePage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+  const {
+    slots: resolvedHeroSlots,
+    latestMovies: resolvedLatestMovies,
+    loading: resolvedHeroLoading,
+    error: resolvedHeroError,
+  } = useResolvedHeroBanners({ apiUrl: API_URL });
 
   const [heroCandidates, setHeroCandidates] = useState<any[]>([]);
   const [activeHeroIndex, setActiveHeroIndex] = useState(0);
@@ -174,229 +181,47 @@ export default function HomePage() {
       });
   };
 
-  // 1. Fetch banners & danh sách phim
+  // Admin và trang chủ cùng dùng một bộ chọn Hero/TMDB.
   useEffect(() => {
-    async function fetchData() {
-      try {
-        setLoading(true);
+    setLoading(resolvedHeroLoading);
+    if (resolvedHeroLoading) return;
 
-        // 1. Fetch custom banners from our DB
-        let dbBanners: any[] = [];
-        try {
-          const bannerRes = await fetch(`${API_URL}/banners`);
-          if (bannerRes.ok) {
-            const bannerData = await bannerRes.json();
-            if (bannerData && bannerData.length > 0) {
-              dbBanners = bannerData;
-            }
-          }
-        } catch (e) {
-          console.error("Lỗi khi fetch banners từ database:", e);
-        }
+    if (resolvedHeroSlots.length > 0) {
+      const preloadedDetails: Record<string, any> = {};
+      const preloadedLogos: Record<string, string | null> = {};
+      const preloadedBackdrops: Record<string, string | null> = {};
 
-        // 2. Fetch latest dynamic movies from API source via MOVIE_API_DOMAIN Proxy (Quét 5 trang API mới nhất)
-        let latestMovies: any[] = [];
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000);
-
-        try {
-          const pagePromises = [1, 2, 3, 4, 5].map(page =>
-            fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/danh-sach/phim-moi-cap-nhat?page=${page}`), { signal: controller.signal })
-              .then(res => res.json())
-              .then(data => (data.status && data.items ? data.items : []))
-              .catch(() => [])
-          );
-          clearTimeout(timeoutId);
-          const pageResults = await Promise.all(pagePromises);
-          latestMovies = pageResults.flat();
-        } catch (error) {
-          console.error("Lỗi khi kết nối API danh sách phim:", error);
-        }
-
-        const preloadedDetails: Record<string, any> = {};
-        const preloadedLogos: Record<string, string | null> = {};
-        const preloadedBackdrops: Record<string, string | null> = {};
-        let moviesWithLogo: any[] = [];
-        let otherMoviesFromApi: any[] = [];
-
-        if (latestMovies.length > 0) {
-          try {
-            // Quét song song chi tiết các phim từ API để phân loại logo TMDB
-            const detailPromises = latestMovies.map(async (movie) => {
-              try {
-                const detailRes = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${movie.slug}`));
-                if (detailRes.ok) {
-                  const detailData = await detailRes.json();
-                  const detail = detailData.data?.item || detailData.movie || null;
-
-                  if (detail) {
-                    const tmdbId = detail.tmdb?.id;
-                    const tmdbType = detail.tmdb?.type || "movie";
-                    const movieTitleQuery = detail.name;
-                    const originTitleQuery = detail.origin_name || "";
-
-                    try {
-                      const tmdbRes = await fetch(
-                        `${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movieTitleQuery)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}&originTitle=${encodeURIComponent(originTitleQuery)}`
-                      );
-                      if (tmdbRes.ok) {
-                        const tmdbData = await tmdbRes.json();
-                        return { movie, detail, tmdbData };
-                      }
-                    } catch (tmdbErr) {
-                    }
-                    return { movie, detail, tmdbData: null };
-                  }
-                  return { movie, detail, tmdbData: null };
-                }
-              } catch (e) {
-              }
-              return { movie, detail: null, tmdbData: null };
-            });
-            const results = await Promise.all(detailPromises);
-
-            const seenMovieNames = new Set<string>();
-
-            for (const item of results) {
-              if (item.movie) {
-                const rawName = item.detail?.name || item.movie?.name || "";
-                const cleanNameKey = cleanMovieName(rawName).toLowerCase().trim();
-                const originNameKey = (item.detail?.origin_name || item.movie?.origin_name || "").toLowerCase().trim();
-
-                // Lọc bỏ 100% trùng lặp giữa các bộ phim có cùng tên hoặc cùng series
-                if (cleanNameKey && seenMovieNames.has(cleanNameKey)) {
-                  continue;
-                }
-                if (originNameKey && seenMovieNames.has(originNameKey)) {
-                  continue;
-                }
-
-                const currentEpisode = (item.detail?.episode_current || "").toLowerCase();
-                const isTrailer = currentEpisode.includes("trailer");
-                const hasLogo = !!(item.tmdbData && item.tmdbData.logoUrl && item.tmdbData.logoUrl.length > 5);
-
-                // Lọc bỏ Anime / Hoạt hình khỏi HeroBanner chính
-                const categories = item.detail?.category || item.movie?.category || [];
-                const categorySlugs = categories.map((c: any) => (c.slug || c.name || c || "").toString().toLowerCase());
-                const movieType = (item.detail?.type || item.movie?.type || "").toString().toLowerCase();
-                const isAnimeOrHoatHinh =
-                  movieType === "hoathinh" ||
-                  categorySlugs.some((s: string) => s.includes("hoat-hinh") || s.includes("anime"));
-
-                if (!isTrailer && !isAnimeOrHoatHinh) {
-                  if (cleanNameKey) seenMovieNames.add(cleanNameKey);
-                  if (originNameKey) seenMovieNames.add(originNameKey);
-
-                  if (item.detail) {
-                    preloadedDetails[item.movie.slug] = item.detail;
-                  }
-                  if (item.tmdbData) {
-                    if (item.tmdbData.logoUrl) {
-                      preloadedLogos[item.movie.slug] = item.tmdbData.logoUrl;
-                    }
-                    if (item.tmdbData.backdropUrl) {
-                      preloadedBackdrops[item.movie.slug] = item.tmdbData.backdropUrl;
-                    } else if (item.tmdbData.posterUrl) {
-                      preloadedBackdrops[item.movie.slug] = item.tmdbData.posterUrl;
-                    }
-                  }
-
-                  if (hasLogo) {
-                    moviesWithLogo.push(item.movie);
-                  } else {
-                    otherMoviesFromApi.push(item.movie);
-                  }
-                }
-              }
-            }
-          } catch (e) {
-            console.error("Lỗi khi cào song song thông tin chi tiết:", e);
-          }
-        }
-
-        // Đổ thông tin chi tiết và ảnh đã preload vào cache
-        setDetailsCache(prev => ({ ...prev, ...preloadedDetails }));
-        setLogoCache(prev => ({ ...prev, ...preloadedLogos }));
-        setBackdropCache(prev => ({ ...prev, ...preloadedBackdrops }));
-
-        const finalHeroCandidates: any[] = [];
-        const addedCandidateNames = new Set<string>();
-        const addedSlugs = new Set<string>();
-
-        // Gom danh sách ưu tiên hoàn toàn ĐỘNG từ API: Phim có logo TMDB lên trước, nối bằng các phim mới thực tế từ API nếu chưa đủ 5
-        let candidatePool = [...moviesWithLogo];
-        if (candidatePool.length < 5) {
-          const needed = 5 - candidatePool.length;
-          candidatePool = [...candidatePool, ...otherMoviesFromApi.slice(0, needed)];
-        }
-        if (candidatePool.length === 0) {
-          candidatePool = FALLBACK_CANDIDATES;
-        }
-
-        for (let i = 1; i <= 5; i++) {
-          const custom = dbBanners.find((b: any) => b.order === i && b.isActive);
-          if (custom) {
-            finalHeroCandidates.push({
-              _id: custom._id,
-              name: custom.title,
-              origin_name: custom.originName || "",
-              slug: custom.movieSlug,
-              thumb_url: custom.imageUrl,
-              poster_url: custom.imageUrl,
-              content: custom.description || "",
-              isCustomBanner: true
-            });
-            if (custom.movieSlug) addedSlugs.add(custom.movieSlug);
-            if (custom.title) addedCandidateNames.add(cleanMovieName(custom.title).toLowerCase().trim());
-          } else {
-            // Tìm bộ phim DUY NHẤT chưa từng xuất hiện trong Hero Banner
-            const nextUniqueMovie = candidatePool.find((m: any) => {
-              if (!m || !m.slug) return false;
-              if (addedSlugs.has(m.slug)) return false;
-              const cleanName = cleanMovieName(m.name || m.title || "").toLowerCase().trim();
-              const originName = (m.origin_name || "").toLowerCase().trim();
-              if (cleanName && addedCandidateNames.has(cleanName)) return false;
-              if (originName && addedCandidateNames.has(originName)) return false;
-              return true;
-            });
-
-            if (nextUniqueMovie) {
-              addedSlugs.add(nextUniqueMovie.slug);
-              const cName = cleanMovieName(nextUniqueMovie.name || "").toLowerCase().trim();
-              const oName = (nextUniqueMovie.origin_name || "").toLowerCase().trim();
-              if (cName) addedCandidateNames.add(cName);
-              if (oName) addedCandidateNames.add(oName);
-
-              finalHeroCandidates.push({
-                ...nextUniqueMovie,
-                isCustomBanner: false
-              });
-            }
-          }
-        }
-
-        setHeroCandidates(finalHeroCandidates);
-
-        // Use PhimAPI movies for the grid below
-        const gridMovies = latestMovies.length > 5 ? latestMovies.slice(5, 13) : latestMovies.slice(0, 8);
-        setMovieList(gridMovies.length > 0 ? gridMovies : FALLBACK_CANDIDATES);
-      } catch (error) {
-        console.error("Lỗi đồng bộ dữ liệu trang chủ:", error);
-        setHeroCandidates(FALLBACK_CANDIDATES);
-        setMovieList(FALLBACK_CANDIDATES);
-      } finally {
-        setLoading(false);
+      for (const slot of resolvedHeroSlots) {
+        const slug = slot.movie.slug;
+        if (slot.detail) preloadedDetails[slug] = slot.detail;
+        if (slot.tmdbData?.logoUrl) preloadedLogos[slug] = slot.tmdbData.logoUrl;
+        if (slot.tmdbData?.backdropUrl) preloadedBackdrops[slug] = slot.tmdbData.backdropUrl;
       }
+
+      setDetailsCache((previous) => ({ ...previous, ...preloadedDetails }));
+      setLogoCache((previous) => ({ ...previous, ...preloadedLogos }));
+      setBackdropCache((previous) => ({ ...previous, ...preloadedBackdrops }));
+      setHeroCandidates(resolvedHeroSlots.map((slot) => slot.movie));
+    } else {
+      if (resolvedHeroError) console.error("Không thể đồng bộ Hero Banner:", resolvedHeroError);
+      setHeroCandidates(FALLBACK_CANDIDATES);
     }
 
-    fetchData();
-  }, []);
+    const gridMovies = resolvedLatestMovies.length > 5
+      ? resolvedLatestMovies.slice(5, 13)
+      : resolvedLatestMovies.slice(0, 8);
+    setMovieList(gridMovies.length > 0 ? gridMovies : FALLBACK_CANDIDATES);
+  }, [resolvedHeroError, resolvedHeroLoading, resolvedHeroSlots, resolvedLatestMovies]);
 
   // 2. Pre-fetch thông tin chi tiết và logo của tất cả phim ứng cử viên Hero Slider
   useEffect(() => {
     if (heroCandidates.length === 0) return;
 
     async function prefetchDetail(movie: any) {
+      // Dynamic candidates were already preloaded by fetchData(). Only custom
+      // banners still need a detail lookup here.
+      if (!movie.isCustomBanner && detailsCache[movie.slug]) return;
+
       try {
         const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${movie.slug}`));
         const data = await res.json();
@@ -407,6 +232,10 @@ export default function HomePage() {
               ...prev,
               [movie.slug]: {
                 ...detail,
+                name: movie.isCustomBanner ? movie.name : detail.name,
+                origin_name: movie.isCustomBanner ? movie.origin_name : detail.origin_name,
+                poster_url: movie.isCustomBanner ? movie.poster_url : detail.poster_url,
+                thumb_url: movie.isCustomBanner ? movie.thumb_url : detail.thumb_url,
                 content: movie.isCustomBanner && movie.content ? movie.content : detail.content
               }
             }));
@@ -423,11 +252,11 @@ export default function HomePage() {
                 if (tmdbData.logoUrl) {
                   setLogoCache(prev => ({ ...prev, [movie.slug]: tmdbData.logoUrl }));
                 }
-                if (tmdbData.backdropUrl) {
-                  setBackdropCache(prev => ({ ...prev, [movie.slug]: tmdbData.backdropUrl }));
-                } else if (tmdbData.posterUrl) {
-                  setBackdropCache(prev => ({ ...prev, [movie.slug]: tmdbData.posterUrl }));
-                }
+                // Banner tùy biến phải hiển thị đúng ảnh admin đang quản lý.
+                setBackdropCache(prev => ({
+                  ...prev,
+                  [movie.slug]: movie.poster_url || movie.thumb_url
+                }));
               } catch (e) {
                 console.error("Lỗi khi tải dữ liệu TMDB cho Hero:", e);
               }

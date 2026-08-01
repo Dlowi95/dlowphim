@@ -20,8 +20,8 @@ import {
 import { createPortal } from "react-dom";
 import { useAuth } from "@/context/AuthContext";
 import { getImageUrl } from "@/utils/movieUtils";
-import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
-import { getTmdbApiKey } from "@/utils/tmdb";
+import { getProxyUrl } from "@/utils/api";
+import { useResolvedHeroBanners } from "@/hooks/useResolvedHeroBanners";
 
 interface Banner {
   _id?: string;
@@ -38,6 +38,12 @@ interface Banner {
 export default function BannersManagementView() {
   const { showToast } = useAuth();
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+  const {
+    slots: resolvedHeroSlots,
+    rawBanners,
+    loading,
+    refresh: refreshResolvedBanners,
+  } = useResolvedHeroBanners({ apiUrl: API_URL, admin: true });
 
   // Portal mounted state
   const [mounted, setMounted] = useState(false);
@@ -47,7 +53,6 @@ export default function BannersManagementView() {
   }, []);
 
   const [banners, setBanners] = useState<Banner[]>([]);
-  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [editingBanner, setEditingBanner] = useState<Banner | null>(null);
@@ -63,168 +68,48 @@ export default function BannersManagementView() {
 
   // Crawler state
   const [crawlerSlug, setCrawlerSlug] = useState("");
-  const [crawlerSource, setCrawlerSource] = useState<"ophim" | "kkphim">("ophim");
+  const [crawlerSource, setCrawlerSource] = useState<"phimapi" | "ophim">("phimapi");
   const [crawling, setCrawling] = useState(false);
 
-  // Fetch banners from API
-  const fetchBanners = async () => {
-    setLoading(true);
-    try {
-      const token = Cookies.get("token");
-      
-      // 1. Fetch System Settings to get dynamic TMDB API Key
-      const tmdbApiKey = await getTmdbApiKey(API_URL);
-
-      // 2. Fetch DB Banners
-      const res = await fetch(`${API_URL}/banners/admin`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      let dbBanners: Banner[] = [];
-      if (res.ok) {
-        dbBanners = await res.json();
+  // Cùng một kết quả đã lọc được dùng cho cả admin và trang chủ.
+  useEffect(() => {
+    const resolved: Banner[] = resolvedHeroSlots.map((slot) => {
+      if (slot.bannerRecord) {
+        return { ...slot.bannerRecord, isFallback: false };
       }
 
-      // 3. Fetch OPhim fallback movies (20 items to filter like home page)
-      let ophimMovies: any[] = [];
-      try {
-        const ophimRes = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/danh-sach/phim-moi-cap-nhat?page=1`));
-        if (ophimRes.ok) {
-          const ophimData = await ophimRes.json();
-          ophimMovies = ophimData.items || [];
-        }
-      } catch (err) {
-        console.error("Lỗi fetch OPhim fallback:", err);
-      }
+      return {
+        title: slot.movie.name,
+        originName: slot.movie.origin_name,
+        movieSlug: slot.movie.slug,
+        imageUrl: slot.tmdbData?.backdropUrl || "",
+        description: "Banner tự động từ nguồn phim đang bật + TMDB (tên và backdrop ngang).",
+        order: slot.order,
+        isActive: true,
+        isFallback: true,
+      };
+    });
 
-      let finalFallbackMovies: any[] = [];
-      const fallbackImages: string[] = [];
+    const representedIds = new Set(
+      resolved.map((banner) => banner._id).filter((id): id is string => Boolean(id))
+    );
+    const remainingCustomBanners: Banner[] = rawBanners
+      .filter((banner) => !banner._id || !representedIds.has(banner._id))
+      .map((banner) => ({ ...banner, isFallback: false }));
 
-      if (ophimMovies.length > 0) {
-        try {
-          const detailPromises = ophimMovies.slice(0, 20).map(async (movie) => {
-            try {
-              const detailRes = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${movie.slug}`));
-              if (detailRes.ok) {
-                const detailData = await detailRes.json();
-                const detail = detailData.data?.item || detailData.movie || null;
-
-                if (detail) {
-                  const tmdbId = detail.tmdb?.id;
-                  const tmdbType = detail.tmdb?.type || "movie";
-                  const movieTitleQuery = detail.origin_name || detail.name;
-
-                  try {
-                    const tmdbRes = await fetch(
-                      `${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movieTitleQuery)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`
-                    );
-                    if (tmdbRes.ok) {
-                      const tmdbData = await tmdbRes.json();
-                      return { movie, detail, tmdbData };
-                    }
-                  } catch (tmdbErr) {
-                    // Bỏ qua
-                  }
-                  return { movie, detail, tmdbData: null };
-                }
-              }
-            } catch (e) {
-              // Bỏ qua
-            }
-            return { movie, detail: null, tmdbData: null };
-          });
-
-          const results = await Promise.all(detailPromises);
-
-          let nonTrailerMovies: any[] = [];
-          let trailerOrNoLogoMovies: any[] = [];
-          const imageCache: Record<string, string> = {};
-
-          for (const item of results) {
-            if (item.movie) {
-              const currentEpisode = (item.detail?.episode_current || "").toLowerCase();
-              const isTrailer = currentEpisode.includes("trailer");
-              const hasLogo = item.tmdbData && item.tmdbData.logoUrl;
-
-              let backdrop = "";
-              if (item.tmdbData) {
-                if (item.tmdbData.backdropUrl) {
-                  backdrop = item.tmdbData.backdropUrl;
-                } else if (item.tmdbData.posterUrl) {
-                  backdrop = item.tmdbData.posterUrl;
-                }
-              }
-              if (!backdrop) {
-                backdrop = getImageUrl(item.movie.thumb_url || item.movie.poster_url);
-              }
-              imageCache[item.movie.slug] = backdrop;
-
-              if (!isTrailer && hasLogo) {
-                nonTrailerMovies.push(item.movie);
-              } else if (!isTrailer) {
-                trailerOrNoLogoMovies.push(item.movie);
-              }
-            }
-          }
-
-          finalFallbackMovies = [...nonTrailerMovies];
-          if (finalFallbackMovies.length < 5) {
-            const needed = 5 - finalFallbackMovies.length;
-            finalFallbackMovies = [...finalFallbackMovies, ...trailerOrNoLogoMovies.slice(0, needed)];
-          }
-
-          finalFallbackMovies.slice(0, 5).forEach((movie) => {
-            fallbackImages.push(imageCache[movie.slug] || "");
-          });
-
-        } catch (e) {
-          console.error("Lỗi cào song song ở admin:", e);
-          finalFallbackMovies = ophimMovies.slice(0, 5);
-          finalFallbackMovies.forEach((movie) => {
-            fallbackImages.push(getImageUrl(movie.thumb_url || movie.poster_url));
-          });
-        }
-      }
-
-      // 4. Merge to create exactly 5 slots
-      const merged: Banner[] = [];
-      for (let i = 1; i <= 5; i++) {
-        const custom = dbBanners.find((b) => b.order === i);
-        if (custom) {
-          merged.push({
-            ...custom,
-            isFallback: false
-          });
-        } else {
-          const movie = finalFallbackMovies[i - 1];
-          if (movie) {
-            merged.push({
-              title: movie.name,
-              originName: movie.origin_name,
-              movieSlug: movie.slug,
-              imageUrl: fallbackImages[i - 1],
-              description: "Banner mặc định hệ thống (OPhim + TMDB). Chỉnh sửa để thay đổi hình ảnh/nội dung.",
-              order: i,
-              isActive: true,
-              isFallback: true
-            });
-          }
-        }
-      }
-
-      setBanners(merged);
-    } catch (err) {
-      console.error(err);
-      showToast("Lỗi kết nối máy chủ", "error");
-    } finally {
-      setLoading(false);
-    }
-  };
+    setBanners([...resolved, ...remainingCustomBanners]);
+  }, [rawBanners, resolvedHeroSlots]);
 
   useEffect(() => {
-    fetchBanners();
-  }, []);
+    fetch(`${API_URL}/system-settings`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.activeMovieSourceId === "ophim" || data?.activeMovieSourceId === "phimapi") {
+          setCrawlerSource(data.activeMovieSourceId);
+        }
+      })
+      .catch(() => undefined);
+  }, [API_URL]);
 
   // Filter banners based on search
   const filteredBanners = banners.filter((b) => {
@@ -264,7 +149,7 @@ export default function BannersManagementView() {
     setShowModal(true);
   };
 
-  // Auto crawl info from OPhim/KKPhim API
+  // Auto crawl info through the same dynamic proxy used by the user site.
   const handleAutoCrawl = async () => {
     if (!crawlerSlug) {
       showToast("Vui lòng nhập slug phim cần cào", "warning");
@@ -273,14 +158,8 @@ export default function BannersManagementView() {
 
     setCrawling(true);
     try {
-      let url = "";
-      if (crawlerSource === "ophim") {
-        url = `https://ophim18.cc/api/phim/${crawlerSlug.trim().toLowerCase()}`;
-      } else {
-        url = `https://kkphim1.com/api/phim/${crawlerSlug.trim().toLowerCase()}`;
-      }
-
-      const res = await fetch(url);
+      const cleanSlug = crawlerSlug.trim().toLowerCase();
+      const res = await fetch(getProxyUrl(`/phim/${cleanSlug}`, crawlerSource));
       if (!res.ok) {
         throw new Error("Không thể kết nối máy chủ phim gốc.");
       }
@@ -293,46 +172,31 @@ export default function BannersManagementView() {
           setFormOriginName(movie.origin_name || "");
           setFormSlug(movie.slug || crawlerSlug.trim().toLowerCase());
           
-          // Image formatter (prefer landscape poster_url for banners)
           const formatImg = (path: string) => {
             if (!path) return "";
             if (path.startsWith("http")) return path;
-            if (crawlerSource === "ophim") {
-              const fileName = path.split("/").pop();
-              return `https://img.ophim.live/uploads/movies/${fileName}`;
-            } else {
-              return `https://phimimg.com/${path}`;
-            }
+            return getImageUrl(path);
           };
 
-          // Thử lấy ảnh chất lượng cao từ TMDB
-          let tmdbImgUrl = "";
+          let tmdbData: any = null;
           try {
-            const query = movie.origin_name || movie.name;
-            const activeTmdbApiKey = await getTmdbApiKey(API_URL);
-
-            const searchRes = await fetch(
-              `https://api.themoviedb.org/3/search/movie?api_key=${activeTmdbApiKey}&query=${encodeURIComponent(query)}&language=vi`
+            const tmdbResponse = await fetch(
+              `${API_URL}/movies/logo/${movie.slug || cleanSlug}?title=${encodeURIComponent(movie.name || "")}&originTitle=${encodeURIComponent(movie.origin_name || "")}&tmdbId=${movie.tmdb?.id || ""}&tmdbType=${movie.tmdb?.type || "movie"}`
             );
-            if (searchRes.ok) {
-              const searchData = await searchRes.json();
-              const tmdbMovie = searchData.results?.[0];
-              if (tmdbMovie) {
-                if (tmdbMovie.backdrop_path) {
-                  tmdbImgUrl = `https://image.tmdb.org/t/p/w1280${tmdbMovie.backdrop_path}`;
-                } else if (tmdbMovie.poster_path) {
-                  tmdbImgUrl = `https://image.tmdb.org/t/p/w1280${tmdbMovie.poster_path}`;
-                }
-              }
-            }
-          } catch (e) {
-            console.error("Lỗi fetch TMDB image:", e);
+            if (tmdbResponse.ok) tmdbData = await tmdbResponse.json();
+          } catch (error) {
+            console.error("Lỗi lấy metadata TMDB qua backend:", error);
           }
 
-          setFormImageUrl(tmdbImgUrl || formatImg(movie.poster_url || movie.thumb_url));
+          setFormTitle(tmdbData?.tmdbTitle || movie.name || "");
+          setFormOriginName(tmdbData?.tmdbOriginalTitle || movie.origin_name || "");
+          setFormSlug(movie.slug || cleanSlug);
+          setFormImageUrl(
+            tmdbData?.backdropUrl || formatImg(movie.poster_url || movie.thumb_url)
+          );
           setFormDescription(movie.content ? movie.content.replace(/<[^>]*>/g, "").trim() : "");
           showToast(
-            tmdbImgUrl 
+            tmdbData?.backdropUrl
               ? "Tự động cào tin và lấy ảnh TMDB HD thành công!" 
               : "Tự động cào tin thành công (dùng ảnh gốc của nguồn)!", 
             "success"
@@ -355,7 +219,7 @@ export default function BannersManagementView() {
           setFormDescription(customMovie.content || "");
           showToast("Lấy dữ liệu từ phim tự đăng thành công!", "success");
         } else {
-          throw new Error("Không tìm thấy phim này trên OPhim/KKPhim hay phim tự đăng.");
+          throw new Error("Không tìm thấy phim này trên PhimAPI/OPhim hay phim tự đăng.");
         }
       }
     } catch (err: any) {
@@ -404,7 +268,7 @@ export default function BannersManagementView() {
       if (res.ok) {
         showToast(isEditMode ? "Cập nhật banner thành công" : "Tạo banner mới thành công", "success");
         setShowModal(false);
-        fetchBanners();
+        refreshResolvedBanners();
       } else {
         const data = await res.json();
         showToast(data.message || "Thao tác thất bại", "error");
@@ -480,7 +344,7 @@ export default function BannersManagementView() {
       {/* Control bar */}
       <div className="flex items-center gap-2 justify-end">
         <button
-          onClick={fetchBanners}
+          onClick={refreshResolvedBanners}
           disabled={loading}
           className="w-9 h-9 rounded-xl bg-zinc-900/60 hover:bg-zinc-900 text-zinc-400 hover:text-white flex items-center justify-center transition-all cursor-pointer border-none disabled:opacity-50"
           title="Tải lại dữ liệu"
@@ -669,21 +533,21 @@ export default function BannersManagementView() {
                     <div className="flex rounded-xl bg-zinc-950 border border-zinc-900 p-0.5 overflow-hidden shrink-0">
                       <button
                         type="button"
+                        onClick={() => setCrawlerSource("phimapi")}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border-none cursor-pointer ${
+                          crawlerSource === "phimapi" ? "bg-pink-500 text-white" : "bg-transparent text-zinc-500"
+                        }`}
+                      >
+                        PhimAPI
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setCrawlerSource("ophim")}
                         className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border-none cursor-pointer ${
                           crawlerSource === "ophim" ? "bg-pink-500 text-white" : "bg-transparent text-zinc-500"
                         }`}
                       >
                         OPhim
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setCrawlerSource("kkphim")}
-                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border-none cursor-pointer ${
-                          crawlerSource === "kkphim" ? "bg-pink-500 text-white" : "bg-transparent text-zinc-500"
-                        }`}
-                      >
-                        KKPhim
                       </button>
                     </div>
 
