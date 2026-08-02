@@ -21,6 +21,7 @@ describe('RoomsGateway socket safety', () => {
       }),
       getDueScheduledRooms: jest.fn().mockResolvedValue([]),
       expireScheduledRoom: jest.fn().mockResolvedValue(null),
+      assertRoomAccess: jest.fn().mockResolvedValue(undefined),
       closeRoom: jest.fn().mockResolvedValue({
         roomId: 'ROOM01',
         status: 'closed',
@@ -53,13 +54,43 @@ describe('RoomsGateway socket safety', () => {
       isHost: true,
     });
 
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ ok: true });
     expect((gateway as any).clients.get(client.id)).toEqual(
       expect.objectContaining({
         userId: 'authenticated-user',
         isHost: false,
       }),
     );
+  });
+
+  it('rejects a private-room socket before joining when room access is missing', async () => {
+    const { gateway, roomsService } = createGateway();
+    roomsService.getRoomDetails.mockResolvedValueOnce({
+      roomId: 'ROOM01',
+      isPrivate: true,
+      host: { _id: 'real-host' },
+    });
+    roomsService.assertRoomAccess.mockRejectedValueOnce({
+      response: { message: 'Phòng riêng tư yêu cầu mã PIN.' },
+    });
+    const client = {
+      id: 'socket-private',
+      handshake: { auth: {} },
+      join: jest.fn(),
+      emit: jest.fn(),
+    } as any;
+
+    await expect(
+      gateway.handleJoinRoom(client, {
+        roomId: 'ROOM01',
+        userId: 'guest-private',
+        name: 'Guest',
+        isHost: false,
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({ ok: false, requiresPin: true }),
+    );
+    expect(client.join).not.toHaveBeenCalled();
   });
 
   it('rejects chat from sockets that have not joined the room', async () => {
@@ -148,7 +179,80 @@ describe('RoomsGateway socket safety', () => {
     expect(broadcast).toHaveBeenCalledWith('video_state', {
       action: 'play',
       currentTime: 12,
+      serverTime: expect.any(Number),
     });
+  });
+
+  it('accepts heartbeat only from the host and broadcasts a timestamped snapshot', () => {
+    const { gateway } = createGateway();
+    const broadcast = jest.fn();
+    const client = {
+      id: 'socket-1',
+      to: jest.fn().mockReturnValue({ emit: broadcast }),
+    } as any;
+    (gateway as any).clients.set(client.id, {
+      roomId: 'ROOM01',
+      userId: 'host-1',
+      isHost: false,
+      name: 'Host',
+    });
+
+    const heartbeat = {
+      roomId: 'ROOM01',
+      currentTime: 42,
+      paused: false,
+      episodeIndex: 2,
+      episodeSlug: 'tap-03',
+    };
+    expect(gateway.handleVideoHeartbeat(client, heartbeat)).toEqual({ ok: false });
+    expect(broadcast).not.toHaveBeenCalled();
+
+    (gateway as any).clients.get(client.id).isHost = true;
+    expect(gateway.handleVideoHeartbeat(client, heartbeat)).toEqual({ ok: true });
+    expect(broadcast).toHaveBeenCalledWith(
+      'video_heartbeat',
+      expect.objectContaining({
+        currentTime: 42,
+        action: 'play',
+        episodeIndex: 2,
+        episodeSlug: 'tap-03',
+        serverTime: expect.any(Number),
+      }),
+    );
+  });
+
+  it('returns a fresh latency-compensated snapshot when a member requests sync', () => {
+    const { gateway } = createGateway();
+    const client = { id: 'socket-1', emit: jest.fn() } as any;
+    (gateway as any).clients.set(client.id, {
+      roomId: 'ROOM01',
+      userId: 'member-1',
+      isHost: false,
+      name: 'Member',
+    });
+    (gateway as any).roomVideoStates.set('ROOM01', {
+      currentTime: 10,
+      episodeIndex: 0,
+      episodeSlug: 'tap-01',
+      action: 'play',
+      updatedAt: Date.now() - 2000,
+    });
+
+    expect(gateway.handleRequestSync(client, { roomId: 'ROOM01' })).toEqual({
+      ok: true,
+    });
+    expect(client.emit).toHaveBeenCalledWith(
+      'sync_state',
+      expect.objectContaining({
+        currentTime: expect.any(Number),
+        action: 'play',
+        serverTime: expect.any(Number),
+      }),
+    );
+    const snapshot = client.emit.mock.calls.find(
+      ([event]: [string]) => event === 'sync_state',
+    )?.[1];
+    expect(snapshot.currentTime).toBeGreaterThanOrEqual(11.9);
   });
 
   it('joins lobby clients to the realtime room list channel', () => {

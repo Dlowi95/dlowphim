@@ -41,6 +41,12 @@ export class Room {
   @Prop({ default: false })
   isPrivate: boolean;
 
+  @Prop({ select: false })
+  privatePinHash?: string;
+
+  @Prop({ select: false })
+  privateAccessVersion?: string;
+
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   host: Types.ObjectId;
 

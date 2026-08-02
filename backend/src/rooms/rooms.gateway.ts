@@ -154,6 +154,20 @@ export class RoomsGateway
     return info && info.roomId === roomId ? info : null;
   }
 
+  private getSynchronizedVideoSnapshot(roomId: string) {
+    const snapshot = this.roomVideoStates.get(roomId);
+    if (!snapshot) return null;
+    const serverTime = Date.now();
+    const elapsedSeconds = snapshot.action === 'play'
+      ? Math.max(0, (serverTime - snapshot.updatedAt) / 1000)
+      : 0;
+    return {
+      ...snapshot,
+      currentTime: snapshot.currentTime + elapsedSeconds,
+      serverTime,
+    };
+  }
+
   private getAuthenticatedUserId(client: Socket): string | null {
     const token = client.handshake.auth?.token;
     if (!token || typeof token !== 'string') return null;
@@ -269,7 +283,14 @@ export class RoomsGateway
   @SubscribeMessage('join_room')
   async handleJoinRoom(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { roomId: string; userId: string; name: string; avatar?: string; isHost: boolean },
+    @MessageBody() data: {
+      roomId: string;
+      userId: string;
+      name: string;
+      avatar?: string;
+      isHost: boolean;
+      roomAccessToken?: string;
+    },
   ) {
     const roomId = String(data?.roomId || '').trim();
     if (!roomId) {
@@ -298,6 +319,18 @@ export class RoomsGateway
     const isHost = Boolean(
       authenticatedUserId && roomHostId === authenticatedUserId,
     );
+    try {
+      await this.roomsService.assertRoomAccess(
+        roomId,
+        room,
+        authenticatedUserId || undefined,
+        data?.roomAccessToken,
+      );
+    } catch (error: any) {
+      const message = error?.response?.message || 'Bạn chưa có quyền vào phòng riêng tư này.';
+      client.emit('socket_error', { message, requiresPin: true });
+      return { ok: false, message, requiresPin: true };
+    }
     const memberPresenceKey = `${roomId}:${userId}`;
     const memberReconnectTimeout = this.memberDisconnectTimeouts.get(
       memberPresenceKey,
@@ -384,23 +417,29 @@ export class RoomsGateway
 
     // Gửi snapshot trạng thái video hiện tại cho member mới (hoặc host F5) để seek đúng vị trí
     if (!isHost) {
-      const videoSnapshot = this.roomVideoStates.get(roomId);
-      if (videoSnapshot) {
-        const elapsedSeconds =
-          videoSnapshot.action === 'play'
-            ? Math.max(0, (Date.now() - videoSnapshot.updatedAt) / 1000)
-            : 0;
-        const synchronizedSnapshot = {
-          ...videoSnapshot,
-          currentTime: videoSnapshot.currentTime + elapsedSeconds,
-        };
-        console.log(`[Socket] Sending video snapshot to new member in Room: ${roomId} -> time: ${synchronizedSnapshot.currentTime}, ep: ${videoSnapshot.episodeIndex}`);
+      const synchronizedSnapshot = this.getSynchronizedVideoSnapshot(roomId);
+      if (synchronizedSnapshot) {
+        console.log(`[Socket] Sending video snapshot to new member in Room: ${roomId} -> time: ${synchronizedSnapshot.currentTime}, ep: ${synchronizedSnapshot.episodeIndex}`);
         client.emit('sync_state', synchronizedSnapshot);
       }
     }
 
     // Cập nhật số lượng người xem cho cả phòng
     this.broadcastViewerCount(roomId);
+    return { ok: true };
+  }
+
+  @SubscribeMessage('request_sync')
+  handleRequestSync(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { roomId: string },
+  ) {
+    const roomId = String(data?.roomId || '').trim();
+    const joinedClient = this.getJoinedClient(client, roomId);
+    if (!joinedClient || joinedClient.isHost) return { ok: false };
+    const snapshot = this.getSynchronizedVideoSnapshot(roomId);
+    if (snapshot) client.emit('sync_state', snapshot);
+    return { ok: Boolean(snapshot) };
   }
 
   // Sự kiện Bật/Tắt AI xem chung
@@ -764,6 +803,42 @@ QUY TẮC BẮT BUỘC:
   }
 
   // Sự kiện đồng bộ Video phát/tạm dừng/tua phim
+  @SubscribeMessage('video_heartbeat')
+  handleVideoHeartbeat(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: {
+      roomId: string;
+      currentTime: number;
+      paused: boolean;
+      episodeIndex: number;
+      episodeSlug?: string;
+    },
+  ) {
+    const { roomId, currentTime, paused } = data;
+    const joinedClient = this.getJoinedClient(client, roomId);
+    if (!joinedClient?.isHost) return { ok: false };
+    if (!Number.isFinite(currentTime) || currentTime < 0) {
+      return { ok: false };
+    }
+
+    const serverTime = Date.now();
+    const snapshot = {
+      currentTime,
+      episodeIndex: Number.isInteger(data.episodeIndex)
+        ? Math.max(0, data.episodeIndex)
+        : 0,
+      episodeSlug: String(data.episodeSlug || ''),
+      action: paused ? ('pause' as const) : ('play' as const),
+      updatedAt: serverTime,
+    };
+    this.roomVideoStates.set(roomId, snapshot);
+    client.to(roomId).emit('video_heartbeat', {
+      ...snapshot,
+      serverTime,
+    });
+    return { ok: true };
+  }
+
   @SubscribeMessage('video_control')
   handleVideoControl(
     @ConnectedSocket() client: Socket,
@@ -793,7 +868,11 @@ QUY TẮC BẮT BUỘC:
     });
 
     // Chỉ truyền tiếp tín hiệu cho các thành viên khác trong phòng (ngoại trừ Host gửi)
-    client.to(roomId).emit('video_state', { action, currentTime });
+    client.to(roomId).emit('video_state', {
+      action,
+      currentTime,
+      serverTime: Date.now(),
+    });
 
     console.log(`[Socket] Video state broadcasted in Room: ${roomId} -> action: ${action}, time: ${currentTime}`);
   }

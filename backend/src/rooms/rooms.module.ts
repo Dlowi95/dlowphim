@@ -7,12 +7,17 @@ import { Message, MessageSchema } from './schemas/message.schema';
 import { RoomsGateway } from './rooms.gateway';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import {
+  RoomAccessAttempt,
+  RoomAccessAttemptSchema,
+} from './schemas/room-access-attempt.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: Room.name, schema: RoomSchema },
       { name: Message.name, schema: MessageSchema },
+      { name: RoomAccessAttempt.name, schema: RoomAccessAttemptSchema },
     ]),
     AuthModule,
     NotificationsModule,

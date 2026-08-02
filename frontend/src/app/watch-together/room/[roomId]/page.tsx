@@ -2,10 +2,10 @@
 
 export const dynamic = "force-dynamic";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import Image from "next/image";
 import { useRouter, useParams } from "next/navigation";
-import { ArrowLeft, Film, Send, Sparkles, MessageSquare, Users, Trash2, Calendar, Tv, Volume2, AlertCircle, Copy, Check, Bot, Clock, VideoOff, VolumeX, Maximize, Minimize } from "lucide-react";
+import { ArrowLeft, Film, Send, Sparkles, MessageSquare, Users, Trash2, Calendar, Tv, Volume2, AlertCircle, Copy, Check, Bot, Clock, VideoOff, VolumeX, Maximize, Minimize, LockKeyhole, KeyRound } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
@@ -16,6 +16,19 @@ import HalftoneOverlay from "@/components/HalftoneOverlay";
 import { loadHlsLibrary } from "@/utils/hlsLoader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
+const getGuestDeviceId = () => {
+  const storageKey = "dlowphim_guest_device_id";
+  try {
+    const existing = localStorage.getItem(storageKey);
+    if (existing) return existing;
+    const created = globalThis.crypto?.randomUUID?.() || `device-${Date.now()}`;
+    localStorage.setItem(storageKey, created);
+    return created;
+  } catch {
+    return "";
+  }
+};
 
 interface RoomDetails {
   roomId: string;
@@ -53,6 +66,14 @@ interface Episode {
   link_m3u8: string;
 }
 
+interface RemoteVideoState {
+  action: "play" | "pause" | "seek";
+  currentTime: number;
+  serverTime?: number;
+  episodeIndex?: number;
+  episodeSlug?: string;
+}
+
 export default function RoomPage() {
   const router = useRouter();
   const { roomId } = useParams();
@@ -65,6 +86,12 @@ export default function RoomPage() {
   const [streamNotice, setStreamNotice] = useState<string | null>(null);
   const [codeCopied, setCodeCopied] = useState(false);
   const [isAiActive, setIsAiActive] = useState(false);
+  const [privateAccessRequired, setPrivateAccessRequired] = useState(false);
+  const [privatePin, setPrivatePin] = useState("");
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [verifyingPin, setVerifyingPin] = useState(false);
+  const [accessRevision, setAccessRevision] = useState(0);
+  const [hostPrivatePin, setHostPrivatePin] = useState("");
 
   // Custom modal states (thay thế alert/confirm của trình duyệt)
   const [roomClosedModal, setRoomClosedModal] = useState(false);
@@ -185,13 +212,20 @@ export default function RoomPage() {
   const hlsRef = useRef<any>(null);
   const socketRef = useRef<any>(null);
   const isSyncingRef = useRef<boolean>(false);
-  const pendingVideoStateRef = useRef<{
-    action: "play" | "pause" | "seek";
-    currentTime: number;
-  } | null>(null);
+  const pendingVideoStateRef = useRef<RemoteVideoState | null>(null);
+  const latestRemoteStateRef = useRef<RemoteVideoState | null>(null);
+  const isBufferingRef = useRef(false);
+  const serverClockOffsetRef = useRef(0);
+  const activeEpisodeIndexRef = useRef(0);
+  const episodesRef = useRef<Episode[]>([]);
   const hlsNetworkRetriesRef = useRef(0);
   const hlsMediaRetriesRef = useRef(0);
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    activeEpisodeIndexRef.current = activeEpisodeIndex;
+    episodesRef.current = episodes;
+  }, [activeEpisodeIndex, episodes]);
 
   // States quản lý chiều cao đồng bộ giữa trình phát và chatbox
   const [playerHeight, setPlayerHeight] = useState<number>(550);
@@ -243,12 +277,52 @@ export default function RoomPage() {
       try {
         setLoading(true);
         // 1. Lấy chi tiết phòng
-        const roomRes = await fetch(`${API_URL}/rooms/${roomId}`);
+        const authToken = Cookies.get("token");
+        const roomAccessToken = sessionStorage.getItem(
+          `dlowphim_room_access:${roomId}`
+        );
+        const accessHeaders: Record<string, string> = {};
+        if (authToken) accessHeaders.Authorization = `Bearer ${authToken}`;
+        if (roomAccessToken) accessHeaders["X-Room-Access-Token"] = roomAccessToken;
+        const guestDeviceId = getGuestDeviceId();
+        if (guestDeviceId) accessHeaders["X-Guest-Device-Id"] = guestDeviceId;
+        const roomRes = await fetch(`${API_URL}/rooms/${roomId}`, {
+          headers: accessHeaders,
+        });
+        if (roomRes.status === 403) {
+          const accessError = await roomRes.json().catch(() => null);
+          if (accessError?.requiresPin || accessError?.message) {
+            sessionStorage.removeItem(`dlowphim_room_access:${roomId}`);
+            const statusResponse = await fetch(
+              `${API_URL}/rooms/${roomId}/access-status`,
+              { headers: accessHeaders },
+            );
+            const accessStatus = await statusResponse.json().catch(() => null);
+            if (accessStatus?.locked) {
+              router.replace("/watch-together?private=locked");
+              return;
+            }
+            setPrivateAccessRequired(true);
+            setPinError(null);
+            setLoading(false);
+            return;
+          }
+        }
         if (!roomRes.ok) {
           throw new Error("Phòng xem chung không tồn tại hoặc đã bị đóng.");
         }
         const roomData = await roomRes.json();
+        if (roomData.serverTime) {
+          serverClockOffsetRef.current =
+            new Date(roomData.serverTime).getTime() - Date.now();
+        }
         setRoom(roomData);
+        setPrivateAccessRequired(false);
+        if (roomData.isPrivate) {
+          setHostPrivatePin(
+            sessionStorage.getItem(`dlowphim_room_pin:${roomId}`) || ""
+          );
+        }
 
         // 2. Khởi tạo tin nhắn chào mừng hệ thống & nạp lịch sử chat từ database
         const welcomeMsg: Message = {
@@ -260,7 +334,9 @@ export default function RoomPage() {
         };
 
         try {
-          const messagesRes = await fetch(`${API_URL}/rooms/${roomId}/messages`);
+          const messagesRes = await fetch(`${API_URL}/rooms/${roomId}/messages`, {
+            headers: accessHeaders,
+          });
           if (messagesRes.ok) {
             const msgsData = await messagesRes.json();
             const formattedMsgs = msgsData.map((m: any) => ({
@@ -385,9 +461,114 @@ export default function RoomPage() {
     }
 
     fetchRoomAndMovie();
-  }, [roomId]);
+  }, [roomId, accessRevision]);
+
+  const handleVerifyPrivatePin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!roomId || !/^\d{4}$/.test(privatePin)) {
+      setPinError("Vui lòng nhập mã PIN gồm đúng 4 chữ số.");
+      return;
+    }
+
+    setVerifyingPin(true);
+    setPinError(null);
+    try {
+      const authToken = Cookies.get("token");
+      const response = await fetch(`${API_URL}/rooms/${roomId}/access`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          ...(getGuestDeviceId()
+            ? { "X-Guest-Device-Id": getGuestDeviceId() }
+            : {}),
+        },
+        body: JSON.stringify({ pin: privatePin }),
+      });
+      const data = await response.json().catch(() => null);
+      if (response.ok && data?.accessToken) {
+        sessionStorage.setItem(
+          `dlowphim_room_access:${roomId}`,
+          data.accessToken
+        );
+        setPrivatePin("");
+        setPrivateAccessRequired(false);
+        setLoading(true);
+        setAccessRevision((current) => current + 1);
+        return;
+      }
+
+      const message = data?.message || "Mã PIN không đúng.";
+      setPinError(
+        data?.attemptsRemaining
+          ? `${message} Bạn còn ${data.attemptsRemaining} lần thử.`
+          : message
+      );
+      if (response.status === 429) {
+        window.setTimeout(() => {
+          router.replace("/watch-together?private=locked");
+        }, 2500);
+      }
+    } catch {
+      setPinError("Không thể xác thực mã PIN. Vui lòng kiểm tra kết nối.");
+    } finally {
+      setVerifyingPin(false);
+    }
+  };
 
   const isHost = user && room && (room.host._id === user.id || room.host._id === (user as any)._id || (room.host as any) === user.id || (room.host as any) === (user as any)._id);
+
+  const applyRemotePlaybackState = useCallback((state: RemoteVideoState) => {
+    if (isHost) return;
+    latestRemoteStateRef.current = state;
+
+    const video = videoRef.current;
+    if (!video || video.readyState < 2) {
+      pendingVideoStateRef.current = state;
+      return;
+    }
+
+    const networkCompensation =
+      state.action === "play" && state.serverTime
+        ? Math.max(
+            0,
+            (Date.now() + serverClockOffsetRef.current - state.serverTime) / 1000,
+          )
+        : 0;
+    const targetTime = Math.max(0, state.currentTime + networkCompensation);
+    const drift = targetTime - video.currentTime;
+    const absoluteDrift = Math.abs(drift);
+
+    isSyncingRef.current = true;
+    pendingVideoStateRef.current = null;
+
+    if (state.action === "seek") {
+      video.playbackRate = 1;
+      video.currentTime = targetTime;
+    } else if (state.action === "pause") {
+      video.playbackRate = 1;
+      if (absoluteDrift >= 0.5) video.currentTime = targetTime;
+      video.pause();
+    } else {
+      if (absoluteDrift > 2) {
+        video.playbackRate = 1;
+        video.currentTime = targetTime;
+      } else if (absoluteDrift >= 0.5) {
+        video.playbackRate = drift > 0 ? 1.05 : 0.95;
+      } else {
+        video.playbackRate = 1;
+      }
+
+      video.play().catch(() => {
+        pendingVideoStateRef.current = state;
+        setStreamNotice("Trình duyệt đang chặn tự phát. Hãy bấm phát để tiếp tục đồng bộ.");
+      });
+    }
+
+    window.setTimeout(() => {
+      isSyncingRef.current = false;
+    }, 350);
+  }, [isHost]);
 
   // Quản lý kết nối Socket.io Realtime
   useEffect(() => {
@@ -434,13 +615,18 @@ export default function RoomPage() {
       name: user?.displayName || `Khách ${guestId.slice(-4)}`,
       avatar: user?.avatar,
       isHost: !!isHost,
+      roomAccessToken: sessionStorage.getItem(
+        `dlowphim_room_access:${room.roomId}`
+      ) || undefined,
     };
 
     socket.on("connect", () => {
       console.log("[Socket] Connected successfully!");
       setSocketError(null);
       // A reconnect creates a new server-side socket, so it must rejoin room.
-      socket.emit("join_room", joinPayload);
+      socket.emit("join_room", joinPayload, () => {
+        if (!isHost) socket.emit("request_sync", { roomId: room.roomId });
+      });
     });
 
     socket.on("connect_error", (err) => {
@@ -450,13 +636,19 @@ export default function RoomPage() {
 
     socket.on("disconnect", (reason) => {
       console.warn("[Socket] Disconnected:", reason);
+      if (videoRef.current) videoRef.current.playbackRate = 1;
       if (reason !== "io client disconnect") {
         setSocketError("Đang kết nối lại máy chủ phòng...");
       }
     });
 
-    socket.on("socket_error", (data: { message?: string }) => {
+    socket.on("socket_error", (data: { message?: string; requiresPin?: boolean }) => {
       setSocketError(data?.message || "Socket phòng vừa gặp lỗi xử lý dữ liệu.");
+      if (data?.requiresPin && !isHost) {
+        sessionStorage.removeItem(`dlowphim_room_access:${room.roomId}`);
+        setPrivateAccessRequired(true);
+        socket.disconnect();
+      }
     });
 
     // Lắng nghe tin nhắn chat realtime
@@ -526,11 +718,12 @@ export default function RoomPage() {
       const scheduledState = {
         action: "play" as const,
         currentTime: elapsedSeconds,
+        serverTime: Date.now(),
       };
-      pendingVideoStateRef.current = scheduledState;
+      if (!isHost) applyRemotePlaybackState(scheduledState);
 
       const video = videoRef.current;
-      if (video && playerType === "hls") {
+      if (isHost && video && playerType === "hls") {
         isSyncingRef.current = true;
         if (elapsedSeconds > 1) video.currentTime = elapsedSeconds;
         video.play().then(() => {
@@ -561,76 +754,43 @@ export default function RoomPage() {
     });
 
     // Lắng nghe tín hiệu đồng bộ video của Host gửi xuống (chỉ Member mới thực thi)
-    socket.on("video_state", (state: { action: "play" | "pause" | "seek"; currentTime: number }) => {
-      if (isHost) return; // Host không bao giờ bị member điều khiển ngược
-      const video = videoRef.current;
-      if (!video) {
+    socket.on("video_state", (state: RemoteVideoState) => {
+      if (isHost) return;
+      if (state.action === "play") setHasMovieStarted(true);
+      applyRemotePlaybackState(state);
+    });
+
+    socket.on("video_heartbeat", (state: RemoteVideoState) => {
+      if (isHost) return;
+      if (
+        Number.isInteger(state.episodeIndex) &&
+        state.episodeIndex !== activeEpisodeIndexRef.current
+      ) {
+        latestRemoteStateRef.current = state;
         pendingVideoStateRef.current = state;
-        return;
+        setActiveEpisodeIndex(state.episodeIndex as number);
+      } else {
+        applyRemotePlaybackState(state);
       }
-
-      isSyncingRef.current = true;
-      pendingVideoStateRef.current = null;
-      if (state.action === "play") {
-        if (room?.status === "live" || room?.status === "active" || room?.startedAt) {
-          setHasMovieStarted(true);
-        }
-        video.play().catch(() => {
-          pendingVideoStateRef.current = state;
-        });
-      } else if (state.action === "pause") {
-        video.pause();
-      } else if (state.action === "seek") {
-        if (Math.abs(video.currentTime - state.currentTime) > 2.5) {
-          video.currentTime = state.currentTime;
-        }
-      }
-
-      // Mở khóa cờ đồng bộ sau khi lệnh thực thi hoàn tất
-      setTimeout(() => {
-        isSyncingRef.current = false;
-      }, 500);
     });
 
     // Khi member mới join hoặc F5 → server gửi snapshot để seek đúng vị trí host
-    socket.on("sync_state", (state: { currentTime: number; episodeIndex: number; episodeSlug: string; action: "play" | "pause" }) => {
+    socket.on("sync_state", (state: RemoteVideoState & { episodeIndex: number; episodeSlug: string }) => {
       if (isHost) return;
       console.log("[Socket] Received sync_state snapshot:", state);
-      pendingVideoStateRef.current = {
-        action: state.action,
-        currentTime: state.currentTime,
-      };
 
       if (room?.status === "live" || room?.status === "active" || room?.startedAt) {
         setHasMovieStarted(true);
       }
 
-      // Chuyển đúng tập trước
-      setActiveEpisodeIndex(state.episodeIndex);
-
-      // Sau khi video element sẵn sàng thì seek tới đúng thời gian
-      const seekWhenReady = () => {
-        const video = videoRef.current;
-        if (!video) return;
-
-        const doSeek = () => {
-          if (state.currentTime > 2) {
-            isSyncingRef.current = true;
-            video.currentTime = state.currentTime;
-            pendingVideoStateRef.current = null;
-            setTimeout(() => { isSyncingRef.current = false; }, 500);
-          }
-        };
-
-        if (video.readyState >= 2) {
-          doSeek();
-        } else {
-          video.addEventListener("canplay", doSeek, { once: true });
-        }
-      };
-
-      // Chờ một chút để player khởi tạo xong sau khi đổi tập
-      setTimeout(seekWhenReady, 1500);
+      // Chuyển đúng tập trước; giữ snapshot để áp dụng sau khi HLS của tập mới sẵn sàng.
+      if (activeEpisodeIndexRef.current !== state.episodeIndex) {
+        latestRemoteStateRef.current = state;
+        pendingVideoStateRef.current = state;
+        setActiveEpisodeIndex(state.episodeIndex);
+      } else {
+        applyRemotePlaybackState(state);
+      }
     });
 
     // Lắng nghe tín hiệu khán giả hối thúc mở phòng chiếu (chỉ Host mới nhận và hiển thị Toast)
@@ -640,12 +800,42 @@ export default function RoomPage() {
       }
     });
 
+    const heartbeatInterval = window.setInterval(() => {
+      if (!isHost || !socket.connected || playerType !== "hls") return;
+      const video = videoRef.current;
+      if (!video || !Number.isFinite(video.currentTime)) return;
+      const episodeIndex = activeEpisodeIndexRef.current;
+      socket.emit("video_heartbeat", {
+        roomId: room.roomId,
+        currentTime: video.currentTime,
+        paused: video.paused,
+        episodeIndex,
+        episodeSlug: episodesRef.current[episodeIndex]?.slug || "",
+      });
+    }, 4000);
+
     return () => {
+      window.clearInterval(heartbeatInterval);
       socket.removeAllListeners();
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [room?.roomId, room?.startTime, room?.status, room?.startedAt, user?.id, user?.displayName, user?.avatar, isHost, loading, authLoading, router, playerType]);
+  }, [room?.roomId, room?.startTime, room?.status, room?.startedAt, user?.id, user?.displayName, user?.avatar, isHost, loading, authLoading, router, playerType, applyRemotePlaybackState]);
+
+  useEffect(() => {
+    const requestFreshSnapshot = () => {
+      if (
+        document.visibilityState === "visible" &&
+        !isHost &&
+        room?.roomId &&
+        socketRef.current?.connected
+      ) {
+        socketRef.current.emit("request_sync", { roomId: room.roomId });
+      }
+    };
+    document.addEventListener("visibilitychange", requestFreshSnapshot);
+    return () => document.removeEventListener("visibilitychange", requestFreshSnapshot);
+  }, [isHost, room?.roomId]);
 
   // Tự động tắt thông báo nhắc nhở sau 6 giây
   useEffect(() => {
@@ -750,19 +940,43 @@ export default function RoomPage() {
           }
         };
 
+        const onWaiting = () => {
+          if (!isHost) isBufferingRef.current = true;
+        };
+
+        const onCanPlay = () => {
+          if (isHost) return;
+          const pendingState = pendingVideoStateRef.current;
+          if (pendingState) applyRemotePlaybackState(pendingState);
+          if (isBufferingRef.current) {
+            isBufferingRef.current = false;
+            socketRef.current?.emit("request_sync", { roomId });
+          }
+        };
+
         // Gỡ các listener cũ nếu có
         if ((video as any)._dlowListeners) {
           const old = (video as any)._dlowListeners;
           video.removeEventListener("play", old.onPlay);
           video.removeEventListener("pause", old.onPause);
           video.removeEventListener("seeked", old.onSeeked);
+          if (old.onWaiting) video.removeEventListener("waiting", old.onWaiting);
+          if (old.onCanPlay) video.removeEventListener("canplay", old.onCanPlay);
         }
 
         // Gắn listener mới
         video.addEventListener("play", onPlay);
         video.addEventListener("pause", onPause);
         video.addEventListener("seeked", onSeeked);
-        (video as any)._dlowListeners = { onPlay, onPause, onSeeked };
+        video.addEventListener("waiting", onWaiting);
+        video.addEventListener("canplay", onCanPlay);
+        (video as any)._dlowListeners = {
+          onPlay,
+          onPause,
+          onSeeked,
+          onWaiting,
+          onCanPlay,
+        };
 
         if (Hls && Hls.isSupported()) {
           hlsNetworkRetriesRef.current = 0;
@@ -783,21 +997,7 @@ export default function RoomPage() {
             hlsMediaRetriesRef.current = 0;
             const pendingState = pendingVideoStateRef.current;
             if (pendingState) {
-              pendingVideoStateRef.current = null;
-              isSyncingRef.current = true;
-              if (Math.abs(video.currentTime - pendingState.currentTime) > 2) {
-                video.currentTime = pendingState.currentTime;
-              }
-              if (pendingState.action === "play") {
-                video.play().catch(() => {
-                  pendingVideoStateRef.current = pendingState;
-                });
-              } else if (pendingState.action === "pause") {
-                video.pause();
-              }
-              setTimeout(() => {
-                isSyncingRef.current = false;
-              }, 500);
+              applyRemotePlaybackState(pendingState);
             }
           });
 
@@ -837,17 +1037,7 @@ export default function RoomPage() {
             () => {
               const pendingState = pendingVideoStateRef.current;
               if (!pendingState) return;
-              pendingVideoStateRef.current = null;
-              isSyncingRef.current = true;
-              video.currentTime = pendingState.currentTime;
-              if (pendingState.action === "play") {
-                video.play().catch(() => {
-                  pendingVideoStateRef.current = pendingState;
-                });
-              }
-              setTimeout(() => {
-                isSyncingRef.current = false;
-              }, 500);
+              applyRemotePlaybackState(pendingState);
             },
             { once: true }
           );
@@ -866,10 +1056,12 @@ export default function RoomPage() {
       active = false;
       const video = videoRef.current;
       if (video && (video as any)._dlowListeners) {
-        const { onPlay, onPause, onSeeked } = (video as any)._dlowListeners;
+        const { onPlay, onPause, onSeeked, onWaiting, onCanPlay } = (video as any)._dlowListeners;
         video.removeEventListener("play", onPlay);
         video.removeEventListener("pause", onPause);
         video.removeEventListener("seeked", onSeeked);
+        if (onWaiting) video.removeEventListener("waiting", onWaiting);
+        if (onCanPlay) video.removeEventListener("canplay", onCanPlay);
         delete (video as any)._dlowListeners;
       }
       if (hlsRef.current) {
@@ -886,13 +1078,16 @@ export default function RoomPage() {
       }
       currentM3u8Ref.current = "";
     };
-  }, [playerType, activeEpisodeIndex, episodes, isHost, roomId]);
+  }, [playerType, activeEpisodeIndex, episodes, isHost, roomId, applyRemotePlaybackState]);
 
   // Sao chép liên kết URL đầy đủ của phòng xem chung
   const handleCopyRoomId = () => {
     const fullUrl = typeof window !== "undefined" ? window.location.href : "";
     if (fullUrl && navigator.clipboard) {
-      navigator.clipboard.writeText(fullUrl);
+      const shareText = room?.isPrivate && hostPrivatePin
+        ? `Mời bạn xem phim cùng mình: ${fullUrl}\nMã PIN: ${hostPrivatePin}`
+        : fullUrl;
+      navigator.clipboard.writeText(shareText);
       setCodeCopied(true);
       setTimeout(() => setCodeCopied(false), 2500);
     }
@@ -969,6 +1164,66 @@ export default function RoomPage() {
     );
   }
 
+  if (privateAccessRequired) {
+    return (
+      <div className="min-h-screen bg-[#07070a] text-white flex items-center justify-center px-4">
+        <form
+          onSubmit={handleVerifyPrivatePin}
+          className="w-full max-w-sm rounded-3xl border border-pink-500/20 bg-[#0e0f17] p-7 text-center shadow-[0_25px_80px_rgba(0,0,0,0.85)] space-y-5"
+        >
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-pink-500/20 bg-pink-500/10">
+            <LockKeyhole size={28} className="text-pink-400" />
+          </div>
+          <div className="space-y-1.5">
+            <h1 className="text-xl font-black uppercase">Phòng xem riêng tư</h1>
+            <p className="text-xs leading-relaxed text-zinc-500">
+              Nhập mã PIN được chủ phòng chia sẻ để xem phim và trò chuyện.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <div className="relative">
+              <KeyRound size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600" />
+              <input
+                autoFocus
+                type="password"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                minLength={4}
+                maxLength={4}
+                pattern="[0-9]{4}"
+                value={privatePin}
+                onChange={(event) =>
+                  setPrivatePin(event.target.value.replace(/\D/g, "").slice(0, 4))
+                }
+                placeholder="Nhập mã pin 4 số"
+                className="h-12 w-full rounded-xl border border-zinc-800 bg-zinc-950 pl-11 pr-4 text-center text-lg font-black tracking-[0.35em] outline-none transition-colors focus:border-pink-500"
+              />
+            </div>
+            {pinError && (
+              <p className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-[11px] font-bold leading-relaxed text-red-400">
+                {pinError}
+              </p>
+            )}
+          </div>
+          <button
+            type="submit"
+            disabled={verifyingPin || privatePin.length < 4}
+            className="h-12 w-full rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 text-sm font-black text-white shadow-lg shadow-pink-500/20 transition-all hover:from-pink-600 hover:to-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {verifyingPin ? "Đang kiểm tra..." : "Vào phòng"}
+          </button>
+          <button
+            type="button"
+            onClick={() => router.replace("/watch-together")}
+            className="text-xs font-bold text-zinc-500 transition-colors hover:text-zinc-300"
+          >
+            Quay lại sảnh xem chung
+          </button>
+        </form>
+      </div>
+    );
+  }
+
   if (error || !room) {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-3 px-4">
@@ -1009,17 +1264,23 @@ export default function RoomPage() {
                   <button
                     onClick={handleCopyRoomId}
                     className="bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 font-black text-xs px-3.5 py-1.5 rounded-xl border border-pink-500/20 uppercase tracking-wider shrink-0 select-none transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
-                    title="Click để sao chép toàn bộ đường dẫn liên kết (URL) của phòng xem chung"
+                    title={room.isPrivate ? "Sao chép liên kết mời và mã PIN" : "Sao chép liên kết phòng xem chung"}
                   >
                     <span>Mã phòng: {room.roomId}</span>
                     {codeCopied ? (
                       <span className="text-[10px] text-green-400 font-bold bg-green-500/10 px-1.5 py-0.2 rounded flex items-center gap-0.5 border border-green-500/20 animate-in zoom-in-95 duration-150">
-                        <Check size={10} /> Đã chép Link!
+                        <Check size={10} /> Đã sao chép!
                       </span>
                     ) : (
                       <Copy size={12} className="text-pink-400" />
                     )}
                   </button>
+                  {room.isPrivate && (
+                    <span className="inline-flex items-center gap-1 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-amber-400">
+                      <LockKeyhole size={11} /> Phòng riêng
+                      {isHost && hostPrivatePin ? ` • PIN ${hostPrivatePin}` : ""}
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-zinc-500 font-semibold uppercase flex items-center gap-1.5 mt-0.5">
                   <Film size={12} className="text-pink-500" />
@@ -1032,11 +1293,6 @@ export default function RoomPage() {
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="text-left shrink-0">
-                <span className="text-[10px] text-zinc-550 block font-bold uppercase tracking-wider text-right">Trưởng phòng</span>
-                <span className="text-xs text-zinc-300 font-bold">{room.host.displayName || room.host.name}</span>
-              </div>
-
               {isHost && (
                 <button
                   onClick={handleCloseRoom}

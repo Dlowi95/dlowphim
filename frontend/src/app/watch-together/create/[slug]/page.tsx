@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import React, { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { ArrowLeft, Film, Play, Calendar, EyeOff, Sparkles, AlertCircle } from "lucide-react";
+import { ArrowLeft, Film, Play, Calendar, EyeOff, Sparkles, AlertCircle, KeyRound, RefreshCw } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { cleanMovieName } from "@/utils/movieUtils";
@@ -69,6 +69,7 @@ export default function CreateRoomPage() {
     toVietnamDateTimeInput(new Date(Date.now() + 60_000))
   );
   const [isPrivate, setIsPrivate] = useState(false);
+  const [privatePin, setPrivatePin] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -173,6 +174,11 @@ export default function CreateRoomPage() {
     e.preventDefault();
     if (!movie) return;
 
+    if (isPrivate && !/^\d{4}$/.test(privatePin)) {
+      alert("Mã PIN phòng riêng phải gồm đúng 4 chữ số.");
+      return;
+    }
+
     if (isAutoStart && !startTime) {
       alert("Vui lòng chọn thời gian bắt đầu tự động phát!");
       return;
@@ -211,11 +217,15 @@ export default function CreateRoomPage() {
             ? vietnamDateTimeToUtc(startTime)?.toISOString()
             : undefined,
           isPrivate,
+          privatePin: isPrivate ? privatePin : undefined,
         }),
       });
 
       if (res.ok) {
         const data = await res.json();
+        if (isPrivate) {
+          sessionStorage.setItem(`dlowphim_room_pin:${data.roomId}`, privatePin);
+        }
         router.push(`/watch-together/room/${data.roomId}`);
       } else {
         const errData = await res.json();
@@ -466,7 +476,10 @@ export default function CreateRoomPage() {
                 
                 <button
                   type="button"
-                  onClick={() => setIsPrivate(!isPrivate)}
+                  onClick={() => {
+                    setIsPrivate((current) => !current);
+                    if (isPrivate) setPrivatePin("");
+                  }}
                   className={`w-10 h-6 rounded-full transition-colors duration-250 relative outline-none border-none cursor-pointer flex items-center p-0.5 ${
                     isPrivate ? "bg-pink-500" : "bg-zinc-800"
                   }`}
@@ -480,8 +493,47 @@ export default function CreateRoomPage() {
               </div>
               <p className="text-[11px] text-zinc-500 font-semibold leading-relaxed flex items-center gap-1">
                 <EyeOff size={12} className="text-zinc-550 shrink-0" />
-                Nếu bật, phòng xem chung này sẽ bị ẩn, chỉ những ai được bạn chia sẻ liên kết mới có thể tìm thấy và tham gia.
+                Nếu bật, phòng sẽ bị ẩn khỏi sảnh. Bạn bè cần có liên kết và nhập đúng mã PIN mới được tham gia.
               </p>
+
+              {isPrivate && (
+                <div className="space-y-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <KeyRound size={12} className="text-pink-500" />
+                    Mã PIN phòng riêng
+                  </span>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      autoComplete="new-password"
+                      required={isPrivate}
+                      minLength={4}
+                      maxLength={4}
+                      pattern="[0-9]{4}"
+                      value={privatePin}
+                      onChange={(event) =>
+                        setPrivatePin(event.target.value.replace(/\D/g, "").slice(0, 4))
+                      }
+                      placeholder="Nhập mã pin 4 số"
+                      className="min-w-0 flex-1 h-12 bg-zinc-950 border border-zinc-900/60 focus:border-pink-500 rounded-xl px-4 text-center text-lg tracking-[0.45em] text-zinc-100 outline-none font-black transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const generated = globalThis.crypto.getRandomValues(new Uint32Array(1))[0] % 10000;
+                        setPrivatePin(String(generated).padStart(4, "0"));
+                      }}
+                      className="h-12 px-4 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400 hover:border-pink-500/40 hover:text-pink-400 transition-colors flex items-center gap-2 text-[10px] font-black uppercase"
+                    >
+                      <RefreshCw size={13} /> Tạo mã
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-zinc-600 font-semibold">
+                    Mã PIN không được đưa vào đường dẫn chia sẻ.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Nút hành động */}

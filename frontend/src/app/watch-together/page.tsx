@@ -81,6 +81,7 @@ export default function WatchTogetherPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const closedReason = searchParams.get("closed");
+  const privateNotice = searchParams.get("private");
 
   const getClosedMessage = (reason: string | null) => {
     switch (reason) {
@@ -106,7 +107,15 @@ export default function WatchTogetherPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [activeTab, setActiveTab] = useState<RoomTab>("live");
   const [closedToast, setClosedToast] = useState(Boolean(closedReason));
-  const [closedMessage] = useState(() => getClosedMessage(closedReason));
+  const [closedMessage] = useState(() =>
+    privateNotice === "locked"
+      ? "Bạn đã nhập sai mã PIN 3 lần. Phòng đã tạm khóa quyền thử trong 15 phút."
+      : getClosedMessage(closedReason)
+  );
+
+  useEffect(() => {
+    if (privateNotice === "locked") setClosedToast(true);
+  }, [privateNotice]);
 
   useEffect(() => {
     if (closedToast) {
