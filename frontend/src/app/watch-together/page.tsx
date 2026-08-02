@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, Users, Radio, Clock, X, Film, ChevronRight, Search, Bell, VideoOff, AlertCircle } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
+import { io } from "socket.io-client";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -30,6 +31,14 @@ interface PublicRoom {
     avatar?: string;
   };
 }
+
+type RoomTab = "live" | "scheduled" | "closed";
+
+const getRoomTab = (status: string): RoomTab => {
+  if (status === "closed") return "closed";
+  if (status === "scheduled") return "scheduled";
+  return "live";
+};
 
 const getImageUrl = (path: string) => {
   if (!path) return "";
@@ -71,17 +80,37 @@ export default function WatchTogetherPage() {
   const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const isClosedParam = searchParams.get("closed") === "1";
+  const closedReason = searchParams.get("closed");
+
+  const getClosedMessage = (reason: string | null) => {
+    switch (reason) {
+      case "owner":
+        return "Bạn đã đóng phòng thành công. Mọi người đã được đưa về sảnh.";
+      case "host":
+        return "Trưởng phòng đã đóng phòng. Bạn đã được đưa về sảnh xem chung.";
+      case "expired":
+        return "Phòng đã tự đóng vì Trưởng phòng vắng quá 30 phút.";
+      case "disconnected":
+        return "Phòng đã đóng vì Trưởng phòng mất kết nối quá lâu.";
+      case "replaced":
+        return "Trưởng phòng đã chuyển sang một phòng xem chung khác.";
+      default:
+        return "Phòng xem chung đã đóng. Bạn đã được đưa về sảnh.";
+    }
+  };
 
   const [rooms, setRooms] = useState<PublicRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [showHowTo, setShowHowTo] = useState(false);
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [closedToast, setClosedToast] = useState(isClosedParam);
+  const [activeTab, setActiveTab] = useState<RoomTab>("live");
+  const [closedToast, setClosedToast] = useState(Boolean(closedReason));
+  const [closedMessage] = useState(() => getClosedMessage(closedReason));
 
   useEffect(() => {
     if (closedToast) {
+      window.history.replaceState(null, "", "/watch-together");
       const timer = setTimeout(() => {
         setClosedToast(false);
       }, 6000);
@@ -89,15 +118,44 @@ export default function WatchTogetherPage() {
     }
   }, [closedToast]);
 
-  // Reset về trang 1 khi gõ tìm kiếm
+  // Reset về trang 1 khi đổi tìm kiếm hoặc trạng thái phòng.
   useEffect(() => {
     setCurrentPage(1);
-  }, [search]);
+  }, [search, activeTab]);
 
   useEffect(() => {
     fetchRooms();
-    const interval = setInterval(fetchRooms, 30000); // refresh mỗi 30s
-    return () => clearInterval(interval);
+    let socketHost = API_URL;
+    try {
+      socketHost = new URL(API_URL).origin;
+    } catch {
+      // Giữ nguyên URL đã cấu hình nếu đây đã là socket endpoint hợp lệ.
+    }
+
+    const socket = io(socketHost, {
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 500,
+      reconnectionDelayMax: 5000,
+      timeout: 10000,
+    });
+    let hasConnected = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+    socket.on("connect", () => {
+      socket.emit("join_lobby");
+      if (hasConnected) fetchRooms();
+      hasConnected = true;
+    });
+    socket.on("rooms_changed", () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(fetchRooms, 200);
+    });
+
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      socket.disconnect();
+    };
   }, []);
 
   async function fetchRooms() {
@@ -122,9 +180,18 @@ export default function WatchTogetherPage() {
     setShowHowTo(true);
   };
 
-  const filtered = rooms.filter(
+  const todayRooms = rooms.filter((room) => isCreatedToday(room.createdAt));
+  const tabCounts = todayRooms.reduce<Record<RoomTab, number>>(
+    (counts, room) => {
+      counts[getRoomTab(room.status)] += 1;
+      return counts;
+    },
+    { live: 0, scheduled: 0, closed: 0 },
+  );
+  const activeRoomCount = tabCounts.live + tabCounts.scheduled;
+  const filtered = todayRooms.filter(
     (r) =>
-      isCreatedToday(r.createdAt) &&
+      getRoomTab(r.status) === activeTab &&
       ((r.roomName || "").toLowerCase().includes(search.toLowerCase()) ||
         (r.movieName || "").toLowerCase().includes(search.toLowerCase()) ||
         (r.host?.displayName || "").toLowerCase().includes(search.toLowerCase()))
@@ -146,7 +213,7 @@ export default function WatchTogetherPage() {
             </div>
             <div>
               <p className="text-[10px] font-black text-pink-400 uppercase tracking-wider">Thông báo phòng xem chung</p>
-              <p className="text-xs text-zinc-200 font-bold">Chủ phòng đã đóng phòng rồi!</p>
+              <p className="text-xs text-zinc-200 font-bold">{closedMessage}</p>
             </div>
             <button
               onClick={() => setClosedToast(false)}
@@ -213,7 +280,7 @@ export default function WatchTogetherPage() {
             {/* LIVE pill */}
             <span className="flex items-center gap-1.5 bg-red-500/15 border border-red-500/30 text-red-400 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse inline-block" />
-              {filtered.length} phòng
+              {activeRoomCount} phòng hoạt động
             </span>
           </div>
 
@@ -228,6 +295,34 @@ export default function WatchTogetherPage() {
               className="w-full pl-9 pr-4 py-2 rounded-xl bg-zinc-900/80 border border-zinc-800 text-xs text-zinc-200 placeholder:text-zinc-600 outline-none focus:border-pink-500 transition-colors"
             />
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-zinc-900 bg-[#0e0f17]/50 p-2">
+          {([
+            { id: "live" as const, label: "Đang chiếu", count: tabCounts.live, icon: Radio },
+            { id: "scheduled" as const, label: "Sắp chiếu", count: tabCounts.scheduled, icon: Clock },
+            { id: "closed" as const, label: "Đã kết thúc", count: tabCounts.closed, icon: VideoOff },
+          ]).map((tab) => {
+            const Icon = tab.icon;
+            const selected = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-xs font-black transition-all ${selected
+                  ? "border-pink-500/40 bg-pink-500/15 text-pink-400 shadow-lg shadow-pink-500/10"
+                  : "border-transparent text-zinc-500 hover:border-zinc-800 hover:bg-zinc-900 hover:text-zinc-200"
+                  }`}
+              >
+                <Icon size={13} className={tab.id === "live" && selected ? "animate-pulse" : ""} />
+                {tab.label}
+                <span className={`rounded-full px-2 py-0.5 text-[9px] ${selected ? "bg-pink-500/20" : "bg-zinc-900"}`}>
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Grid */}
@@ -252,7 +347,13 @@ export default function WatchTogetherPage() {
               <Film size={28} className="text-zinc-600" />
             </div>
             <p className="text-zinc-500 font-bold text-sm">
-              {search ? "Không tìm thấy phòng nào phù hợp" : "Chưa có phòng xem chung nào đang hoạt động"}
+              {search
+                ? "Không tìm thấy phòng nào phù hợp"
+                : activeTab === "live"
+                  ? "Chưa có phòng nào đang chiếu"
+                  : activeTab === "scheduled"
+                    ? "Chưa có phòng nào sắp chiếu"
+                    : "Chưa có phòng nào đã kết thúc hôm nay"}
             </p>
             <button
               onClick={handleCreateNew}
@@ -384,11 +485,14 @@ const getRoomState = (status: string, startTime?: string): RoomState => {
   if (status === "closed") {
     return { type: "ended", label: "Đã kết thúc" };
   }
-  if (startTime) {
-    const start = new Date(startTime).getTime();
-    if (start > Date.now()) {
-      return { type: "upcoming", label: "Đang chờ" };
-    }
+  if (status === "scheduled") {
+    const start = startTime ? new Date(startTime).getTime() : Number.NaN;
+    return {
+      type: "upcoming",
+      label: Number.isFinite(start) && start <= Date.now()
+        ? "Chờ trưởng phòng"
+        : "Sắp chiếu",
+    };
   }
   return { type: "live", label: "LIVE" };
 };
@@ -402,7 +506,10 @@ function RoomCard({ room }: { room: PublicRoom }) {
   // Avatar fallback
   const hostInitial = (room.host?.displayName || "?")[0].toUpperCase();
   const posterUrl = room.posterOption || room.moviePoster;
-  const state = getRoomState(room.status, room.startTime || room.createdAt);
+  const state = getRoomState(room.status, room.startTime);
+  const cardHref = state.type === "ended"
+    ? `/watch/${room.movieSlug}`
+    : `/watch-together/room/${room.roomId}`;
   const isLive = state.type === "live";
   const avatarBorderClass = isLive 
     ? "border-[2.5px] border-red-500 shadow-[0_0_12px_rgba(239,68,68,0.55)] animate-bob"
@@ -483,7 +590,7 @@ function RoomCard({ room }: { room: PublicRoom }) {
   };
 
   return (
-    <Link href={`/watch-together/room/${room.roomId}`} className="group block text-left">
+    <Link href={cardHref} className="group block text-left">
       {/* Thumbnail */}
       <div className="relative aspect-[16/9] rounded-xl overflow-hidden bg-zinc-950 mb-2.5 shadow-lg border border-zinc-800/80 group-hover:border-zinc-700/60 transition-all duration-300">
         {posterUrl ? (
@@ -537,7 +644,7 @@ function RoomCard({ room }: { room: PublicRoom }) {
           <>
             <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-[#181822]/90 border border-amber-500/20 text-amber-400 text-[9px] font-bold px-2 py-0.5 rounded z-10 backdrop-blur-sm">
               <Clock size={10} className="animate-spin text-amber-400 shrink-0" />
-              Đang chờ
+              {state.label}
             </div>
             {/* Nhắc nhở button */}
             {!isRoomHost && (
@@ -567,7 +674,7 @@ function RoomCard({ room }: { room: PublicRoom }) {
           <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20">
             <div className="flex items-center gap-1.5 bg-white/90 text-[#07070a] font-black text-xs px-3.5 py-1.5 rounded-full shadow-lg">
               <ChevronRight size={13} />
-              Vào xem
+              {state.type === "ended" ? "Xem phim" : "Vào xem"}
             </div>
           </div>
         )}

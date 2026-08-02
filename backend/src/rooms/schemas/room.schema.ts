@@ -29,17 +29,28 @@ export class Room {
   @Prop({ type: Date })
   startTime?: Date;
 
+  @Prop({ type: Date })
+  startedAt?: Date;
+
+  @Prop({ enum: ['schedule', 'host'] })
+  startedBy?: 'schedule' | 'host';
+
+  @Prop({ type: Date })
+  endedAt?: Date;
+
   @Prop({ default: false })
   isPrivate: boolean;
 
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   host: Types.ObjectId;
 
-  @Prop({ default: 'active' })
-  status: string; // active, closed
+  @Prop({ default: 'live', enum: ['scheduled', 'live', 'closed', 'active'] })
+  status: string; // active chỉ được giữ để tương thích dữ liệu cũ
 
   @Prop({ default: '' })
   currentEpisode: string; // Lưu slug của tập phim đang phát (ví dụ: 'tap-1', 'tap-2')
 }
 
 export const RoomSchema = SchemaFactory.createForClass(Room);
+RoomSchema.index({ status: 1, startTime: 1 });
+RoomSchema.index({ isPrivate: 1, createdAt: -1 });

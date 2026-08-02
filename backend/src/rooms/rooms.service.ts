@@ -1,4 +1,12 @@
-import { Injectable, NotFoundException, ConflictException, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Room, RoomDocument } from './schemas/room.schema';
@@ -7,6 +15,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class RoomsService implements OnModuleInit {
+  private readonly hostReminderCooldowns = new Map<string, number>();
+
   constructor(
     @InjectModel(Room.name) private roomModel: Model<RoomDocument>,
     @InjectModel(Message.name) private messageModel: Model<MessageDocument>,
@@ -15,10 +25,23 @@ export class RoomsService implements OnModuleInit {
 
   async onModuleInit() {
     try {
-      const result = await this.roomModel.updateMany({ status: 'active' }, { status: 'closed' }).exec();
-      console.log(`[Rooms] Cleaned up orphaned active rooms on startup: ${result.modifiedCount} closed.`);
+      const scheduledResult = await this.roomModel.updateMany(
+        {
+          status: 'active',
+          isAutoStart: true,
+          startTime: { $exists: true },
+        },
+        { $set: { status: 'scheduled' } },
+      ).exec();
+      const liveResult = await this.roomModel.updateMany(
+        { status: 'active' },
+        { $set: { status: 'live' } },
+      ).exec();
+      console.log(
+        `[Rooms] Restored legacy rooms on startup: ${scheduledResult.modifiedCount} scheduled, ${liveResult.modifiedCount} live.`,
+      );
     } catch (e) {
-      console.error('[Rooms] Failed to clean up orphaned active rooms:', e.message);
+      console.error('[Rooms] Failed to restore legacy rooms:', e.message);
     }
   }
 
@@ -46,6 +69,28 @@ export class RoomsService implements OnModuleInit {
       isPrivate: boolean;
     },
   ): Promise<Room> {
+    let scheduledAt: Date | undefined;
+    if (createDto.isAutoStart) {
+      if (!createDto.startTime) {
+        throw new BadRequestException('Vui lòng chọn thời gian công chiếu.');
+      }
+      const startTimeMs = Date.parse(createDto.startTime);
+      if (!Number.isFinite(startTimeMs)) {
+        throw new BadRequestException('Thời gian công chiếu không hợp lệ.');
+      }
+      if (!/(?:Z|[+-]\d{2}:\d{2})$/i.test(createDto.startTime)) {
+        throw new BadRequestException('Thời gian công chiếu phải kèm múi giờ UTC.');
+      }
+      const now = Date.now();
+      if (startTimeMs < now + 30_000) {
+        throw new BadRequestException('Thời gian công chiếu phải ở tương lai.');
+      }
+      if (startTimeMs > now + 90 * 24 * 60 * 60 * 1000) {
+        throw new BadRequestException('Chỉ có thể đặt lịch trước tối đa 90 ngày.');
+      }
+      scheduledAt = new Date(startTimeMs);
+    }
+
     let roomId = this.generateRoomId();
     let isUnique = false;
     let retries = 0;
@@ -68,7 +113,7 @@ export class RoomsService implements OnModuleInit {
     // Tự động đóng tất cả các phòng active cũ của Host này để tránh trùng lặp
     try {
       await this.roomModel.updateMany(
-        { host: hostId, status: 'active' },
+        { host: hostId, status: { $in: ['active', 'scheduled', 'live'] } },
         { status: 'closed' }
       ).exec();
     } catch (e) {
@@ -83,10 +128,12 @@ export class RoomsService implements OnModuleInit {
       roomName: createDto.roomName,
       posterOption: createDto.posterOption,
       isAutoStart: createDto.isAutoStart,
-      startTime: createDto.startTime ? new Date(createDto.startTime) : undefined,
+      startTime: scheduledAt,
       isPrivate: createDto.isPrivate,
       host: hostId,
-      status: 'active',
+      status: createDto.isAutoStart && createDto.startTime ? 'scheduled' : 'live',
+      startedAt: createDto.isAutoStart && createDto.startTime ? undefined : new Date(),
+      startedBy: createDto.isAutoStart && createDto.startTime ? undefined : 'host',
     });
 
     return createdRoom.save();
@@ -95,7 +142,7 @@ export class RoomsService implements OnModuleInit {
   // Lấy chi tiết phòng
   async getRoomDetails(roomId: string): Promise<Room> {
     const room = await this.roomModel
-      .findOne({ roomId, status: 'active' })
+      .findOne({ roomId, status: { $in: ['active', 'scheduled', 'live'] } })
       .populate('host', 'displayName email avatar')
       .exec();
 
@@ -103,48 +150,37 @@ export class RoomsService implements OnModuleInit {
       throw new NotFoundException('Không tìm thấy phòng xem chung hoặc phòng đã đóng.');
     }
 
-    // Tự động đóng phòng nếu đã quá 30 phút so với giờ hẹn chiếu mà host không bắt đầu
-    if (room.startTime) {
-      const startTimeMs = new Date(room.startTime).getTime();
-      if (Date.now() > startTimeMs + 30 * 60 * 1000) {
-        room.status = 'closed';
-        await room.save();
-        throw new NotFoundException('Phòng xem chung đã bị tự động đóng do quá hạn 30 phút trưởng phòng không bắt đầu.');
-      }
-    }
-
     return room;
   }
 
   // Lấy danh sách phòng công khai (cả active và closed)
   async getPublicRooms(): Promise<Room[]> {
-    // Tự động đóng các phòng active đã quá giờ chiếu hẹn quá 30 phút
-    try {
-      const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000);
-      const expiredRooms = await this.roomModel.find({
-        status: 'active',
-        startTime: { $lt: thirtyMinsAgo }
-      }).exec();
-
-      for (const r of expiredRooms) {
-        r.status = 'closed';
-        await r.save();
-      }
-    } catch (e) {
-      console.error('[Rooms] Failed to cleanup expired rooms:', e.message);
-    }
-
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     return this.roomModel
-      .find({ isPrivate: false })
+      .find({
+        isPrivate: false,
+        $or: [
+          { status: { $in: ['active', 'scheduled', 'live'] } },
+          { status: 'closed', createdAt: { $gte: sevenDaysAgo } },
+        ],
+      })
       .populate('host', 'displayName email avatar')
       .sort({ createdAt: -1 })
+      .limit(100)
       .exec();
   }
 
   // Nhắc nhở chủ phòng mở chiếu phim
   async notifyHost(roomId: string, guestName: string): Promise<{ success: boolean }> {
+    const cooldownUntil = this.hostReminderCooldowns.get(roomId) || 0;
+    if (cooldownUntil > Date.now()) {
+      throw new HttpException(
+        'Phòng vừa gửi lời nhắc. Vui lòng chờ một phút rồi thử lại.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
     const room = await this.roomModel
-      .findOne({ roomId, status: 'active' })
+      .findOne({ roomId, status: { $in: ['active', 'scheduled', 'live'] } })
       .populate('host')
       .exec();
 
@@ -156,6 +192,15 @@ export class RoomsService implements OnModuleInit {
     if (!hostId) {
       return { success: false };
     }
+
+    const reminderExpiresAt = Date.now() + 60_000;
+    this.hostReminderCooldowns.set(roomId, reminderExpiresAt);
+    const cleanupTimer = setTimeout(() => {
+      if (this.hostReminderCooldowns.get(roomId) === reminderExpiresAt) {
+        this.hostReminderCooldowns.delete(roomId);
+      }
+    }, 60_000);
+    cleanupTimer.unref();
 
     // Tạo thông báo cho chủ phòng
     await this.notificationsService.createUserNotification({
@@ -177,6 +222,7 @@ export class RoomsService implements OnModuleInit {
     }
 
     room.status = 'closed';
+    room.endedAt = new Date();
     const closedRoom = await room.save();
 
     // Tự động xóa sạch tin nhắn của phòng đó khi đóng phòng
@@ -196,7 +242,10 @@ export class RoomsService implements OnModuleInit {
   ): Promise<MessageDocument> {
     const createdMessage = new this.messageModel({
       roomId,
-      sender: senderId ? new Types.ObjectId(senderId) : undefined,
+      sender:
+        senderId && Types.ObjectId.isValid(senderId)
+          ? new Types.ObjectId(senderId)
+          : undefined,
       senderName,
       senderAvatar,
       text,
@@ -216,11 +265,65 @@ export class RoomsService implements OnModuleInit {
 
   // Cập nhật tập phim đang phát hiện tại
   async updateCurrentEpisode(roomId: string, episodeSlug: string): Promise<Room> {
-    const room = await this.roomModel.findOne({ roomId, status: 'active' });
+    const room = await this.roomModel.findOne({
+      roomId,
+      status: { $in: ['active', 'scheduled', 'live'] },
+    });
     if (!room) {
       throw new NotFoundException('Không tìm thấy phòng xem chung hoặc phòng đã đóng.');
     }
     room.currentEpisode = episodeSlug;
     return room.save();
+  }
+
+  async startScheduledRoom(
+    roomId: string,
+    startedBy: 'schedule' | 'host',
+  ): Promise<Room> {
+    const startedAt = new Date();
+    const room = await this.roomModel
+      .findOneAndUpdate(
+        { roomId, status: 'scheduled' },
+        {
+          $set: {
+            status: 'live',
+            startedAt,
+            startedBy,
+          },
+        },
+        { returnDocument: 'after' },
+      )
+      .exec();
+
+    if (!room) {
+      const existing = await this.roomModel.findOne({
+        roomId,
+        status: { $in: ['active', 'live'] },
+      });
+      if (existing) return existing;
+      throw new NotFoundException('Phòng không tồn tại, đã đóng hoặc đã bắt đầu trước đó.');
+    }
+
+    return room;
+  }
+
+  async getDueScheduledRooms(now = new Date()): Promise<Room[]> {
+    return this.roomModel
+      .find({ status: 'scheduled', startTime: { $lte: now } })
+      .exec();
+  }
+
+  async expireScheduledRoom(roomId: string): Promise<Room | null> {
+    const room = await this.roomModel
+      .findOneAndUpdate(
+        { roomId, status: 'scheduled' },
+        { $set: { status: 'closed', endedAt: new Date() } },
+        { returnDocument: 'after' },
+      )
+      .exec();
+    if (room) {
+      await this.messageModel.deleteMany({ roomId });
+    }
+    return room;
   }
 }

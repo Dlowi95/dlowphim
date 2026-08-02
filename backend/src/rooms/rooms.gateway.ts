@@ -4,10 +4,13 @@ import {
   SubscribeMessage,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   MessageBody,
   ConnectedSocket,
 } from '@nestjs/websockets';
+import { OnModuleDestroy } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
+import { JwtService } from '@nestjs/jwt';
 import { RoomsService } from './rooms.service';
 
 @WebSocketGateway({
@@ -15,7 +18,9 @@ import { RoomsService } from './rooms.service';
     origin: '*', // Hỗ trợ CORS kết nối client-side
   },
 })
-export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class RoomsGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
+{
   @WebSocketServer()
   server: Server;
 
@@ -24,17 +29,150 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // Quản lý các timeout đóng phòng của Host bị ngắt kết nối
   private hostDisconnectTimeouts = new Map<string, NodeJS.Timeout>();
+  private memberDisconnectTimeouts = new Map<string, NodeJS.Timeout>();
+  private scheduledRoomInterval?: NodeJS.Timeout;
+  private isStartingDueRooms = false;
+  private readonly lobbyRoomId = 'watch-together-lobby';
+  private readonly waitingRoomsAnnounced = new Set<string>();
 
   // Quản lý trạng thái AI hoạt động của từng phòng (roomId -> isActive)
   private roomAiStates = new Map<string, boolean>();
 
   // Snapshot trạng thái video của từng phòng (để đồng bộ cho member mới join / F5)
-  private roomVideoStates = new Map<string, { currentTime: number; episodeIndex: number; episodeSlug: string; action: 'play' | 'pause' }>();
+  private roomVideoStates = new Map<
+    string,
+    {
+      currentTime: number;
+      episodeIndex: number;
+      episodeSlug: string;
+      action: 'play' | 'pause';
+      updatedAt: number;
+    }
+  >();
 
-  constructor(private readonly roomsService: RoomsService) { }
+  constructor(
+    private readonly roomsService: RoomsService,
+    private readonly jwtService: JwtService,
+  ) {}
+
+  afterInit() {
+    void this.processScheduledRooms();
+    this.scheduledRoomInterval = setInterval(() => {
+      void this.processScheduledRooms();
+    }, 1000);
+  }
+
+  onModuleDestroy() {
+    if (this.scheduledRoomInterval) {
+      clearInterval(this.scheduledRoomInterval);
+      this.scheduledRoomInterval = undefined;
+    }
+  }
+
+  private async processScheduledRooms() {
+    if (this.isStartingDueRooms) return;
+    this.isStartingDueRooms = true;
+    try {
+      const now = new Date();
+      const dueRooms = await this.roomsService.getDueScheduledRooms(now);
+      for (const dueRoom of dueRooms) {
+        const roomHostId = String(dueRoom.host?._id || dueRoom.host || '');
+        const isHostOnline = Array.from(this.clients.values()).some(
+          (client) =>
+            client.roomId === dueRoom.roomId &&
+            client.isHost &&
+            client.userId === roomHostId,
+        );
+
+        if (!isHostOnline) {
+          if (!this.waitingRoomsAnnounced.has(dueRoom.roomId)) {
+            this.waitingRoomsAnnounced.add(dueRoom.roomId);
+            this.broadcastLobbyChanged('room_waiting_for_host', dueRoom.roomId);
+          }
+          const scheduledAt = dueRoom.startTime
+            ? new Date(dueRoom.startTime).getTime()
+            : now.getTime();
+          if (now.getTime() >= scheduledAt + 30 * 60 * 1000) {
+            const expiredRoom = await this.roomsService.expireScheduledRoom(
+              dueRoom.roomId,
+            );
+            if (expiredRoom) {
+              console.log(
+                `[Socket] Scheduled Room ${dueRoom.roomId} closed because its host was absent for 30 minutes.`,
+              );
+              this.broadcastRoomClosed(dueRoom.roomId, 'host_absent');
+            }
+          }
+          continue;
+        }
+
+        const room = await this.roomsService.startScheduledRoom(
+          dueRoom.roomId,
+          'schedule',
+        );
+        this.waitingRoomsAnnounced.delete(room.roomId);
+        const startedAt = room.startedAt || now;
+        console.log(`[Socket] Scheduled movie started for Room: ${room.roomId}`);
+        this.server.to(room.roomId).emit('movie_started', {
+          startedAt: new Date(startedAt).toISOString(),
+          startedBy: 'schedule',
+        });
+        this.broadcastLobbyChanged('room_started', room.roomId);
+      }
+    } catch (error) {
+      console.error('[Socket] Failed to start due scheduled rooms:', error.message);
+    } finally {
+      this.isStartingDueRooms = false;
+    }
+  }
+
+  broadcastRoomClosed(roomId: string, reason = 'host_closed') {
+    this.roomAiStates.delete(roomId);
+    this.roomVideoStates.delete(roomId);
+    this.waitingRoomsAnnounced.delete(roomId);
+
+    const timeout = this.hostDisconnectTimeouts.get(roomId);
+    if (timeout) {
+      clearTimeout(timeout);
+      this.hostDisconnectTimeouts.delete(roomId);
+    }
+
+    this.server.to(roomId).emit('room_closed', { reason });
+    this.broadcastLobbyChanged('room_closed', roomId);
+  }
+
+  broadcastLobbyChanged(event: string, roomId: string) {
+    this.server.to(this.lobbyRoomId).emit('rooms_changed', {
+      event,
+      roomId,
+      changedAt: new Date().toISOString(),
+    });
+  }
+
+  private getJoinedClient(client: Socket, roomId: string) {
+    const info = this.clients.get(client.id);
+    return info && info.roomId === roomId ? info : null;
+  }
+
+  private getAuthenticatedUserId(client: Socket): string | null {
+    const token = client.handshake.auth?.token;
+    if (!token || typeof token !== 'string') return null;
+    try {
+      const payload = this.jwtService.verify<{ sub?: string }>(token);
+      return payload.sub ? String(payload.sub) : null;
+    } catch {
+      return null;
+    }
+  }
 
   handleConnection(client: Socket) {
     console.log(`[Socket] Client connected: ${client.id}`);
+  }
+
+  @SubscribeMessage('join_lobby')
+  handleJoinLobby(@ConnectedSocket() client: Socket) {
+    client.join(this.lobbyRoomId);
+    return { ok: true };
   }
 
   async handleDisconnect(client: Socket) {
@@ -55,8 +193,9 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         // Nếu phòng chưa bắt đầu chiếu (hẹn giờ trong tương lai), cho phép Host rời đi thoải mái mà không đóng phòng
         try {
           const room = await this.roomsService.getRoomDetails(info.roomId).catch(() => null);
-          if (room && room.startTime && new Date(room.startTime).getTime() > Date.now()) {
+          if (room && room.status === 'scheduled') {
             console.log(`[Socket] Host disconnected from scheduled room ${info.roomId} before start time. Keeping room active.`);
+            this.broadcastViewerCount(info.roomId);
             return;
           }
         } catch (e) {}
@@ -79,10 +218,8 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             await this.roomsService.closeRoom(info.userId, info.roomId);
 
             // Xóa trạng thái AI của phòng
-            this.roomAiStates.delete(info.roomId);
-
             // Phát sự kiện đóng phòng để đẩy mọi người ra ngoài
-            this.server.to(info.roomId).emit('room_closed');
+            this.broadcastRoomClosed(info.roomId, 'host_disconnected');
           } catch (e) {
             console.error(`[Socket] Auto close room error:`, e.message);
           } finally {
@@ -95,14 +232,31 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         console.log(`[Socket] Host ${info.name} disconnected one socket session, but another session remains active. No cooldown started.`);
       }
     } else {
-      // Thành viên thường ngắt kết nối
-      this.server.to(info.roomId).emit('message', {
-        id: `sys-left-${Date.now()}`,
-        senderName: 'Hệ Thống',
-        text: `${info.name} đã rời phòng.`,
-        isSystem: true,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      });
+      const isMemberStillConnected = Array.from(this.clients.values()).some(
+        (member) =>
+          member.roomId === info.roomId && member.userId === info.userId,
+      );
+      if (!isMemberStillConnected) {
+        const presenceKey = `${info.roomId}:${info.userId}`;
+        const previousTimeout = this.memberDisconnectTimeouts.get(presenceKey);
+        if (previousTimeout) clearTimeout(previousTimeout);
+        const timeout = setTimeout(() => {
+          this.server.to(info.roomId).emit('message', {
+            id: `sys-left-${Date.now()}`,
+            senderName: 'Hệ Thống',
+            text: `${info.name} đã rời phòng.`,
+            isSystem: true,
+            time: new Date().toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+          });
+          this.memberDisconnectTimeouts.delete(presenceKey);
+          this.broadcastViewerCount(info.roomId);
+        }, 5000);
+        this.memberDisconnectTimeouts.set(presenceKey, timeout);
+        return;
+      }
     }
 
     // Cập nhật số người xem sau khi dọn dẹp ngắt kết nối
@@ -117,7 +271,42 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { roomId: string; userId: string; name: string; avatar?: string; isHost: boolean },
   ) {
-    const { roomId, userId, name, avatar, isHost } = data;
+    const roomId = String(data?.roomId || '').trim();
+    if (!roomId) {
+      client.emit('socket_error', { message: 'Mã phòng không hợp lệ.' });
+      return { ok: false, message: 'Mã phòng không hợp lệ.' };
+    }
+
+    let room: any;
+    try {
+      room = await this.roomsService.getRoomDetails(roomId);
+    } catch {
+      client.emit('socket_error', { message: 'Phòng không tồn tại hoặc đã đóng.' });
+      return { ok: false, message: 'Phòng không tồn tại hoặc đã đóng.' };
+    }
+
+    const authenticatedUserId = this.getAuthenticatedUserId(client);
+    const requestedGuestId = String(data?.userId || '');
+    const userId =
+      authenticatedUserId ||
+      (requestedGuestId.startsWith('guest-')
+        ? requestedGuestId
+        : `guest-${client.id}`);
+    const name = String(data?.name || 'Khách').trim().slice(0, 80) || 'Khách';
+    const avatar = data?.avatar;
+    const roomHostId = String(room.host?._id || room.host || '');
+    const isHost = Boolean(
+      authenticatedUserId && roomHostId === authenticatedUserId,
+    );
+    const memberPresenceKey = `${roomId}:${userId}`;
+    const memberReconnectTimeout = this.memberDisconnectTimeouts.get(
+      memberPresenceKey,
+    );
+    const isMemberReconnect = !isHost && Boolean(memberReconnectTimeout);
+    if (memberReconnectTimeout) {
+      clearTimeout(memberReconnectTimeout);
+      this.memberDisconnectTimeouts.delete(memberPresenceKey);
+    }
 
     // Nếu là Host, tự động tìm và đóng các phòng khác của Host này nếu có để tránh trùng lặp
     if (isHost) {
@@ -130,7 +319,7 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         console.log(`[Socket] Host is starting a new room. Closing previous room: ${prevInfo.roomId}`);
         try {
           await this.roomsService.closeRoom(prevInfo.userId, prevInfo.roomId);
-          this.server.to(prevInfo.roomId).emit('room_closed');
+          this.broadcastRoomClosed(prevInfo.roomId, 'room_replaced');
           
           const timeout = this.hostDisconnectTimeouts.get(prevInfo.roomId);
           if (timeout) {
@@ -166,7 +355,7 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         isSystem: true,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       });
-    } else {
+    } else if (!isMemberReconnect) {
       // Phát tin nhắn thông báo thành viên mới gia nhập
       this.server.to(roomId).emit('message', {
         id: `sys-join-${Date.now()}`,
@@ -181,12 +370,32 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const isAiActive = this.roomAiStates.get(roomId) || false;
     client.emit('ai_state_changed', { active: isAiActive });
 
+    if (
+      room.isAutoStart &&
+      (room.status === 'live' || room.status === 'active')
+    ) {
+      client.emit('movie_started', {
+        startedAt: room.startedAt
+          ? new Date(room.startedAt).toISOString()
+          : undefined,
+        startedBy: room.startedBy,
+      });
+    }
+
     // Gửi snapshot trạng thái video hiện tại cho member mới (hoặc host F5) để seek đúng vị trí
     if (!isHost) {
       const videoSnapshot = this.roomVideoStates.get(roomId);
       if (videoSnapshot) {
-        console.log(`[Socket] Sending video snapshot to new member in Room: ${roomId} -> time: ${videoSnapshot.currentTime}, ep: ${videoSnapshot.episodeIndex}`);
-        client.emit('sync_state', videoSnapshot);
+        const elapsedSeconds =
+          videoSnapshot.action === 'play'
+            ? Math.max(0, (Date.now() - videoSnapshot.updatedAt) / 1000)
+            : 0;
+        const synchronizedSnapshot = {
+          ...videoSnapshot,
+          currentTime: videoSnapshot.currentTime + elapsedSeconds,
+        };
+        console.log(`[Socket] Sending video snapshot to new member in Room: ${roomId} -> time: ${synchronizedSnapshot.currentTime}, ep: ${videoSnapshot.episodeIndex}`);
+        client.emit('sync_state', synchronizedSnapshot);
       }
     }
 
@@ -200,7 +409,15 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { roomId: string; active: boolean; userName: string },
   ) {
-    const { roomId, active, userName } = data;
+    const { roomId, active } = data;
+    const joinedClient = this.getJoinedClient(client, roomId);
+    if (!joinedClient?.isHost) {
+      client.emit('socket_error', {
+        message: 'Chỉ trưởng phòng được bật hoặc tắt DlowAI.',
+      });
+      return { ok: false, message: 'Không có quyền thay đổi DlowAI.' };
+    }
+    const userName = joinedClient.name;
     this.roomAiStates.set(roomId, active);
 
     console.log(`[Socket] Room ${roomId} AI State changed to: ${active} by ${userName}`);
@@ -234,15 +451,20 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { roomId: string },
   ) {
     const { roomId } = data;
+    const joinedClient = this.getJoinedClient(client, roomId);
+    if (!joinedClient?.isHost) {
+      client.emit('socket_error', { message: 'Chỉ trưởng phòng được đóng phòng.' });
+      return;
+    }
     console.log(`[Socket] Host explicitly closed Room: ${roomId}`);
-    
-    // Phát sự kiện đóng phòng tới TOÀN BỘ CLIENTS trong phòng ngay lập tức
-    this.server.to(roomId).emit('room_closed');
-
-    const timeout = this.hostDisconnectTimeouts.get(roomId);
-    if (timeout) {
-      clearTimeout(timeout);
-      this.hostDisconnectTimeouts.delete(roomId);
+    try {
+      await this.roomsService.closeRoom(joinedClient.userId, roomId);
+      this.broadcastRoomClosed(roomId, 'host_closed');
+      return { ok: true };
+    } catch (error) {
+      const message = error?.message || 'Không thể đóng phòng lúc này.';
+      client.emit('socket_error', { message });
+      return { ok: false, message };
     }
   }
 
@@ -252,14 +474,21 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { roomId: string; guestName: string },
   ) {
-    const { roomId, guestName } = data;
+    const { roomId } = data;
+    const joinedClient = this.getJoinedClient(client, roomId);
+    if (!joinedClient || joinedClient.isHost) {
+      return { ok: false, message: 'Yêu cầu nhắc mở phim không hợp lệ.' };
+    }
+    const guestName = joinedClient.name;
     console.log(`[Socket] Guest ${guestName} requested start movie for Room: ${roomId}`);
     try {
       await this.roomsService.notifyHost(roomId, guestName);
       // Gửi sự kiện cho toàn bộ phòng (hoặc host) để hiện thông báo realtime
       this.server.to(roomId).emit('host_reminder', { guestName });
+      return { ok: true };
     } catch (err) {
       console.error('Lỗi khi gửi thông báo nhắc nhở host:', err);
+      return { ok: false, message: 'Không thể gửi lời nhắc lúc này.' };
     }
   }
 
@@ -270,19 +499,61 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { roomId: string },
   ) {
     const { roomId } = data;
+    const joinedClient = this.getJoinedClient(client, roomId);
+    if (!joinedClient?.isHost) {
+      client.emit('socket_error', {
+        message: 'Chỉ trưởng phòng được bắt đầu chiếu phim.',
+      });
+      return { ok: false, message: 'Không có quyền bắt đầu chiếu phim.' };
+    }
     console.log(`[Socket] Host started scheduled movie early for Room: ${roomId}`);
-    this.server.to(roomId).emit('movie_started');
+    const room = await this.roomsService.startScheduledRoom(roomId, 'host');
+    this.waitingRoomsAnnounced.delete(roomId);
+    this.server.to(roomId).emit('movie_started', {
+      startedAt: room.startedAt
+        ? new Date(room.startedAt).toISOString()
+        : new Date().toISOString(),
+      startedBy: 'host',
+    });
+    this.broadcastLobbyChanged('room_started', roomId);
+    return { ok: true };
   }
 
   // Sự kiện gửi tin nhắn trò chuyện
   @SubscribeMessage('send_message')
   async handleSendMessage(
+    @ConnectedSocket() client: Socket,
     @MessageBody() data: { roomId: string; userId: string; name: string; avatar?: string; text: string },
   ) {
-    const { roomId, userId, name, avatar, text } = data;
+    const { roomId, avatar } = data;
+    const joinedClient = this.getJoinedClient(client, roomId);
+    if (!joinedClient) {
+      const message = 'Socket chưa tham gia đúng phòng. Vui lòng chờ kết nối lại.';
+      client.emit('socket_error', { message });
+      return { ok: false, message };
+    }
+    const text = (data.text || '').trim().slice(0, 500);
+    if (!text) return { ok: false, message: 'Tin nhắn không được để trống.' };
+    const userId = joinedClient.userId;
+    const name = joinedClient.name;
 
     // 1. Lưu tin nhắn của user vào database
-    const savedMsg: any = await this.roomsService.saveMessage(roomId, userId, name, avatar, text, false);
+    let savedMsg: any;
+    try {
+      savedMsg = await this.roomsService.saveMessage(
+        roomId,
+        userId,
+        name,
+        avatar,
+        text,
+        false,
+      );
+    } catch (error) {
+      console.error('[Socket] save message error:', error.message);
+      const message = 'Không thể lưu tin nhắn lúc này.';
+      client.emit('socket_error', { message });
+      return { ok: false, message };
+    }
 
     // 2. Phát tin nhắn realtime cho tất cả mọi người trong phòng
     const chatMsg = {
@@ -293,6 +564,7 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       text: savedMsg.text,
       isSystem: savedMsg.isSystem,
       time: new Date(savedMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      createdAt: new Date(savedMsg.createdAt).toISOString(),
     };
     this.server.to(roomId).emit('message', chatMsg);
 
@@ -325,6 +597,7 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
               text: aiSavedMsg.text,
               isSystem: aiSavedMsg.isSystem,
               time: new Date(aiSavedMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              createdAt: new Date(aiSavedMsg.createdAt).toISOString(),
             });
           }, 400);
         }
@@ -332,6 +605,7 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         console.error('[Socket] AI response logic error:', err.message);
       }
     }
+    return { ok: true, messageId: savedMsg._id.toString() };
   }
 
   // Helper kết nối API AI (ưu tiên Groq API siêu nhanh, sau đó fallback sang Google Gemini API)
@@ -473,8 +747,12 @@ QUY TẮC BẮT BUỘC:
   // Phát số người xem động cho toàn phòng
   private broadcastViewerCount(roomId: string) {
     try {
-      const socketRoom = this.server.sockets.adapter.rooms.get(roomId);
-      const realUsersCount = socketRoom ? socketRoom.size : 0;
+      const uniqueUserIds = new Set(
+        Array.from(this.clients.values())
+          .filter((client) => client.roomId === roomId)
+          .map((client) => client.userId),
+      );
+      const realUsersCount = uniqueUserIds.size;
       const isAiActive = this.roomAiStates.get(roomId) || false;
       const totalViewers = realUsersCount + (isAiActive ? 1 : 0);
 
@@ -492,13 +770,26 @@ QUY TẮC BẮT BUỘC:
     @MessageBody() data: { roomId: string; action: 'play' | 'pause' | 'seek'; currentTime: number },
   ) {
     const { roomId, action, currentTime } = data;
+    const joinedClient = this.getJoinedClient(client, roomId);
+    if (!joinedClient?.isHost) return;
+    if (!['play', 'pause', 'seek'].includes(action) || !Number.isFinite(currentTime)) {
+      client.emit('socket_error', { message: 'Trạng thái video không hợp lệ.' });
+      return;
+    }
 
     // Cập nhật snapshot trạng thái video của phòng trong RAM
-    const existing = this.roomVideoStates.get(roomId) || { currentTime: 0, episodeIndex: 0, episodeSlug: '', action: 'pause' as const };
+    const existing = this.roomVideoStates.get(roomId) || {
+      currentTime: 0,
+      episodeIndex: 0,
+      episodeSlug: '',
+      action: 'pause' as const,
+      updatedAt: Date.now(),
+    };
     this.roomVideoStates.set(roomId, {
       ...existing,
       currentTime,
       action: action === 'seek' ? existing.action : action,
+      updatedAt: Date.now(),
     });
 
     // Chỉ truyền tiếp tín hiệu cho các thành viên khác trong phòng (ngoại trừ Host gửi)
@@ -513,7 +804,13 @@ QUY TẮC BẮT BUỘC:
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { roomId: string; episodeSlug: string; episodeIndex: number; episodeName: string; userName: string },
   ) {
-    const { roomId, episodeSlug, episodeIndex, episodeName, userName } = data;
+    const { roomId, episodeSlug, episodeIndex, episodeName } = data;
+    const joinedClient = this.getJoinedClient(client, roomId);
+    if (!joinedClient?.isHost) {
+      client.emit('socket_error', { message: 'Chỉ trưởng phòng được chuyển tập.' });
+      return;
+    }
+    const userName = joinedClient.name;
 
     try {
       console.log(`[Socket] Room ${roomId} changing episode to index ${episodeIndex} (${episodeSlug}) by Host: ${userName}`);
@@ -534,17 +831,25 @@ QUY TẮC BẮT BUỘC:
       });
 
       // 3. Cập nhật snapshot episode mới vào RAM
-      const existingSnap = this.roomVideoStates.get(roomId) || { currentTime: 0, action: 'pause' as const };
+      const existingSnap = this.roomVideoStates.get(roomId) || {
+        currentTime: 0,
+        episodeIndex: 0,
+        episodeSlug: '',
+        action: 'pause' as const,
+        updatedAt: Date.now(),
+      };
       this.roomVideoStates.set(roomId, {
         ...existingSnap,
         episodeIndex,
         episodeSlug,
         currentTime: 0, // Reset về đầu tập khi chuyển tập
         action: 'pause' as const,
+        updatedAt: Date.now(),
       });
 
       // 4. Phát tín hiệu đồng bộ chuyển tập cho tất cả các client khác trong phòng
       client.to(roomId).emit('episode_changed', { episodeSlug, episodeIndex });
+      this.broadcastLobbyChanged('episode_changed', roomId);
 
     } catch (err) {
       console.error(`[Socket] change_episode error:`, err.message);

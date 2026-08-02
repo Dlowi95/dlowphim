@@ -1,10 +1,14 @@
 import { Controller, Get, Post, Body, Param, UseGuards, Req, Delete } from '@nestjs/common';
 import { RoomsService } from './rooms.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
+import { RoomsGateway } from './rooms.gateway';
 
 @Controller('rooms')
 export class RoomsController {
-  constructor(private readonly roomsService: RoomsService) {}
+  constructor(
+    private readonly roomsService: RoomsService,
+    private readonly roomsGateway: RoomsGateway,
+  ) {}
 
   // Tạo phòng xem chung mới
   @Post('create')
@@ -23,7 +27,9 @@ export class RoomsController {
     },
   ) {
     const hostId = req.user.sub;
-    return this.roomsService.createRoom(hostId, createDto);
+    const room = await this.roomsService.createRoom(hostId, createDto);
+    this.roomsGateway.broadcastLobbyChanged('room_created', room.roomId);
+    return room;
   }
 
   // Lấy danh sách các phòng xem chung công khai
@@ -35,7 +41,11 @@ export class RoomsController {
   // Lấy thông tin chi tiết phòng xem chung
   @Get(':roomId')
   async getRoomDetails(@Param('roomId') roomId: string) {
-    return this.roomsService.getRoomDetails(roomId);
+    const room: any = await this.roomsService.getRoomDetails(roomId);
+    return {
+      ...(typeof room.toObject === 'function' ? room.toObject() : room),
+      serverTime: new Date().toISOString(),
+    };
   }
 
   // Lấy lịch sử chat phòng xem chung
@@ -49,7 +59,9 @@ export class RoomsController {
   @UseGuards(AuthGuard)
   async closeRoom(@Param('roomId') roomId: string, @Req() req: any) {
     const hostId = req.user.sub;
-    return this.roomsService.closeRoom(hostId, roomId);
+    const room = await this.roomsService.closeRoom(hostId, roomId);
+    this.roomsGateway.broadcastRoomClosed(roomId, 'host_closed');
+    return room;
   }
 
   // Nhắc nhở chủ phòng mở chiếu phim

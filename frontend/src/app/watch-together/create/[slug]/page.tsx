@@ -24,7 +24,30 @@ interface MovieDetail {
   year: number;
   category: { name: string; slug: string }[];
   country: { name: string; slug: string }[];
+  tmdb?: { id?: string | number; type?: "movie" | "tv" };
 }
+
+const toVietnamDateTimeInput = (date: Date) => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}T${value.hour}:${value.minute}`;
+};
+
+const vietnamDateTimeToUtc = (value: string) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return null;
+  const [, year, month, day, hour, minute] = match.map(Number);
+  const utcDate = new Date(Date.UTC(year, month - 1, day, hour - 7, minute));
+  return Number.isFinite(utcDate.getTime()) ? utcDate : null;
+};
 
 export default function CreateRoomPage() {
   const router = useRouter();
@@ -34,14 +57,31 @@ export default function CreateRoomPage() {
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [tmdbPoster, setTmdbPoster] = useState("");
+  const [tmdbBackdrop, setTmdbBackdrop] = useState("");
 
   // Form states
   const [roomName, setRoomName] = useState("");
   const [selectedPoster, setSelectedPoster] = useState(""); // Ảnh đại diện phòng
   const [isAutoStart, setIsAutoStart] = useState(false);
   const [startTime, setStartTime] = useState("");
+  const [minStartTime, setMinStartTime] = useState(() =>
+    toVietnamDateTimeInput(new Date(Date.now() + 60_000))
+  );
   const [isPrivate, setIsPrivate] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    const updateMinimum = () => {
+      setMinStartTime(toVietnamDateTimeInput(new Date(Date.now() + 60_000)));
+    };
+    const interval = window.setInterval(updateMinimum, 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const chooseQuickSchedule = (minutes: number) => {
+    setStartTime(toVietnamDateTimeInput(new Date(Date.now() + minutes * 60_000)));
+  };
 
   // Lấy thông tin phim
   useEffect(() => {
@@ -73,6 +113,46 @@ export default function CreateRoomPage() {
     fetchMovieDetail();
   }, [slug]);
 
+  // Đồng bộ ảnh dọc/ngang chất lượng cao từ TMDB qua cache backend.
+  useEffect(() => {
+    if (!movie?.slug) return;
+    let active = true;
+    const params = new URLSearchParams({
+      title: movie.origin_name || movie.name || "",
+      originTitle: movie.origin_name || "",
+      tmdbId: movie.tmdb?.id ? String(movie.tmdb.id) : "",
+      tmdbType: movie.tmdb?.type || "movie",
+    });
+
+    fetch(`${API_URL}/movies/logo/${movie.slug}?${params.toString()}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!active || !data) return;
+        const highResolutionPoster = data.posterUrl
+          ? data.posterUrl.replace("/w500/", "/w780/")
+          : "";
+        const highResolutionBackdrop = data.backdropUrl
+          ? data.backdropUrl.replace("/w1280/", "/original/")
+          : "";
+        setTmdbPoster(highResolutionPoster);
+        setTmdbBackdrop(highResolutionBackdrop);
+        if (highResolutionPoster) {
+          setSelectedPoster((current) =>
+            !current || current === movie.poster_url
+              ? highResolutionPoster
+              : current
+          );
+        }
+      })
+      .catch(() => {
+        // Giữ ảnh API làm fallback nếu TMDB tạm thời không phản hồi.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [movie]);
+
   // Bảo vệ route phía Client
   useEffect(() => {
     const token = Cookies.get("token");
@@ -98,6 +178,19 @@ export default function CreateRoomPage() {
       return;
     }
 
+    if (isAutoStart) {
+      const scheduledDate = vietnamDateTimeToUtc(startTime);
+      const scheduledAt = scheduledDate?.getTime() ?? Number.NaN;
+      if (!Number.isFinite(scheduledAt) || scheduledAt < Date.now() + 30_000) {
+        alert("Thời gian công chiếu phải ở tương lai.");
+        return;
+      }
+      if (scheduledAt > Date.now() + 90 * 24 * 60 * 60 * 1000) {
+        alert("Bạn chỉ có thể đặt lịch trước tối đa 90 ngày.");
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const token = Cookies.get("token");
@@ -114,7 +207,9 @@ export default function CreateRoomPage() {
           roomName: roomName.trim(),
           posterOption: selectedPoster,
           isAutoStart,
-          startTime: isAutoStart ? startTime : undefined,
+          startTime: isAutoStart
+            ? vietnamDateTimeToUtc(startTime)?.toISOString()
+            : undefined,
           isPrivate,
         }),
       });
@@ -159,6 +254,8 @@ export default function CreateRoomPage() {
   }
 
   const cleanedName = cleanMovieName(movie.name);
+  const verticalPoster = tmdbPoster || movie.poster_url;
+  const horizontalBackdrop = tmdbBackdrop || movie.thumb_url;
 
   return (
     <div className="min-h-screen bg-[#07070a] text-white pt-24 pb-16 px-4 md:px-6 relative select-none">
@@ -188,7 +285,7 @@ export default function CreateRoomPage() {
           <div className="lg:col-span-5 bg-[#0e0f17]/40 rounded-3xl overflow-hidden p-6 space-y-5">
             <div className="aspect-[2/3] w-full rounded-2xl overflow-hidden relative shadow-2xl">
               <img
-                src={getImageUrl(selectedPoster || movie.poster_url || movie.thumb_url)}
+                src={getImageUrl(selectedPoster || verticalPoster || horizontalBackdrop)}
                 alt={cleanedName}
                 className="w-full h-full object-cover"
                 referrerPolicy="no-referrer"
@@ -255,52 +352,56 @@ export default function CreateRoomPage() {
               <div className="grid grid-cols-2 gap-4">
                 {/* Lựa chọn 1: Poster dọc */}
                 <div
-                  onClick={() => setSelectedPoster(movie.poster_url)}
+                  onClick={() => setSelectedPoster(verticalPoster)}
                   className={`aspect-[3/4.2] rounded-2xl overflow-hidden cursor-pointer relative border-3 transition-all ${
-                    selectedPoster === movie.poster_url
+                    selectedPoster === verticalPoster
                       ? "border-pink-500 shadow-lg shadow-pink-500/10"
                       : "border-transparent hover:border-zinc-800/40 opacity-60 hover:opacity-90"
                   }`}
                 >
                   <img
-                    src={getImageUrl(movie.poster_url)}
+                    src={getImageUrl(verticalPoster)}
                     alt="Poster dọc"
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
                   />
                   <div className="absolute inset-x-0 bottom-0 bg-black/75 py-2 text-center">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-200">Poster dọc</span>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-200">
+                      Poster dọc {tmdbPoster ? "• TMDB HD" : ""}
+                    </span>
                   </div>
                 </div>
 
                 {/* Lựa chọn 2: Backdrop ngang */}
                 <div
-                  onClick={() => setSelectedPoster(movie.thumb_url)}
+                  onClick={() => setSelectedPoster(horizontalBackdrop)}
                   className={`aspect-[3/4.2] rounded-2xl overflow-hidden cursor-pointer relative border-3 transition-all ${
-                    selectedPoster === movie.thumb_url
+                    selectedPoster === horizontalBackdrop
                       ? "border-pink-500 shadow-lg shadow-pink-500/10"
                       : "border-transparent hover:border-zinc-800/40 opacity-60 hover:opacity-90"
                   }`}
                 >
                   <img
-                    src={getImageUrl(movie.thumb_url)}
+                    src={getImageUrl(horizontalBackdrop)}
                     alt="Backdrop ngang"
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
                   />
                   <div className="absolute inset-x-0 bottom-0 bg-black/75 py-2 text-center">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-200">Backdrop ngang</span>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-200">
+                      Backdrop ngang {tmdbBackdrop ? "• TMDB HD" : ""}
+                    </span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Bước 3: Cài đặt thời gian */}
+            {/* Bước 3: Lên lịch công chiếu */}
             <div className="bg-[#0e0f17]/40 rounded-3xl p-6 space-y-4 text-left">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-black text-zinc-450 uppercase tracking-widest flex items-center gap-2 select-none">
                   <span className="w-5 h-5 rounded-full bg-pink-500/10 text-pink-500 flex items-center justify-center font-bold text-[10px]">3</span>
-                  Cài đặt thời gian
+                  Lên lịch công chiếu
                 </label>
                 
                 {/* Toggle switch */}
@@ -319,7 +420,7 @@ export default function CreateRoomPage() {
                 </button>
               </div>
               <p className="text-[11px] text-zinc-500 font-semibold leading-relaxed">
-                Có thể bắt đầu thủ công bất cứ lúc nào hoặc thiết lập thời gian để phòng tự động phát.
+                Đến giờ, phim tự phát khi Trưởng phòng có mặt. Nếu vắng quá 30 phút, phòng sẽ tự đóng.
               </p>
 
               {isAutoStart && (
@@ -331,10 +432,26 @@ export default function CreateRoomPage() {
                   <input
                     type="datetime-local"
                     required={isAutoStart}
+                    min={minStartTime}
                     value={startTime}
                     onChange={(e) => setStartTime(e.target.value)}
                     className="w-full h-12 bg-zinc-950 border border-zinc-900/60 hover:border-zinc-800/50 focus:border-pink-500 rounded-xl px-4 text-sm text-zinc-200 outline-none font-bold transition-colors"
                   />
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {[15, 30, 60].map((minutes) => (
+                      <button
+                        key={minutes}
+                        type="button"
+                        onClick={() => chooseQuickSchedule(minutes)}
+                        className="rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-[10px] font-black text-zinc-400 transition-colors hover:border-pink-500/40 hover:text-pink-400"
+                      >
+                        +{minutes < 60 ? `${minutes} phút` : "1 giờ"}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] font-semibold text-zinc-500">
+                    Hiển thị theo giờ Việt Nam (GMT+7), dữ liệu được lưu an toàn dưới dạng UTC.
+                  </p>
                 </div>
               )}
             </div>

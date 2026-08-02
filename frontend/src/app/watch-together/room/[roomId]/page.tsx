@@ -13,9 +13,7 @@ import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import EpisodeSelector from "@/components/EpisodeSelector";
 import { io } from "socket.io-client";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
-
-// Import dynamic Plyr
-import "plyr/dist/plyr.css";
+import { loadHlsLibrary } from "@/utils/hlsLoader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -28,8 +26,12 @@ interface RoomDetails {
   posterOption: string;
   isAutoStart: boolean;
   startTime?: string;
+  startedAt?: string;
+  startedBy?: "schedule" | "host";
+  status: "scheduled" | "live" | "closed" | "active";
+  serverTime?: string;
   isPrivate: boolean;
-  host: { _id: string; name: string; email: string; avatar?: string };
+  host: { _id: string; name?: string; displayName?: string; email: string; avatar?: string };
 }
 
 interface Message {
@@ -39,6 +41,7 @@ interface Message {
   avatar?: string;
   text: string;
   time: string;
+  createdAt?: string;
   isSystem?: boolean;
 }
 
@@ -59,6 +62,7 @@ export default function RoomPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [socketError, setSocketError] = useState<string | null>(null);
+  const [streamNotice, setStreamNotice] = useState<string | null>(null);
   const [codeCopied, setCodeCopied] = useState(false);
   const [isAiActive, setIsAiActive] = useState(false);
 
@@ -79,19 +83,34 @@ export default function RoomPage() {
   const [reminderToast, setReminderToast] = useState<string | null>(null);
   const [hasUrgedHost, setHasUrgedHost] = useState(false);
 
-  const handleMemberMouseMove = () => {
-    setShowMemberControls(true);
+  const clearMemberControlsTimer = () => {
     if (memberControlsTimeoutRef.current) {
       clearTimeout(memberControlsTimeoutRef.current);
+      memberControlsTimeoutRef.current = null;
     }
+  };
+
+  const scheduleMemberControlsHide = () => {
+    clearMemberControlsTimer();
     memberControlsTimeoutRef.current = setTimeout(() => {
       setShowMemberControls(false);
+      memberControlsTimeoutRef.current = null;
     }, 3500);
   };
 
+  const handleMemberMouseMove = () => {
+    setShowMemberControls(true);
+    scheduleMemberControlsHide();
+  };
+
+  useEffect(() => () => clearMemberControlsTimer(), []);
+
   useEffect(() => {
     const handleFullscreenChange = () => {
-      const isFull = !!document.fullscreenElement;
+      const isFull = !!(
+        document.fullscreenElement ||
+        (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement
+      );
       setIsFullscreen(isFull);
       setShowMemberControls(true);
     };
@@ -103,45 +122,40 @@ export default function RoomPage() {
     };
   }, []);
 
-  // Khởi tạo & chạy đồng hồ đếm ngược công chiếu
+  // Hiển thị countdown theo đồng hồ server; backend mới là nguồn quyết định lúc bắt đầu.
   useEffect(() => {
     if (!room) return;
-    if (!room.startTime) {
+    if (room.status === "live" || room.status === "active" || room.startedAt) {
       setHasMovieStarted(true);
+      setCountdownText("");
       return;
     }
+    setHasMovieStarted(false);
+    if (!room.startTime) return;
 
     const startTimeMs = new Date(room.startTime).getTime();
-    if (Date.now() >= startTimeMs) {
-      setHasMovieStarted(true);
-    } else {
-      const updateCountdown = () => {
-        const now = Date.now();
-        const diff = startTimeMs - now;
-        if (diff <= 0) {
-          setHasMovieStarted(true);
-          return true; // Dừng
-        }
-        const hrs = Math.floor(diff / 3600000);
-        const mins = Math.floor((diff % 3600000) / 60000);
-        const secs = Math.floor((diff % 60000) / 1000);
-
-        let text = "";
-        if (hrs > 0) text += `${hrs} giờ `;
-        text += `${mins} phút ${secs} giây`;
-        setCountdownText(text);
-        return false;
-      };
-
-      const ended = updateCountdown();
-      if (!ended) {
-        const interval = setInterval(() => {
-          const stop = updateCountdown();
-          if (stop) clearInterval(interval);
-        }, 1000);
-        return () => clearInterval(interval);
+    const serverOffset = room.serverTime
+      ? new Date(room.serverTime).getTime() - Date.now()
+      : 0;
+    const updateCountdown = () => {
+      const diff = startTimeMs - (Date.now() + serverOffset);
+      if (diff <= 0) {
+        setCountdownText("Đang chờ Trưởng phòng...");
+        return;
       }
-    }
+      const hrs = Math.floor(diff / 3600000);
+      const mins = Math.floor((diff % 3600000) / 60000);
+      const secs = Math.floor((diff % 60000) / 1000);
+
+      let text = "";
+      if (hrs > 0) text += `${hrs} giờ `;
+      text += `${mins} phút ${secs} giây`;
+      setCountdownText(text);
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
   }, [room]);
 
   const handleToggleAi = () => {
@@ -162,6 +176,7 @@ export default function RoomPage() {
   // Chat/Messages states
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageInput, setMessageInput] = useState("");
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [viewerCount, setViewerCount] = useState(1);
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -170,6 +185,12 @@ export default function RoomPage() {
   const hlsRef = useRef<any>(null);
   const socketRef = useRef<any>(null);
   const isSyncingRef = useRef<boolean>(false);
+  const pendingVideoStateRef = useRef<{
+    action: "play" | "pause" | "seek";
+    currentTime: number;
+  } | null>(null);
+  const hlsNetworkRetriesRef = useRef(0);
+  const hlsMediaRetriesRef = useRef(0);
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
 
   // States quản lý chiều cao đồng bộ giữa trình phát và chatbox
@@ -250,6 +271,7 @@ export default function RoomPage() {
               text: m.text,
               isSystem: m.isSystem,
               time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              createdAt: m.createdAt,
             }));
             setMessages([welcomeMsg, ...formattedMsgs]);
           } else {
@@ -271,16 +293,15 @@ export default function RoomPage() {
           const queryEp = urlParams.get("ep");
           const epSlug = queryEp || roomData.currentEpisode;
 
-          if (epSlug) {
-            const activeIndex = episodesList.findIndex((ep: any) => ep.slug === epSlug);
-            setActiveEpisodeIndex(activeIndex !== -1 ? activeIndex : 0);
-          } else {
-            setActiveEpisodeIndex(0);
-          }
+          const matchedIndex = epSlug
+            ? episodesList.findIndex((ep: any) => ep.slug === epSlug)
+            : -1;
+          const resolvedIndex = matchedIndex !== -1 ? matchedIndex : 0;
+          const selectedEpisode = episodesList[resolvedIndex];
+          setActiveEpisodeIndex(resolvedIndex);
 
-          // Mặc định chọn HLS player nếu có m3u8
-          const hasHls = episodesList.some((ep: any) => ep.link_m3u8);
-          setPlayerType(hasHls ? "hls" : "embed");
+          // Chọn player theo đúng tập đang mở, không dựa vào HLS của tập khác.
+          setPlayerType(selectedEpisode?.link_m3u8 ? "hls" : "embed");
         };
 
         const fetchCustomMovie = async (slug: string) => {
@@ -304,29 +325,57 @@ export default function RoomPage() {
           }
         };
 
-        // 3. Lấy thông tin phim từ API PhimAPI/OPhim chạy nền bất đồng bộ (không làm nghẽn socket/chat)
-        fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${roomData.movieSlug}`))
-          .then(res => {
-            if (res.ok) return res.json();
-            throw new Error("Lỗi API kết nối phim");
-          })
-          .then(movieData => {
-            if (movieData.status === true || movieData.status === "success" || movieData.status === "true") {
-              const eps = movieData.episodes || movieData.data?.item?.episodes || [];
-              const episodesList = eps?.[0]?.server_data || [];
-              if (episodesList.length > 0) {
-                handleLoadEpisodes(episodesList);
-              } else {
-                fetchCustomMovie(roomData.movieSlug);
+        // 3. So sánh server từ nguồn active và fallback, ưu tiên server có HLS.
+        (async () => {
+          const fetchSourceServers = async (source: "active" | "fallback") => {
+            try {
+              const response = await fetch(
+                getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${roomData.movieSlug}`, source)
+              );
+              if (!response.ok) return [];
+              const movieData = await response.json();
+              if (
+                movieData.status !== true &&
+                movieData.status !== "success" &&
+                movieData.status !== "true"
+              ) {
+                return [];
               }
-            } else {
-              fetchCustomMovie(roomData.movieSlug);
+              return movieData.episodes || movieData.data?.item?.episodes || [];
+            } catch {
+              return [];
             }
-          })
-          .catch(movieErr => {
-            console.warn("Không tìm thấy phim, thử tìm phim Custom...", movieErr.message);
-            fetchCustomMovie(roomData.movieSlug);
-          });
+          };
+
+          const [activeServers, fallbackServers] = await Promise.all([
+            fetchSourceServers("active"),
+            fetchSourceServers("fallback"),
+          ]);
+          const candidates = [...activeServers, ...fallbackServers]
+            .map((server: any, index: number) => ({
+              index,
+              episodes: server?.server_data || [],
+            }))
+            .filter((candidate) => candidate.episodes.length > 0)
+            .sort((left, right) => {
+              const score = (candidate: { episodes: Episode[] }) =>
+                candidate.episodes.some((episode) => episode.link_m3u8)
+                  ? 2
+                  : candidate.episodes.some((episode) => episode.link_embed)
+                    ? 1
+                    : 0;
+              return score(right) - score(left) || left.index - right.index;
+            });
+
+          if (candidates[0]) {
+            handleLoadEpisodes(candidates[0].episodes);
+          } else {
+            await fetchCustomMovie(roomData.movieSlug);
+          }
+        })().catch((movieError) => {
+          console.warn("Không tìm thấy nguồn phòng xem chung:", movieError);
+          fetchCustomMovie(roomData.movieSlug);
+        });
 
       } catch (err: any) {
         console.error(err);
@@ -345,13 +394,53 @@ export default function RoomPage() {
     if (!room || loading || authLoading) return;
 
     // Khởi tạo socket.io client
-    const socketHost = API_URL.replace("/api", "");
-    const socket = io(socketHost);
+    let socketHost = API_URL;
+    try {
+      socketHost = new URL(API_URL).origin;
+    } catch {
+      // Keep the configured value when it is already a socket-compatible URL.
+    }
+    const socket = io(socketHost, {
+      auth: {
+        token: Cookies.get("token"),
+      },
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 500,
+      reconnectionDelayMax: 5000,
+      timeout: 10000,
+    });
     socketRef.current = socket;
+
+    const authenticatedUserId = user ? (user.id || (user as any)._id) : "";
+    let guestId = "";
+    if (!authenticatedUserId) {
+      const storageKey = `dlowphim_room_guest:${room.roomId}`;
+      const generatedGuestId = `guest-${globalThis.crypto?.randomUUID?.() || Date.now()}`;
+      try {
+        guestId =
+          localStorage.getItem(storageKey) ||
+          sessionStorage.getItem(storageKey) ||
+          generatedGuestId;
+        localStorage.setItem(storageKey, guestId);
+        sessionStorage.removeItem(storageKey);
+      } catch {
+        guestId = generatedGuestId;
+      }
+    }
+    const joinPayload = {
+      roomId: room.roomId,
+      userId: authenticatedUserId || guestId,
+      name: user?.displayName || `Khách ${guestId.slice(-4)}`,
+      avatar: user?.avatar,
+      isHost: !!isHost,
+    };
 
     socket.on("connect", () => {
       console.log("[Socket] Connected successfully!");
       setSocketError(null);
+      // A reconnect creates a new server-side socket, so it must rejoin room.
+      socket.emit("join_room", joinPayload);
     });
 
     socket.on("connect_error", (err) => {
@@ -361,16 +450,13 @@ export default function RoomPage() {
 
     socket.on("disconnect", (reason) => {
       console.warn("[Socket] Disconnected:", reason);
-      setSocketError(`Mất kết nối: ${reason}`);
+      if (reason !== "io client disconnect") {
+        setSocketError("Đang kết nối lại máy chủ phòng...");
+      }
     });
 
-    // Tham gia phòng xem chung
-    socket.emit("join_room", {
-      roomId: room.roomId,
-      userId: user ? (user.id || (user as any)._id) : `guest-${Date.now()}`,
-      name: user ? user.displayName : `Khách ${Math.floor(Math.random() * 1000)}`,
-      avatar: user?.avatar,
-      isHost: !!isHost,
+    socket.on("socket_error", (data: { message?: string }) => {
+      setSocketError(data?.message || "Socket phòng vừa gặp lỗi xử lý dữ liệu.");
     });
 
     // Lắng nghe tin nhắn chat realtime
@@ -388,6 +474,7 @@ export default function RoomPage() {
             text: msg.text,
             isSystem: msg.isSystem,
             time: msg.time,
+            createdAt: msg.createdAt || new Date().toISOString(),
           },
         ];
       });
@@ -410,14 +497,66 @@ export default function RoomPage() {
     });
 
     // Lắng nghe tín hiệu bắt đầu chiếu phim từ Host
-    socket.on("movie_started", () => {
+    socket.on("movie_started", (data?: { startedAt?: string; startedBy?: "schedule" | "host" }) => {
+      const startedAt = data?.startedAt || new Date().toISOString();
       setHasMovieStarted(true);
+      setCountdownText("");
+      setRoom((current) => {
+        if (!current) return current;
+        const startedBy = data?.startedBy || current.startedBy;
+        if (
+          current.status === "live" &&
+          current.startedAt === startedAt &&
+          current.startedBy === startedBy
+        ) {
+          return current;
+        }
+        return {
+          ...current,
+          status: "live",
+          startedAt,
+          startedBy,
+        };
+      });
+
+      const elapsedSeconds = Math.max(
+        0,
+        (Date.now() - new Date(startedAt).getTime()) / 1000,
+      );
+      const scheduledState = {
+        action: "play" as const,
+        currentTime: elapsedSeconds,
+      };
+      pendingVideoStateRef.current = scheduledState;
+
+      const video = videoRef.current;
+      if (video && playerType === "hls") {
+        isSyncingRef.current = true;
+        if (elapsedSeconds > 1) video.currentTime = elapsedSeconds;
+        video.play().then(() => {
+          pendingVideoStateRef.current = null;
+        }).catch(() => {
+          setStreamNotice("Trình duyệt đang chặn tự phát. Hãy bấm nút phát để bắt đầu xem.");
+        }).finally(() => {
+          setTimeout(() => { isSyncingRef.current = false; }, 500);
+        });
+      }
     });
 
     // Lắng nghe thông báo phòng bị đóng -> Lập tức đẩy khách về trang sảnh /watch-together
-    socket.on("room_closed", () => {
+    socket.on("room_closed", (data?: { reason?: string }) => {
       if (!isHost) {
-        router.push("/watch-together?closed=1");
+        const reason = data?.reason || "closed";
+        const queryReason = reason === "host_closed"
+          ? "host"
+          : reason === "host_absent"
+            ? "expired"
+            : reason === "host_disconnected"
+              ? "disconnected"
+              : reason === "room_replaced"
+                ? "replaced"
+                : "closed";
+        router.replace(`/watch-together?closed=${queryReason}`);
       }
     });
 
@@ -425,15 +564,20 @@ export default function RoomPage() {
     socket.on("video_state", (state: { action: "play" | "pause" | "seek"; currentTime: number }) => {
       if (isHost) return; // Host không bao giờ bị member điều khiển ngược
       const video = videoRef.current;
-      if (!video) return;
+      if (!video) {
+        pendingVideoStateRef.current = state;
+        return;
+      }
 
       isSyncingRef.current = true;
+      pendingVideoStateRef.current = null;
       if (state.action === "play") {
-        const startTimeMs = room?.startTime ? new Date(room.startTime).getTime() : 0;
-        if (!startTimeMs || Date.now() >= startTimeMs) {
+        if (room?.status === "live" || room?.status === "active" || room?.startedAt) {
           setHasMovieStarted(true);
         }
-        video.play().catch(() => { });
+        video.play().catch(() => {
+          pendingVideoStateRef.current = state;
+        });
       } else if (state.action === "pause") {
         video.pause();
       } else if (state.action === "seek") {
@@ -452,9 +596,12 @@ export default function RoomPage() {
     socket.on("sync_state", (state: { currentTime: number; episodeIndex: number; episodeSlug: string; action: "play" | "pause" }) => {
       if (isHost) return;
       console.log("[Socket] Received sync_state snapshot:", state);
+      pendingVideoStateRef.current = {
+        action: state.action,
+        currentTime: state.currentTime,
+      };
 
-      const startTimeMs = room?.startTime ? new Date(room.startTime).getTime() : 0;
-      if (!startTimeMs || Date.now() >= startTimeMs) {
+      if (room?.status === "live" || room?.status === "active" || room?.startedAt) {
         setHasMovieStarted(true);
       }
 
@@ -470,6 +617,7 @@ export default function RoomPage() {
           if (state.currentTime > 2) {
             isSyncingRef.current = true;
             video.currentTime = state.currentTime;
+            pendingVideoStateRef.current = null;
             setTimeout(() => { isSyncingRef.current = false; }, 500);
           }
         };
@@ -493,10 +641,11 @@ export default function RoomPage() {
     });
 
     return () => {
+      socket.removeAllListeners();
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [room, user, isHost]);
+  }, [room?.roomId, room?.startTime, room?.status, room?.startedAt, user?.id, user?.displayName, user?.avatar, isHost, loading, authLoading, router, playerType]);
 
   // Tự động tắt thông báo nhắc nhở sau 6 giây
   useEffect(() => {
@@ -537,32 +686,36 @@ export default function RoomPage() {
   // Lưu link m3u8 đang phát hiện tại để tránh khởi tạo lại nhiều lần gây lỗi blob URL
   const currentM3u8Ref = useRef<string>("");
 
-  // Khởi tạo trình phát HLS.js thuần kết hợp video controls của trình duyệt để tránh lỗi DOM Plyr
+  // Khởi tạo HLS.js trực tiếp; Host dùng native controls, member dùng controls giới hạn.
   useEffect(() => {
     let active = true;
     const activeEp = episodes[activeEpisodeIndex];
 
     if (playerType === "hls" && activeEp?.link_m3u8) {
-      if (currentM3u8Ref.current === activeEp.link_m3u8) {
-        return; // Đã load nguồn phát này rồi, không khởi tạo lại nữa
-      }
-
-      const scriptId = "dlowphim-hls-script";
-      let script = document.getElementById(scriptId) as HTMLScriptElement;
-
       const initPlayer = async () => {
+        let Hls: any = null;
+        try {
+          Hls = await loadHlsLibrary();
+        } catch (loadError) {
+          console.error("[WatchTogether] Không tải được HLS.js:", loadError);
+        }
         if (!active) return;
-        const Hls = (window as any).Hls;
         const video = videoRef.current;
         if (!video) return;
 
         currentM3u8Ref.current = activeEp.link_m3u8;
 
-        // Dọn dẹp Hls instance cũ
+        // Dọn dẹp MediaSource cũ trước khi đổi tập/nguồn.
         if (hlsRef.current) {
+          try { hlsRef.current.detachMedia(); } catch (e) { }
           try { hlsRef.current.destroy(); } catch (e) { }
           hlsRef.current = null;
         }
+        try {
+          video.pause();
+          video.removeAttribute("src");
+          video.load();
+        } catch (e) { }
 
         const onPlay = () => {
           if (isHost && !isSyncingRef.current) {
@@ -612,30 +765,101 @@ export default function RoomPage() {
         (video as any)._dlowListeners = { onPlay, onPause, onSeeked };
 
         if (Hls && Hls.isSupported()) {
-          const hls = new Hls();
+          hlsNetworkRetriesRef.current = 0;
+          hlsMediaRetriesRef.current = 0;
+          const hls = new Hls({
+            maxBufferLength: 30,
+            backBufferLength: 30,
+            enableWorker: true,
+          });
           hls.loadSource(activeEp.link_m3u8);
           hls.attachMedia(video);
           hlsRef.current = hls;
 
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             if (!active) return;
+            setStreamNotice(null);
+            hlsNetworkRetriesRef.current = 0;
+            hlsMediaRetriesRef.current = 0;
+            const pendingState = pendingVideoStateRef.current;
+            if (pendingState) {
+              pendingVideoStateRef.current = null;
+              isSyncingRef.current = true;
+              if (Math.abs(video.currentTime - pendingState.currentTime) > 2) {
+                video.currentTime = pendingState.currentTime;
+              }
+              if (pendingState.action === "play") {
+                video.play().catch(() => {
+                  pendingVideoStateRef.current = pendingState;
+                });
+              } else if (pendingState.action === "pause") {
+                video.pause();
+              }
+              setTimeout(() => {
+                isSyncingRef.current = false;
+              }, 500);
+            }
+          });
+
+          hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
+            if (!active || !data?.fatal) return;
+            if (
+              data.type === Hls.ErrorTypes.NETWORK_ERROR &&
+              hlsNetworkRetriesRef.current < 2
+            ) {
+              hlsNetworkRetriesRef.current += 1;
+              hls.startLoad();
+              return;
+            }
+            if (
+              data.type === Hls.ErrorTypes.MEDIA_ERROR &&
+              hlsMediaRetriesRef.current < 1
+            ) {
+              hlsMediaRetriesRef.current += 1;
+              hls.recoverMediaError();
+              return;
+            }
+
+            console.error("[WatchTogether] HLS fatal error:", data);
+            try { hls.destroy(); } catch (e) { }
+            if (activeEp.link_embed) {
+              setPlayerType("embed");
+              setStreamNotice("HLS không phản hồi, đã chuyển sang Embed dự phòng.");
+            } else {
+              setErrorModal("Nguồn HLS của tập này đang lỗi và không có Embed dự phòng.");
+            }
           });
         } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
           // Hỗ trợ HLS native cho Safari / iOS
           video.src = activeEp.link_m3u8;
+          video.addEventListener(
+            "loadedmetadata",
+            () => {
+              const pendingState = pendingVideoStateRef.current;
+              if (!pendingState) return;
+              pendingVideoStateRef.current = null;
+              isSyncingRef.current = true;
+              video.currentTime = pendingState.currentTime;
+              if (pendingState.action === "play") {
+                video.play().catch(() => {
+                  pendingVideoStateRef.current = pendingState;
+                });
+              }
+              setTimeout(() => {
+                isSyncingRef.current = false;
+              }, 500);
+            },
+            { once: true }
+          );
+        } else if (activeEp.link_embed) {
+          setPlayerType("embed");
+          setStreamNotice("Trình duyệt không hỗ trợ HLS, đang dùng Embed dự phòng.");
+        } else {
+          setErrorModal("Trình duyệt không hỗ trợ nguồn HLS của tập này.");
         }
       };
 
-      if (script) {
-        initPlayer();
-      } else {
-        script = document.createElement("script");
-        script.id = scriptId;
-        script.src = "https://cdn.jsdelivr.net/npm/hls.js@1.4.12/dist/hls.min.js";
-        script.async = true;
-        script.onload = initPlayer;
-        document.body.appendChild(script);
-      }
+      initPlayer();
     }
 
     return () => {
@@ -649,23 +873,20 @@ export default function RoomPage() {
         delete (video as any)._dlowListeners;
       }
       if (hlsRef.current) {
+        try { hlsRef.current.detachMedia(); } catch (e) { }
         try { hlsRef.current.destroy(); } catch (e) { }
         hlsRef.current = null;
       }
-      currentM3u8Ref.current = "";
-    };
-  }, [playerType, activeEpisodeIndex, episodes]);
-
-  // Dọn dẹp tài nguyên khi unmount khỏi phòng
-  useEffect(() => {
-    return () => {
-      if (hlsRef.current) {
-        try { hlsRef.current.destroy(); } catch (e) { }
-        hlsRef.current = null;
+      if (video) {
+        try {
+          video.pause();
+          video.removeAttribute("src");
+          video.load();
+        } catch (e) { }
       }
       currentM3u8Ref.current = "";
     };
-  }, []);
+  }, [playerType, activeEpisodeIndex, episodes, isHost, roomId]);
 
   // Sao chép liên kết URL đầy đủ của phòng xem chung
   const handleCopyRoomId = () => {
@@ -680,17 +901,32 @@ export default function RoomPage() {
   // Gửi tin nhắn
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!messageInput.trim() || !socketRef.current) return;
+    const socket = socketRef.current;
+    const text = messageInput.trim();
+    if (!text || !socket || isSendingMessage) return;
+    if (!socket.connected) {
+      setSocketError("Socket đang kết nối lại, hãy thử gửi sau vài giây.");
+      return;
+    }
 
-    socketRef.current.emit("send_message", {
+    setIsSendingMessage(true);
+    socket.timeout(6000).emit("send_message", {
       roomId: room?.roomId,
       userId: user?.id,
       name: user?.displayName || "Khách",
       avatar: user?.avatar,
-      text: messageInput.trim(),
+      text,
+    }, (timeoutError: Error | null, response?: { ok?: boolean; message?: string }) => {
+      setIsSendingMessage(false);
+      if (timeoutError || !response?.ok) {
+        setSocketError(
+          response?.message || "Gửi tin nhắn thất bại, vui lòng thử lại."
+        );
+        return;
+      }
+      setSocketError(null);
+      setMessageInput((current) => (current.trim() === text ? "" : current));
     });
-
-    setMessageInput("");
   };
 
   // Đóng phòng
@@ -703,12 +939,7 @@ export default function RoomPage() {
     if (!room) return;
     setConfirmCloseModal(false);
     try {
-      // 1. Gửi tín hiệu Socket để đẩy lập tức toàn bộ khách ra ngoài
-      if (socketRef.current) {
-        socketRef.current.emit("close_room", { roomId: room.roomId });
-      }
-
-      // 2. Gọi API xóa phòng trong Database
+      // Backend chỉ broadcast đẩy khách ra sảnh sau khi đóng database thành công.
       const token = Cookies.get("token");
       const res = await fetch(`${API_URL}/rooms/${room.roomId}`, {
         method: "DELETE",
@@ -718,13 +949,14 @@ export default function RoomPage() {
       });
 
       if (res.ok) {
-        router.push(`/watch/${room.movieSlug}`);
+        router.replace("/watch-together?closed=owner");
       } else {
-        alert("Đóng phòng thất bại.");
+        const data = await res.json().catch(() => null);
+        setErrorModal(data?.message || "Đóng phòng thất bại. Vui lòng thử lại.");
       }
     } catch (e) {
       console.error(e);
-      alert("Lỗi kết nối.");
+      setErrorModal("Mất kết nối máy chủ nên phòng chưa được đóng. Vui lòng thử lại.");
     }
   };
 
@@ -791,7 +1023,10 @@ export default function RoomPage() {
                 </div>
                 <p className="text-xs text-zinc-500 font-semibold uppercase flex items-center gap-1.5 mt-0.5">
                   <Film size={12} className="text-pink-500" />
-                  Đang phát: {cleanMovieName(room.movieName)}
+                  <span className={room.status === "scheduled" ? "text-amber-400" : "text-pink-400"}>
+                    {room.status === "scheduled" ? "Sắp chiếu" : "Đang phát"}:
+                  </span>
+                  {cleanMovieName(room.movieName)}
                 </p>
               </div>
             </div>
@@ -799,7 +1034,7 @@ export default function RoomPage() {
             <div className="flex items-center gap-3">
               <div className="text-left shrink-0">
                 <span className="text-[10px] text-zinc-550 block font-bold uppercase tracking-wider text-right">Trưởng phòng</span>
-                <span className="text-xs text-zinc-300 font-bold">{room.host.name}</span>
+                <span className="text-xs text-zinc-300 font-bold">{room.host.displayName || room.host.name}</span>
               </div>
 
               {isHost && (
@@ -822,7 +1057,18 @@ export default function RoomPage() {
 
               {/* Khung Player */}
               <div className="w-full overflow-hidden bg-black rounded-3xl shadow-[0_15px_45px_rgba(0,0,0,0.85)] relative">
-                <div ref={playerContainerRef} className="relative w-full aspect-video bg-black overflow-hidden group">
+                <div
+                  ref={playerContainerRef}
+                  className={`relative bg-black overflow-hidden group ${isFullscreen
+                    ? "w-screen h-screen !aspect-auto"
+                    : "w-full aspect-video"
+                    }`}
+                >
+                  {streamNotice && (
+                    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 max-w-[90%] rounded-xl bg-amber-500/15 border border-amber-500/30 backdrop-blur-md px-3 py-2 text-[10px] font-bold text-amber-300 shadow-lg">
+                      {streamNotice}
+                    </div>
+                  )}
                   {/* Toast hối thúc của khán giả (chỉ hiển thị cho Host) */}
                   {isHost && reminderToast && (
                     <div className="absolute top-4 right-4 z-40 bg-[#0e0f17]/95 backdrop-blur-md border border-pink-500/30 text-pink-400 px-4.5 py-3 rounded-2xl shadow-[0_10px_30px_rgba(236,72,153,0.15)] flex items-center gap-2.5 animate-in fade-in slide-in-from-top-3 duration-300 max-w-xs border-l-4 border-l-pink-500">
@@ -880,7 +1126,7 @@ export default function RoomPage() {
                         </h2>
                         
                         <p className="text-sm md:text-base text-zinc-300 font-bold leading-relaxed">
-                          Thời gian chiếu: <span className="text-pink-400 font-extrabold">{room?.startTime ? new Date(room.startTime).toLocaleString("vi-VN") : "Đang chờ Trưởng phòng"}</span>
+                          Thời gian chiếu: <span className="text-pink-400 font-extrabold">{room?.startTime ? new Date(room.startTime).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }) : "Đang chờ Trưởng phòng"}</span>
                         </p>
 
                         {countdownText && (
@@ -891,14 +1137,15 @@ export default function RoomPage() {
                         )}
 
                         <p className="text-xs text-zinc-400 leading-relaxed max-w-sm mx-auto">
-                          Bạn vẫn có thể gửi tin nhắn trò chuyện ở ô chat bên cạnh trong lúc chờ đợi nhé!
+                          {room?.startTime && Date.now() >= new Date(room.startTime).getTime()
+                            ? "Phòng sẽ bắt đầu ngay khi Trưởng phòng có mặt và tự đóng nếu vắng quá 30 phút."
+                            : "Bạn vẫn có thể gửi tin nhắn trò chuyện ở ô chat bên cạnh trong lúc chờ đợi nhé!"}
                         </p>
 
                         {/* Nút thao tác cho Host & Member */}
                         {isHost ? (
                           <button
                             onClick={() => {
-                              setHasMovieStarted(true);
                               if (socketRef.current) {
                                 socketRef.current.emit("start_scheduled_movie", { roomId: room?.roomId });
                               }
@@ -917,6 +1164,7 @@ export default function RoomPage() {
                                 guestName: user?.displayName || "Khán giả ẩn danh",
                               });
                               setHasUrgedHost(true);
+                              window.setTimeout(() => setHasUrgedHost(false), 60_000);
                             }}
                             className={`mt-4 px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 cursor-pointer border ${hasUrgedHost
                               ? "bg-zinc-900 text-zinc-500 border-zinc-800 cursor-not-allowed shadow-inner"
@@ -955,7 +1203,7 @@ export default function RoomPage() {
                           ref={videoRef}
                           playsInline
                           controls={!!isHost}
-                          className="w-full h-full bg-black"
+                          className="absolute inset-0 w-full h-full object-contain bg-black"
                           title="DlowPhim Watch Together Player"
                           onContextMenu={(e) => { if (!isHost) e.preventDefault(); }}
                         />
@@ -965,7 +1213,8 @@ export default function RoomPage() {
                           <div
                             className="absolute inset-0 z-20 group"
                             onMouseMove={handleMemberMouseMove}
-                            onMouseEnter={() => setShowMemberControls(true)}
+                            onMouseEnter={handleMemberMouseMove}
+                            onMouseLeave={scheduleMemberControlsHide}
                             onMouseDown={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
                             onClick={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
                             onDoubleClick={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
@@ -975,6 +1224,11 @@ export default function RoomPage() {
 
                             {/* Dải nút điều khiển phụ ở đáy (tự động hiện khi di chuột và ẩn sau 3.5s) */}
                             <div
+                              onMouseEnter={() => {
+                                clearMemberControlsTimer();
+                                setShowMemberControls(true);
+                              }}
+                              onMouseLeave={scheduleMemberControlsHide}
                               className={`absolute bottom-4 left-4 right-4 z-30 flex items-center justify-between pointer-events-none transition-all duration-300 ${showMemberControls ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2"
                                 }`}
                             >
@@ -1010,14 +1264,24 @@ export default function RoomPage() {
                                     e.stopPropagation();
                                     const container = playerContainerRef.current;
                                     if (container) {
-                                      if (document.fullscreenElement) {
-                                        document.exitFullscreen().catch(() => { });
-                                      } else {
-                                        if (container.requestFullscreen) {
-                                          container.requestFullscreen();
-                                        } else if ((container as any).webkitRequestFullscreen) {
-                                          (container as any).webkitRequestFullscreen();
+                                      const fullscreenElement = document.fullscreenElement ||
+                                        (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement;
+                                      try {
+                                        if (fullscreenElement) {
+                                          const exitFullscreen = document.exitFullscreen?.bind(document) ||
+                                            (document as Document & { webkitExitFullscreen?: () => Promise<void> }).webkitExitFullscreen?.bind(document);
+                                          void exitFullscreen?.().catch(() => {
+                                            setErrorModal("Không thể thoát chế độ toàn màn hình. Bạn có thể nhấn Esc để thoát.");
+                                          });
+                                        } else {
+                                          const requestFullscreen = container.requestFullscreen?.bind(container) ||
+                                            (container as HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> }).webkitRequestFullscreen?.bind(container);
+                                          void requestFullscreen?.().catch(() => {
+                                            setErrorModal("Trình duyệt đang chặn chế độ toàn màn hình. Vui lòng thử lại.");
+                                          });
                                         }
+                                      } catch {
+                                        setErrorModal("Không thể chuyển chế độ toàn màn hình trên trình duyệt này.");
                                       }
                                     }
                                   }}
@@ -1085,8 +1349,8 @@ export default function RoomPage() {
                 </div>
 
                 {/* List tin nhắn */}
-                <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 text-left scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
-                  {messages.map((msg) => {
+                <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 text-left scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
+                  {messages.map((msg, index) => {
                     if (msg.isSystem) {
                       return (
                         <div key={msg.id} className="w-full text-center py-2 animate-in fade-in zoom-in-95 duration-200">
@@ -1097,45 +1361,88 @@ export default function RoomPage() {
                       );
                     }
 
-                    const isMe = user && msg.sender === user.displayName;
+                    const currentUserId = user?.id || (user as any)?._id;
+                    const isMe = Boolean(
+                      user &&
+                      (msg.senderId && currentUserId
+                        ? msg.senderId === currentUserId
+                        : msg.sender === user.displayName)
+                    );
+                    const previousMessage = messages[index - 1];
+                    const currentTimestamp = msg.createdAt ? Date.parse(msg.createdAt) : Number.NaN;
+                    const previousTimestamp = previousMessage?.createdAt
+                      ? Date.parse(previousMessage.createdAt)
+                      : Number.NaN;
+                    const isSameSender = Boolean(
+                      previousMessage &&
+                      !previousMessage.isSystem &&
+                      (msg.senderId && previousMessage.senderId
+                        ? msg.senderId === previousMessage.senderId
+                        : msg.sender === previousMessage.sender)
+                    );
+                    const isWithinOneMinute = Number.isFinite(currentTimestamp) && Number.isFinite(previousTimestamp)
+                      ? currentTimestamp >= previousTimestamp && currentTimestamp - previousTimestamp <= 60_000
+                      : previousMessage?.time === msg.time;
+                    const isContinuation = isSameSender && isWithinOneMinute;
+                    const nextMessage = messages[index + 1];
+                    const nextTimestamp = nextMessage?.createdAt
+                      ? Date.parse(nextMessage.createdAt)
+                      : Number.NaN;
+                    const isSameNextSender = Boolean(
+                      nextMessage &&
+                      !nextMessage.isSystem &&
+                      (msg.senderId && nextMessage.senderId
+                        ? msg.senderId === nextMessage.senderId
+                        : msg.sender === nextMessage.sender)
+                    );
+                    const isNextWithinOneMinute = Number.isFinite(currentTimestamp) && Number.isFinite(nextTimestamp)
+                      ? nextTimestamp >= currentTimestamp && nextTimestamp - currentTimestamp <= 60_000
+                      : nextMessage?.time === msg.time;
+                    const isGroupEnd = !(isSameNextSender && isNextWithinOneMinute);
                     return (
                       <div
                         key={msg.id}
-                        className={`flex items-start gap-2.5 max-w-[85%] animate-in fade-in duration-200 ${isMe ? "ml-auto flex-row-reverse" : ""
+                        className={`flex items-end gap-2.5 max-w-[85%] animate-in fade-in duration-200 ${index > 0 && !isContinuation ? "mt-3" : "mt-1"} ${isMe ? "ml-auto flex-row-reverse" : ""
                           }`}
                       >
                         {/* Avatar */}
-                        <div className={`w-7 h-7 rounded-full overflow-hidden shrink-0 bg-zinc-900 shadow-md border-2 transition-all ${room && msg.senderId === room.host._id
-                          ? "border-pink-500 shadow-lg shadow-pink-500/25 scale-105"
-                          : "border-zinc-850/30"
-                          }`}>
-                          <img
-                            src={msg.avatar || "https://img.ophim.live/uploads/movies/default-avatar.png"}
-                            alt={msg.sender}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
+                        {!isGroupEnd ? (
+                          <div className="w-7 shrink-0" aria-hidden="true" />
+                        ) : (
+                          <div className={`w-7 h-7 rounded-full overflow-hidden shrink-0 bg-zinc-900 shadow-md border-2 transition-all animate-in fade-in slide-in-from-top-1 ${room && msg.senderId === room.host._id
+                            ? "border-pink-500 shadow-lg shadow-pink-500/25 scale-105"
+                            : "border-zinc-850/30"
+                            }`}>
+                            <img
+                              src={msg.avatar || "https://img.ophim.live/uploads/movies/default-avatar.png"}
+                              alt={msg.sender}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        )}
 
                         <div className={`flex flex-col space-y-1 ${isMe ? "items-end" : "items-start"}`}>
                           {/* Name & Time */}
-                          <div className={`flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider select-none ${isMe ? "justify-end text-pink-400" : msg.senderId === 'dlow-ai-bot' ? "text-purple-400" : "text-zinc-500"
-                            }`}>
-                            <span>{msg.sender}</span>
-                            {msg.senderId === 'dlow-ai-bot' && (
-                              <span className="bg-purple-500/10 text-purple-400 px-1 py-0.2 rounded border border-purple-500/20 text-[8px] tracking-wide shrink-0 font-extrabold">
-                                AI Trợ lý
-                              </span>
-                            )}
-                            <span>•</span>
-                            <span>{msg.time}</span>
-                          </div>
+                          {!isContinuation && (
+                            <div className={`flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider select-none ${isMe ? "justify-end text-pink-400" : msg.senderId === 'dlow-ai-bot' ? "text-purple-400" : "text-zinc-500"
+                              }`}>
+                              <span>{msg.sender}</span>
+                              {msg.senderId === 'dlow-ai-bot' && (
+                                <span className="bg-purple-500/10 text-purple-400 px-1 py-0.2 rounded border border-purple-500/20 text-[8px] tracking-wide shrink-0 font-extrabold">
+                                  AI Trợ lý
+                                </span>
+                              )}
+                              <span>•</span>
+                              <span>{msg.time}</span>
+                            </div>
+                          )}
 
                           {/* Bubble */}
                           <div className={`px-3 py-2 rounded-2xl text-[11px] font-bold leading-relaxed whitespace-pre-wrap break-words w-fit max-w-full ${isMe
-                            ? "bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-tr-none shadow-md shadow-pink-500/20"
+                            ? `bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md shadow-pink-500/20 ${isGroupEnd ? "rounded-br-none" : "rounded-br-md"}`
                             : msg.senderId === 'dlow-ai-bot'
-                              ? "bg-gradient-to-br from-[#2f225e] to-[#1a1438] text-purple-100 rounded-tl-none border border-purple-400/35 shadow-md shadow-purple-500/10"
-                              : "bg-[#25283b]/85 backdrop-blur-sm text-zinc-100 rounded-tl-none border border-zinc-700/50"
+                              ? `bg-gradient-to-br from-[#2f225e] to-[#1a1438] text-purple-100 border border-purple-400/35 shadow-md shadow-purple-500/10 ${isGroupEnd ? "rounded-bl-none" : "rounded-bl-md"}`
+                              : `bg-[#25283b]/85 backdrop-blur-sm text-zinc-100 border border-zinc-700/50 ${isGroupEnd ? "rounded-bl-none" : "rounded-bl-md"}`
                             }`}>
                             {msg.text}
                           </div>
@@ -1165,9 +1472,14 @@ export default function RoomPage() {
                   />
                   <button
                     type="submit"
+                    disabled={isSendingMessage || !messageInput.trim()}
                     className="w-10 h-10 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-pink-500/20 hover:scale-105 hover:shadow-pink-500/35 active:scale-95 transition-all cursor-pointer border-none"
                   >
-                    <Send size={13} className="translate-x-0.5 -translate-y-0.5" />
+                    {isSendingMessage ? (
+                      <span className="w-3.5 h-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                    ) : (
+                      <Send size={13} className="translate-x-0.5 -translate-y-0.5" />
+                    )}
                   </button>
                 </form>
 
