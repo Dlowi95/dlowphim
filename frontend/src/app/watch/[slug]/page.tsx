@@ -12,6 +12,7 @@ import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { getTmdbApiKey } from "@/utils/tmdb";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
+import { useSmartStreamServer } from "@/hooks/useSmartStreamServer";
 import "plyr/dist/plyr.css";
 
 interface Episode {
@@ -102,6 +103,9 @@ function WatchContent({ slug }: { slug: string }) {
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const plyrRef = React.useRef<any>(null);
   const hlsRef = React.useRef<any>(null);
+  const hlsAttemptStartedAtRef = React.useRef(0);
+  const pendingFailoverTimeRef = React.useRef(0);
+  const manualPlayerSelectionKeyRef = React.useRef("");
   const hasSkippedIntro = React.useRef(false);
   const lastHistorySavedTime = React.useRef<number>(0);
   const [kkServers, setKkServers] = useState<Server[]>([]);
@@ -448,6 +452,22 @@ function WatchContent({ slug }: { slug: string }) {
     : [...primaryServers, ...fallbackServers];
 
   const servers = combinedServers;
+  const {
+    latencies: serverLatencies,
+    isProbing: isProbingServers,
+    getMatchingEpisode,
+    selectServer: selectSmartServer,
+    reportPlaybackSuccess,
+    failover: failoverStream,
+  } = useSmartStreamServer({
+    movieSlug: slug,
+    servers,
+    activeServerIndex,
+    activeEpisodeIndex,
+    setActiveServerIndex,
+    setActiveEpisodeIndex,
+    setPlayerType,
+  });
   const currentServer = servers[activeServerIndex];
   const episodesData = currentServer?.server_data || [];
 
@@ -488,16 +508,33 @@ function WatchContent({ slug }: { slug: string }) {
   const activeEpisode = episodesData[activeEpisodeIndex];
   const activeEmbed = activeEpisode?.link_embed || null;
 
+  const handleStreamFailure = () => {
+    const currentTime = videoRef.current?.currentTime || 0;
+    if (currentTime > 0) pendingFailoverTimeRef.current = currentTime;
+    if (failoverStream()) {
+      showToast("Nguồn phát đang lỗi, đã tự chuyển sang server khác.", "warning");
+      return;
+    }
+    if (activeEpisode?.link_embed) {
+      setPlayerType("embed");
+      showToast("Luồng HLS lỗi, đã chuyển sang bản phát dự phòng.", "warning");
+      return;
+    }
+    showToast("Các nguồn phát hiện tại đều không phản hồi.", "error");
+  };
+
   // Ưu tiên HLS Player xịn (hls.js + Plyr.js) làm trình phát chính mặc định theo quy chuẩn AGENTS.md
   useEffect(() => {
     if (activeEpisode) {
+      const selectionKey = `${slug}:${activeServerIndex}:${activeEpisode.name}`;
+      if (manualPlayerSelectionKeyRef.current === selectionKey) return;
       if (activeEpisode.link_m3u8) {
         setPlayerType("hls");
       } else if (activeEpisode.link_embed) {
         setPlayerType("embed");
       }
     }
-  }, [activeEpisode?.name, activeServerIndex]);
+  }, [activeEpisode?.name, activeServerIndex, slug]);
 
   // 1.7. Đồng bộ đánh giá theo phim qua Backend
   useEffect(() => {
@@ -585,30 +622,28 @@ function WatchContent({ slug }: { slug: string }) {
 
         if (Hls && Hls.isSupported()) {
           const hls = new Hls();
+          hlsAttemptStartedAtRef.current = performance.now();
           hls.loadSource(activeEpisode.link_m3u8);
           hls.attachMedia(video);
           hlsRef.current = hls;
 
-          // Tự động chuyển Embed Server nếu luồng m3u8 bị lỗi 522 / Network Error / Timeout
+          // Thử server HLS tốt kế tiếp trước, sau cùng mới dùng embed.
           hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
             if (!active) return;
             if (data && data.fatal) {
-              console.warn("[HLS Error Handler] Fatal network error (522/Timeout), switching to Embed fallback...", data);
-              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                if (activeEpisode?.link_embed) {
-                  setPlayerType("embed");
-                }
-              } else {
-                try { hls.destroy(); } catch (e) {}
-                if (activeEpisode?.link_embed) {
-                  setPlayerType("embed");
-                }
-              }
+              console.warn("[HLS] Fatal playback error, switching source...", data);
+              try { hls.destroy(); } catch (e) {}
+              handleStreamFailure();
             }
           });
 
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             if (!active) return;
+            const manifestLatency = Math.max(
+              1,
+              Math.round(performance.now() - hlsAttemptStartedAtRef.current)
+            );
+            reportPlaybackSuccess(manifestLatency);
 
             // Đọc vị trí xem trước đó
             let savedTime = 0;
@@ -622,6 +657,10 @@ function WatchContent({ slug }: { slug: string }) {
               }
               if (savedItem && savedItem.currentTime > 5) {
                 savedTime = savedItem.currentTime;
+              }
+              if (pendingFailoverTimeRef.current > savedTime) {
+                savedTime = pendingFailoverTimeRef.current;
+                pendingFailoverTimeRef.current = 0;
               }
             } catch (e) {
               console.error(e);
@@ -679,7 +718,18 @@ function WatchContent({ slug }: { slug: string }) {
           });
         } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
           // Dành cho Safari gốc
+          hlsAttemptStartedAtRef.current = performance.now();
           video.src = activeEpisode.link_m3u8;
+          video.addEventListener("error", handleStreamFailure, { once: true });
+          video.addEventListener(
+            "loadedmetadata",
+            () => {
+              reportPlaybackSuccess(
+                Math.max(1, Math.round(performance.now() - hlsAttemptStartedAtRef.current))
+              );
+            },
+            { once: true }
+          );
 
           let savedTime = 0;
           try {
@@ -692,6 +742,10 @@ function WatchContent({ slug }: { slug: string }) {
             }
             if (savedItem && savedItem.currentTime > 5) {
               savedTime = savedItem.currentTime;
+            }
+            if (pendingFailoverTimeRef.current > savedTime) {
+              savedTime = pendingFailoverTimeRef.current;
+              pendingFailoverTimeRef.current = 0;
             }
           } catch (e) { }
 
@@ -745,7 +799,7 @@ function WatchContent({ slug }: { slug: string }) {
         hlsRef.current = null;
       }
     };
-  }, [playerType, activeEpisode?.name, movie?.slug]);
+  }, [playerType, activeEpisode?.link_m3u8, activeEpisode?.name, activeServerIndex, movie?.slug]);
 
   // 3. Fetch phim liên quan
   useEffect(() => {
@@ -1169,13 +1223,19 @@ function WatchContent({ slug }: { slug: string }) {
                       <select
                         value={activeServerIndex}
                         onChange={(e) => {
-                          setActiveServerIndex(parseInt(e.target.value, 10));
+                          const serverIndex = parseInt(e.target.value, 10);
+                          const episode = getMatchingEpisode(serverIndex);
+                          selectSmartServer(
+                            serverIndex,
+                            episode?.link_m3u8 ? "hls" : "embed"
+                          );
                         }}
                         className="bg-[#1b1d2a] border border-zinc-800 text-zinc-200 text-xs rounded-lg px-2.5 py-1 focus:outline-none focus:border-pink-500 font-extrabold cursor-pointer"
                       >
                         {servers.map((s, idx) => (
                           <option key={`drawer-server-opt-${idx}`} value={idx}>
                             {friendlyLabels[idx] || s.server_name || `Server #${idx + 1}`}
+                            {serverLatencies[idx] ? ` - ${serverLatencies[idx]}ms` : ""}
                           </option>
                         ))}
                       </select>
@@ -1480,11 +1540,16 @@ function WatchContent({ slug }: { slug: string }) {
                 <div className="space-y-3">
                   <span className="block text-xs font-black text-zinc-455 uppercase tracking-wider">
                     Chọn Nguồn Phát:
+                    {isProbingServers && (
+                      <span className="ml-2 normal-case text-[10px] text-emerald-400">
+                        Đang đo server nhanh nhất...
+                      </span>
+                    )}
                   </span>
 
                   <div className="flex flex-wrap gap-2.5">
                     {servers.flatMap((server, sIdx) => {
-                      const currentEp = server.server_data[activeEpisodeIndex] || server.server_data[0];
+                      const currentEp = getMatchingEpisode(sIdx);
                       const baseLabel = friendlyLabels[sIdx] || server.server_name;
                       const options: { type: "embed" | "hls"; label: string }[] = [];
 
@@ -1502,8 +1567,8 @@ function WatchContent({ slug }: { slug: string }) {
                           <button
                             key={`source-btn-${sIdx}-${opt.type}`}
                             onClick={() => {
-                              setActiveServerIndex(sIdx);
-                              setPlayerType(opt.type);
+                              manualPlayerSelectionKeyRef.current = `${slug}:${sIdx}:${currentEp?.name || ""}`;
+                              selectSmartServer(sIdx, opt.type);
                               scrollToPlayer();
                             }}
                             className={`px-4 py-2 text-xs font-black rounded-xl transition-all border-none cursor-pointer uppercase ${
@@ -1513,6 +1578,11 @@ function WatchContent({ slug }: { slug: string }) {
                             }`}
                           >
                             {opt.label}
+                            {opt.type === "hls" && serverLatencies[sIdx] && (
+                              <span className="ml-1.5 text-[9px] opacity-75">
+                                {serverLatencies[sIdx]}ms
+                              </span>
+                            )}
                           </button>
                         );
                       });
