@@ -107,6 +107,9 @@ function WatchContent({ slug }: { slug: string }) {
   const plyrRef = React.useRef<any>(null);
   const hlsRef = React.useRef<any>(null);
   const hlsAttemptStartedAtRef = React.useRef(0);
+  const playbackRequestedAtRef = React.useRef(0);
+  const playbackStartedRef = React.useRef(false);
+  const bufferingStartedAtRef = React.useRef(0);
   const pendingFailoverTimeRef = React.useRef(0);
   const manualPlayerSelectionKeyRef = React.useRef("");
   const hasSkippedIntro = React.useRef(false);
@@ -520,11 +523,15 @@ function WatchContent({ slug }: { slug: string }) {
   const servers = combinedServers;
   const {
     latencies: serverLatencies,
+    serverScores,
     isProbing: isProbingServers,
     getMatchingEpisode,
     selectServer: selectSmartServer,
     selectAutomaticServer,
     reportPlaybackSuccess,
+    reportPlaybackStarted,
+    reportBuffering,
+    reportPlaybackFailure,
     failover: failoverStream,
   } = useSmartStreamServer({
     movieSlug: slug,
@@ -572,8 +579,8 @@ function WatchContent({ slug }: { slug: string }) {
     .map(({ serverIndex }) => serverIndex);
   const recommendedServerIndex = [...visibleServerIndexes].sort(
     (left, right) =>
-      (serverLatencies[left] ?? Number.MAX_SAFE_INTEGER) -
-      (serverLatencies[right] ?? Number.MAX_SAFE_INTEGER),
+      (serverScores[left] ?? Number.MAX_SAFE_INTEGER) -
+      (serverScores[right] ?? Number.MAX_SAFE_INTEGER),
   )[0] ?? visibleServerIndexes[0] ?? 0;
 
   const chooseServer = (serverIndex: number, mode: "auto" | "manual") => {
@@ -597,8 +604,8 @@ function WatchContent({ slug }: { slug: string }) {
       .map(({ serverIndex }) => serverIndex);
     const bestIndex = [...matchingIndexes].sort(
       (left, right) =>
-        (serverLatencies[left] ?? Number.MAX_SAFE_INTEGER) -
-        (serverLatencies[right] ?? Number.MAX_SAFE_INTEGER),
+        (serverScores[left] ?? Number.MAX_SAFE_INTEGER) -
+        (serverScores[right] ?? Number.MAX_SAFE_INTEGER),
     )[0];
     if (bestIndex !== undefined) chooseServer(bestIndex, "auto");
   };
@@ -632,6 +639,35 @@ function WatchContent({ slug }: { slug: string }) {
       setAutoplayNext(false);
     }
   }, [episodesData.length, playerType]);
+
+  useEffect(() => {
+    playbackRequestedAtRef.current = 0;
+    playbackStartedRef.current = false;
+    bufferingStartedAtRef.current = 0;
+  }, [playerType, activeServerIndex, activeEpisode?.name]);
+
+  useEffect(() => {
+    if (playerType !== "hls") return;
+    const handleSeekShortcut = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.isContentEditable ||
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT"
+      ) return;
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      const video = videoRef.current;
+      if (!video) return;
+      event.preventDefault();
+      const delta = event.key === "ArrowLeft" ? -5 : 5;
+      const duration = Number.isFinite(video.duration) ? video.duration : Infinity;
+      video.currentTime = Math.max(0, Math.min(duration, video.currentTime + delta));
+    };
+    window.addEventListener("keydown", handleSeekShortcut);
+    return () => window.removeEventListener("keydown", handleSeekShortcut);
+  }, [playerType]);
 
   const handleStreamFailure = () => {
     const currentTime = videoRef.current?.currentTime || 0;
@@ -814,6 +850,7 @@ function WatchContent({ slug }: { slug: string }) {
               }
               failureHandled = true;
               console.warn("[HLS] Fatal playback error, switching source...", data);
+              reportPlaybackFailure();
               if (hlsRef.current === hls) hlsRef.current = null;
               try { hls.destroy(); } catch (e) {}
               handleStreamFailure();
@@ -877,13 +914,48 @@ function WatchContent({ slug }: { slug: string }) {
               });
             };
 
+            const qualityOptions = Array.from(
+              new Set<number>(
+                hls.levels
+                  .map((level: any) => Number(level.height))
+                  .filter((height: number) => Number.isFinite(height) && height > 0),
+              ),
+            ).sort((left, right) => right - left);
+            const savedQuality = Number(localStorage.getItem("dlowphim_hls_quality") || 0);
+            const defaultQuality = qualityOptions.includes(savedQuality) ? savedQuality : 0;
+            const changeQuality = (height: number) => {
+              localStorage.setItem("dlowphim_hls_quality", String(height));
+              if (height === 0) {
+                hls.currentLevel = -1;
+                hls.nextLevel = -1;
+                return;
+              }
+              const matchingLevels = hls.levels
+                .map((level: any, index: number) => ({
+                  index,
+                  height: Number(level.height),
+                  bitrate: Number(level.bitrate) || 0,
+                }))
+                .filter((level: any) => level.height === height)
+                .sort((left: any, right: any) => right.bitrate - left.bitrate);
+              hls.currentLevel = matchingLevels[0]?.index ?? -1;
+            };
+
             // Khởi tạo trình phát Plyr
             const player = new PlyrClass(video, {
               controls: [
-                "play-large", "play", "progress", "current-time",
+                "play-large", "rewind", "play", "fast-forward", "progress", "current-time",
                 "duration", "mute", "volume", "settings", "pip", "fullscreen"
               ],
-              settings: ["speed"],
+              seekTime: 5,
+              keyboard: { focused: false, global: false },
+              settings: ["quality", "speed"],
+              quality: {
+                default: defaultQuality,
+                options: [0, ...qualityOptions],
+                forced: true,
+                onChange: changeQuality,
+              },
               speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
               i18n: {
                 play: "Phát",
@@ -893,11 +965,15 @@ function WatchContent({ slug }: { slug: string }) {
                 settings: "Cài đặt",
                 speed: "Tốc độ",
                 normal: "Bình thường",
-                quality: "Chất lượng"
+                quality: "Chất lượng",
+                rewind: "Lùi {seektime} giây",
+                fastForward: "Tiến {seektime} giây",
+                qualityLabel: { 0: "Tự động" },
               }
             });
 
             plyrRef.current = player;
+            changeQuality(defaultQuality);
             setupEvents(player, savedTime);
           });
 
@@ -908,7 +984,10 @@ function WatchContent({ slug }: { slug: string }) {
           // Dành cho Safari gốc
           hlsAttemptStartedAtRef.current = performance.now();
           video.src = activeEpisode.link_m3u8;
-          video.addEventListener("error", handleStreamFailure, { once: true });
+          video.addEventListener("error", () => {
+            reportPlaybackFailure();
+            handleStreamFailure();
+          }, { once: true });
           video.addEventListener(
             "loadedmetadata",
             () => {
@@ -939,9 +1018,13 @@ function WatchContent({ slug }: { slug: string }) {
 
           const player = new PlyrClass(video, {
             controls: [
-              "play-large", "play", "progress", "current-time",
+              "play-large", "rewind", "play", "fast-forward", "progress", "current-time",
               "duration", "mute", "volume", "settings", "pip", "fullscreen"
-            ]
+            ],
+            seekTime: 5,
+            keyboard: { focused: false, global: false },
+            settings: ["speed"],
+            speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
           });
           plyrRef.current = player;
 
@@ -1072,11 +1155,35 @@ function WatchContent({ slug }: { slug: string }) {
 
   // HLS Player event handlers for autoplayNext and skipIntro
   const handleHlsPlay = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    if (!playbackStartedRef.current && playbackRequestedAtRef.current === 0) {
+      playbackRequestedAtRef.current = performance.now();
+    }
     setIsHlsPlaying(true);
     const video = e.currentTarget;
     if (skipIntro && !hasSkippedIntro.current && video.currentTime < 90) {
       video.currentTime = 90;
       hasSkippedIntro.current = true;
+    }
+  };
+
+  const handleHlsPlaying = () => {
+    const now = performance.now();
+    if (!playbackStartedRef.current) {
+      const startupMs = playbackRequestedAtRef.current > 0
+        ? now - playbackRequestedAtRef.current
+        : now - hlsAttemptStartedAtRef.current;
+      reportPlaybackStarted(Math.max(0, Math.round(startupMs)));
+      playbackStartedRef.current = true;
+    }
+    if (bufferingStartedAtRef.current > 0) {
+      reportBuffering(Math.round(now - bufferingStartedAtRef.current));
+      bufferingStartedAtRef.current = 0;
+    }
+  };
+
+  const handleHlsWaiting = () => {
+    if (playbackStartedRef.current && bufferingStartedAtRef.current === 0) {
+      bufferingStartedAtRef.current = performance.now();
     }
   };
 
@@ -1151,6 +1258,7 @@ function WatchContent({ slug }: { slug: string }) {
 
   const handleHlsPause = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     setIsHlsPlaying(false);
+    bufferingStartedAtRef.current = 0;
     const video = e.currentTarget;
     saveWatchHistory(video.currentTime, video.duration);
   };
@@ -1353,6 +1461,10 @@ function WatchContent({ slug }: { slug: string }) {
                       playsInline
                       controls
                       onCanPlay={() => setPlayerReady(true)}
+                      onPlay={handleHlsPlay}
+                      onPlaying={handleHlsPlaying}
+                      onWaiting={handleHlsWaiting}
+                      onStalled={handleHlsWaiting}
                       onEnded={handleHlsVideoEnded}
                       className="w-full h-full bg-black"
                       title="DlowPhim HLS Video Player"

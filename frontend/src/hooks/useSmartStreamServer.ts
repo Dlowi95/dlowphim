@@ -17,6 +17,16 @@ interface StoredServerPreference {
   preferredKey: string;
   updatedAt: number;
   latencies: Record<string, number>;
+  health?: Record<string, ServerHealth>;
+}
+
+interface ServerHealth {
+  starts: number;
+  failures: number;
+  stalls: number;
+  avgStartupMs: number;
+  avgBufferMs: number;
+  updatedAt: number;
 }
 
 interface UseSmartStreamServerOptions {
@@ -31,6 +41,16 @@ interface UseSmartStreamServerOptions {
 
 const PREFERENCE_TTL_MS = 6 * 60 * 60 * 1000;
 const PROBE_TIMEOUT_MS = 3500;
+const HEALTH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+const EMPTY_HEALTH: ServerHealth = {
+  starts: 0,
+  failures: 0,
+  stalls: 0,
+  avgStartupMs: 0,
+  avgBufferMs: 0,
+  updatedAt: 0,
+};
 
 function normalizeEpisodeName(name = ""): string {
   return name
@@ -76,6 +96,28 @@ function getAudioTrackKey(serverName = ""): string {
   if (normalized.includes("thuyet minh")) return "thuyet-minh";
   if (normalized.includes("long tieng")) return "long-tieng";
   return "vietsub";
+}
+
+function getHealthScore(
+  server: SmartStreamServer,
+  latency: number | undefined,
+  health: Record<string, ServerHealth>,
+): number {
+  const saved = health[getServerKey(server)];
+  const fresh = saved && Date.now() - saved.updatedAt <= HEALTH_TTL_MS
+    ? saved
+    : EMPTY_HEALTH;
+  const attempts = Math.max(1, fresh.starts + fresh.failures);
+  const failureRate = fresh.failures / attempts;
+  const stallsPerStart = fresh.stalls / Math.max(1, fresh.starts);
+
+  return (
+    (latency ?? 2500) +
+    failureRate * 6000 +
+    stallsPerStart * 1200 +
+    fresh.avgStartupMs * 0.35 +
+    fresh.avgBufferMs * 0.25
+  );
 }
 
 async function probeManifest(url: string): Promise<number | null> {
@@ -128,6 +170,7 @@ export function useSmartStreamServer({
 }: UseSmartStreamServerOptions) {
   const [latencies, setLatencies] = useState<Record<number, number>>({});
   const [isProbing, setIsProbing] = useState(false);
+  const [healthVersion, setHealthVersion] = useState(0);
   const failedServerKeysRef = useRef(new Set<string>());
   const manualSelectionRef = useRef(false);
   const switchingRef = useRef(false);
@@ -135,6 +178,7 @@ export function useSmartStreamServer({
   const activeServerIndexRef = useRef(activeServerIndex);
   const activeEpisodeIndexRef = useRef(activeEpisodeIndex);
   const latenciesRef = useRef(latencies);
+  const healthRef = useRef<Record<string, ServerHealth>>({});
 
   serversRef.current = servers;
   activeServerIndexRef.current = activeServerIndex;
@@ -179,6 +223,7 @@ export function useSmartStreamServer({
         preferredKey: getServerKey(server),
         updatedAt: Date.now(),
         latencies: keyedLatencies,
+        health: healthRef.current,
       };
       try {
         localStorage.setItem(preferenceKey, JSON.stringify(value));
@@ -232,6 +277,8 @@ export function useSmartStreamServer({
     if (!movieSlug || servers.length < 1 || !activeEpisodeName) return;
     let cancelled = false;
     const stored = readPreference();
+    healthRef.current = stored?.health || {};
+    setHealthVersion((version) => version + 1);
     const measurableServerKeys = servers
       .filter((server) =>
         getAudioTrackKey(server.server_name) === activeAudioTrack &&
@@ -313,7 +360,17 @@ export function useSmartStreamServer({
       const fastest = results
         .filter((result) => result.latency !== null)
         .sort(
-          (left, right) => (left.latency as number) - (right.latency as number),
+          (left, right) =>
+            getHealthScore(
+              left.server,
+              nextLatencies[left.serverIndex],
+              healthRef.current,
+            ) -
+            getHealthScore(
+              right.server,
+              nextLatencies[right.serverIndex],
+              healthRef.current,
+            ),
         )[0];
 
       if (fastest) {
@@ -407,6 +464,60 @@ export function useSmartStreamServer({
     [savePreference],
   );
 
+  const updateActiveServerHealth = useCallback(
+    (update: (current: ServerHealth) => ServerHealth) => {
+      const serverIndex = activeServerIndexRef.current;
+      const server = serversRef.current[serverIndex];
+      if (!server) return;
+      const key = getServerKey(server);
+      const current = healthRef.current[key] || EMPTY_HEALTH;
+      healthRef.current = {
+        ...healthRef.current,
+        [key]: { ...update(current), updatedAt: Date.now() },
+      };
+      setHealthVersion((version) => version + 1);
+      savePreference(serverIndex);
+    },
+    [savePreference],
+  );
+
+  const reportPlaybackStarted = useCallback(
+    (startupMs: number) => {
+      if (!Number.isFinite(startupMs) || startupMs < 0) return;
+      updateActiveServerHealth((current) => ({
+        ...current,
+        starts: current.starts + 1,
+        avgStartupMs:
+          current.starts > 0
+            ? current.avgStartupMs * 0.75 + startupMs * 0.25
+            : startupMs,
+      }));
+    },
+    [updateActiveServerHealth],
+  );
+
+  const reportBuffering = useCallback(
+    (bufferMs: number) => {
+      if (!Number.isFinite(bufferMs) || bufferMs < 250) return;
+      updateActiveServerHealth((current) => ({
+        ...current,
+        stalls: current.stalls + 1,
+        avgBufferMs:
+          current.stalls > 0
+            ? current.avgBufferMs * 0.75 + bufferMs * 0.25
+            : bufferMs,
+      }));
+    },
+    [updateActiveServerHealth],
+  );
+
+  const reportPlaybackFailure = useCallback(() => {
+    updateActiveServerHealth((current) => ({
+      ...current,
+      failures: current.failures + 1,
+    }));
+  }, [updateActiveServerHealth]);
+
   const failover = useCallback((): boolean => {
     if (switchingRef.current) return false;
     const currentServers = serversRef.current;
@@ -432,6 +543,11 @@ export function useSmartStreamServer({
           episode,
           episodeIndex,
           latency: latenciesRef.current[serverIndex] ?? Number.MAX_SAFE_INTEGER,
+          score: getHealthScore(
+            server,
+            latenciesRef.current[serverIndex],
+            healthRef.current,
+          ),
         };
       })
       .filter(
@@ -442,7 +558,7 @@ export function useSmartStreamServer({
           Boolean(episode?.link_m3u8),
       )
       .sort((left, right) => {
-        return left.latency - right.latency;
+        return left.score - right.score;
       });
 
     const next = candidates[0];
@@ -459,14 +575,26 @@ export function useSmartStreamServer({
     return true;
   }, [switchToServer]);
 
+  const serverScores = useMemo(
+    () =>
+      servers.map((server, index) =>
+        getHealthScore(server, latencies[index], healthRef.current),
+      ),
+    [healthVersion, latencies, serverSignature, servers],
+  );
+
   return {
     latencies,
+    serverScores,
     isProbing,
     markManualSelection,
     getMatchingEpisode,
     selectServer,
     selectAutomaticServer,
     reportPlaybackSuccess,
+    reportPlaybackStarted,
+    reportBuffering,
+    reportPlaybackFailure,
     failover,
   };
 }
