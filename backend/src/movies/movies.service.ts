@@ -509,6 +509,87 @@ export class MoviesService {
     return data;
   }
 
+  async resolveMovieDetailAcrossSources(
+    slug: string,
+    sourcePreference = 'fallback',
+    title?: string,
+    originTitle?: string,
+    year?: number,
+    tmdbId?: string,
+  ): Promise<any> {
+    const normalizeDetail = (detail: any, resolvedSlug: string) => {
+      const item = detail?.data?.item || detail?.movie;
+      const episodes = detail?.episodes || item?.episodes || [];
+      return {
+        ...detail,
+        movie: detail?.movie || item,
+        episodes,
+        _resolvedSlug: resolvedSlug,
+      };
+    };
+    const isPlayable = (detail: any) => {
+      const normalized = normalizeDetail(detail, slug);
+      return (
+        (detail?.status === true || detail?.status === 'success') &&
+        normalized.episodes.some((server: any) =>
+          (server?.server_data || []).some(
+            (episode: any) => episode?.link_m3u8 || episode?.link_embed,
+          ),
+        )
+      );
+    };
+
+    const direct = await this.fetchOphimProxy(
+      `/phim/${slug}`,
+      sourcePreference,
+    );
+    if (isPlayable(direct)) return normalizeDetail(direct, slug);
+
+    const keyword = String(originTitle || title || '')
+      .replace(/<[^>]*>/g, '')
+      .trim();
+    if (!keyword) return normalizeDetail(direct, slug);
+
+    const search = await this.fetchOphimProxy(
+      `/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=12`,
+      sourcePreference,
+    );
+    const items = search?.data?.items || search?.items || [];
+    const normalizeText = (value = '') =>
+      String(value)
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd')
+        .replace(/[^a-z0-9]/g, '');
+    const normalizedTitle = normalizeText(title);
+    const normalizedOriginTitle = normalizeText(originTitle);
+    const expectedTmdbId = String(tmdbId || '');
+
+    const ranked = items
+      .map((item: any) => {
+        let score = 0;
+        const itemTmdbId = String(item?.tmdb?.id || item?.tmdb || '');
+        const itemTitle = normalizeText(item?.name);
+        const itemOriginTitle = normalizeText(item?.origin_name);
+        if (expectedTmdbId && itemTmdbId === expectedTmdbId) score += 100;
+        if (normalizedOriginTitle && itemOriginTitle === normalizedOriginTitle) score += 70;
+        if (normalizedTitle && itemTitle === normalizedTitle) score += 60;
+        if (year && Number(item?.year) === year) score += 15;
+        return { item, score };
+      })
+      .filter(({ item, score }: any) => item?.slug && score >= 60)
+      .sort((left: any, right: any) => right.score - left.score);
+
+    const matchedSlug = ranked[0]?.item?.slug;
+    if (!matchedSlug) return normalizeDetail(direct, slug);
+    const matched = await this.fetchOphimProxy(
+      `/phim/${matchedSlug}`,
+      sourcePreference,
+    );
+    return normalizeDetail(matched, matchedSlug);
+  }
+
   // Helper dịch tự động bằng Google Translate API miễn phí
   async translateText(text: string, to = 'vi'): Promise<string> {
     if (!text || text.trim().length === 0) return '';

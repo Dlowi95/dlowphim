@@ -58,6 +58,25 @@ export class MoviesController {
     return this.moviesService.fetchOphimProxy(path, source);
   }
 
+  @Get('resolved-detail/:slug')
+  async getResolvedMovieDetail(
+    @Param('slug') slug: string,
+    @Query('source') source = 'fallback',
+    @Query('title') title?: string,
+    @Query('originTitle') originTitle?: string,
+    @Query('year') year?: string,
+    @Query('tmdbId') tmdbId?: string,
+  ) {
+    return this.moviesService.resolveMovieDetailAcrossSources(
+      slug,
+      source,
+      title,
+      originTitle,
+      year ? Number(year) : undefined,
+      tmdbId,
+    );
+  }
+
   @Get('override/:slug')
   async getOverrideBySlug(@Param('slug') slug: string) {
     const override = await this.moviesService.getOverrideBySlug(slug);

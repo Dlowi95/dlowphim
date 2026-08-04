@@ -7,6 +7,7 @@ import MovieCard from "@/components/MovieCard";
 import { cleanSlug } from "@/utils/movieUtils";
 import Pagination from "@/components/Pagination";
 import { getProxyUrl, MOVIE_API_DOMAIN, MovieSourcePreference } from "@/utils/api";
+import { searchMovies } from "@/utils/movieSearch";
 
 function SearchContent() {
   const searchParams = useSearchParams();
@@ -55,19 +56,28 @@ function SearchContent() {
         const timeoutId = setTimeout(() => {
           console.warn("Search API timeout. Aborting request.");
           controller.abort();
-        }, 6000); // 6 seconds timeout
+        }, keyword ? 8000 : 6000);
 
         let data: any = null;
         let fetchSuccess = false;
 
         try {
-          const res = await fetch(getProxyUrl(url, sourcePreference), { signal: controller.signal });
-          if (res.ok) {
-            data = await res.json();
-            if (data.status === "success" || data.status === true) {
-              const items = data.data?.items || data.items || [];
-              if (items.length > 0) {
-                fetchSuccess = true;
+          if (keyword) {
+            const searchResult = await searchMovies(keyword, pageUrl, {
+              signal: controller.signal,
+              timeoutMs: 3500,
+            });
+            data = searchResult.data;
+            fetchSuccess = searchResult.items.length > 0;
+          } else {
+            const res = await fetch(getProxyUrl(url, sourcePreference), { signal: controller.signal });
+            if (res.ok) {
+              data = await res.json();
+              if (data.status === "success" || data.status === true) {
+                const items = data.data?.items || data.items || [];
+                if (items.length > 0) {
+                  fetchSuccess = true;
+                }
               }
             }
           }

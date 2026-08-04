@@ -8,7 +8,7 @@ import Link from "next/link";
 import AuthModal from "./AuthModal";
 import { useAuth } from "@/context/AuthContext";
 import { cleanMovieName, cleanSlug, getImageUrl } from "@/utils/movieUtils";
-import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
+import { searchMovies } from "@/utils/movieSearch";
 
 export default function NavbarComponent() {
   const pathname = usePathname();
@@ -89,34 +89,36 @@ export default function NavbarComponent() {
       return;
     }
 
+    const controller = new AbortController();
     const delayDebounce = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const res = await fetch(
-          getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/tim-kiem?keyword=${encodeURIComponent(searchQuery.trim())}`)
-        );
-        const data = await res.json();
-        if (data.status === "success" || data.status === true) {
-          const items = data.data?.items || data.items || [];
-          // Deduplicate suggestions by cleanSlug
-          const seen = new Set<string>();
-          const uniqueItems = items.filter((item: any) => {
-            const baseSlug = cleanSlug(item.slug);
-            if (seen.has(baseSlug)) return false;
-            seen.add(baseSlug);
-            return true;
-          });
-          // Chỉ lấy tối đa 4 phim hàng đầu để hiển thị dropdown gọn gàng giống Cobephim
-          setSuggestions(uniqueItems.slice(0, 4));
-        }
+        const { items } = await searchMovies(searchQuery.trim(), 1, {
+          signal: controller.signal,
+          timeoutMs: 3500,
+        });
+        const seen = new Set<string>();
+        const uniqueItems = items.filter((item: any) => {
+          const baseSlug = cleanSlug(item.slug);
+          if (seen.has(baseSlug)) return false;
+          seen.add(baseSlug);
+          return true;
+        });
+        setSuggestions(uniqueItems.slice(0, 4));
       } catch (error) {
-        console.error("Lỗi lấy gợi ý nhanh:", error);
+        if (!controller.signal.aborted) {
+          console.error("Lỗi lấy gợi ý nhanh:", error);
+          setSuggestions([]);
+        }
       } finally {
-        setIsSearching(false);
+        if (!controller.signal.aborted) setIsSearching(false);
       }
     }, 300);
 
-    return () => clearTimeout(delayDebounce);
+    return () => {
+      clearTimeout(delayDebounce);
+      controller.abort();
+    };
   }, [searchQuery]);
 
   // 3. Đóng dropdown khi người dùng click chuột ra ngoài vùng tìm kiếm

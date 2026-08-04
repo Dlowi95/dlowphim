@@ -67,6 +67,17 @@ function getServerKey(server: SmartStreamServer): string {
   return `${server.server_name.toLowerCase().trim()}|${origin}`;
 }
 
+function getAudioTrackKey(serverName = ""): string {
+  const normalized = serverName
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d");
+  if (normalized.includes("thuyet minh")) return "thuyet-minh";
+  if (normalized.includes("long tieng")) return "long-tieng";
+  return "vietsub";
+}
+
 async function probeManifest(url: string): Promise<number | null> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
@@ -204,6 +215,9 @@ export function useSmartStreamServer({
   const activeEpisodeName = normalizeEpisodeName(
     servers[activeServerIndex]?.server_data[activeEpisodeIndex]?.name || "",
   );
+  const activeAudioTrack = getAudioTrackKey(
+    servers[activeServerIndex]?.server_name || "",
+  );
 
   useEffect(() => {
     failedServerKeysRef.current.clear();
@@ -220,6 +234,7 @@ export function useSmartStreamServer({
     const stored = readPreference();
     const measurableServerKeys = servers
       .filter((server) =>
+        getAudioTrackKey(server.server_name) === activeAudioTrack &&
         server.server_data.some((episode) => episode.link_m3u8),
       )
       .map(getServerKey);
@@ -247,7 +262,10 @@ export function useSmartStreamServer({
           activeEpisodeIndex,
         );
         const episode = servers[preferredIndex].server_data[episodeIndex];
-        if (episode?.link_m3u8 || episode?.link_embed) {
+        if (
+          getAudioTrackKey(servers[preferredIndex].server_name) === activeAudioTrack &&
+          (episode?.link_m3u8 || episode?.link_embed)
+        ) {
           switchToServer(
             preferredIndex,
             activeEpisodeName,
@@ -270,7 +288,11 @@ export function useSmartStreamServer({
           const episode = server.server_data[episodeIndex];
           return { server, serverIndex, episode };
         })
-        .filter((candidate) => Boolean(candidate.episode?.link_m3u8));
+        .filter(
+          (candidate) =>
+            getAudioTrackKey(candidate.server.server_name) === activeAudioTrack &&
+            Boolean(candidate.episode?.link_m3u8),
+        );
 
       const results = await mapWithConcurrency(
         candidates,
@@ -311,6 +333,7 @@ export function useSmartStreamServer({
   }, [
     activeEpisodeIndex,
     activeEpisodeName,
+    activeAudioTrack,
     movieSlug,
     readPreference,
     savePreference,
@@ -350,6 +373,19 @@ export function useSmartStreamServer({
     [markManualSelection, switchToServer],
   );
 
+  const selectAutomaticServer = useCallback(
+    (serverIndex: number, type: "embed" | "hls") => {
+      const currentServer = serversRef.current[activeServerIndexRef.current];
+      const currentEpisode =
+        currentServer?.server_data[activeEpisodeIndexRef.current];
+      if (!currentEpisode) return;
+      manualSelectionRef.current = false;
+      failedServerKeysRef.current.clear();
+      switchToServer(serverIndex, currentEpisode.name, type);
+    },
+    [switchToServer],
+  );
+
   const reportPlaybackSuccess = useCallback(
     (latency?: number) => {
       const serverIndex = activeServerIndexRef.current;
@@ -381,6 +417,7 @@ export function useSmartStreamServer({
     if (!currentServer || !currentEpisode) return false;
 
     failedServerKeysRef.current.add(getServerKey(currentServer));
+    const currentAudioTrack = getAudioTrackKey(currentServer.server_name);
     const candidates = currentServers
       .map((server, serverIndex) => {
         const episodeIndex = findEpisodeIndex(
@@ -400,13 +437,12 @@ export function useSmartStreamServer({
       .filter(
         ({ server, serverIndex, episode }) =>
           serverIndex !== currentIndex &&
+          getAudioTrackKey(server.server_name) === currentAudioTrack &&
           !failedServerKeysRef.current.has(getServerKey(server)) &&
-          Boolean(episode?.link_m3u8 || episode?.link_embed),
+          Boolean(episode?.link_m3u8),
       )
       .sort((left, right) => {
-        const leftHlsRank = left.episode.link_m3u8 ? 0 : 1;
-        const rightHlsRank = right.episode.link_m3u8 ? 0 : 1;
-        return leftHlsRank - rightHlsRank || left.latency - right.latency;
+        return left.latency - right.latency;
       });
 
     const next = candidates[0];
@@ -418,7 +454,7 @@ export function useSmartStreamServer({
     switchToServer(
       next.serverIndex,
       currentEpisode.name,
-      next.episode.link_m3u8 ? "hls" : "embed",
+      "hls",
     );
     return true;
   }, [switchToServer]);
@@ -429,6 +465,7 @@ export function useSmartStreamServer({
     markManualSelection,
     getMatchingEpisode,
     selectServer,
+    selectAutomaticServer,
     reportPlaybackSuccess,
     failover,
   };

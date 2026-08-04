@@ -13,6 +13,7 @@ import Cookies from "js-cookie";
 import { getTmdbApiKey } from "@/utils/tmdb";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import { useSmartStreamServer } from "@/hooks/useSmartStreamServer";
+import { loadHlsLibrary } from "@/utils/hlsLoader";
 import "plyr/dist/plyr.css";
 
 interface Episode {
@@ -50,6 +51,7 @@ interface MovieDetail {
   isCustom?: boolean;
   sourceId?: string;
   fallbackOnly?: boolean;
+  tmdb?: { id?: string | number; type?: string };
 }
 
 
@@ -80,6 +82,7 @@ function WatchContent({ slug }: { slug: string }) {
   const isFavorite = user?.favorites?.includes(movie?.slug || "") || false;
   const [shareCopied, setShareCopied] = useState(false);
   const [playerType, setPlayerType] = useState<"embed" | "hls">("embed");
+  const [sourceSelectionMode, setSourceSelectionMode] = useState<"auto" | "manual">("auto");
   const [selectedEpisodeBatch, setSelectedEpisodeBatch] = useState(0);
   const [autoplayNext, setAutoplayNext] = useState(false);
   const [skipIntro, setSkipIntro] = useState(false);
@@ -122,6 +125,8 @@ function WatchContent({ slug }: { slug: string }) {
   // Phim liên quan
   const [relatedMovies, setRelatedMovies] = useState<any[]>([]);
   const [loadingRelated, setLoadingRelated] = useState(false);
+  const [playerReady, setPlayerReady] = useState(false);
+  const [watchExtrasReady, setWatchExtrasReady] = useState(false);
 
   // States báo lỗi phim
   const [mounted, setMounted] = useState(false);
@@ -193,6 +198,54 @@ function WatchContent({ slug }: { slug: string }) {
     hasSkippedIntro.current = false;
   }, [playerType, activeEpisodeIndex, activeServerIndex]);
 
+  useEffect(() => {
+    if (!cinemaMode) return;
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setCinemaMode(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [cinemaMode]);
+
+  useEffect(() => {
+    setPlayerReady(false);
+    setWatchExtrasReady(false);
+    setRelatedMovies([]);
+    setTmdbBackdrop(null);
+    setTmdbPoster(null);
+    setTmdbCredits([]);
+  }, [slug]);
+
+  useEffect(() => {
+    if (!movie || watchExtrasReady) return;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let idleId: number | null = null;
+    const revealExtras = () => setWatchExtrasReady(true);
+
+    if (playerReady) {
+      if ("requestIdleCallback" in window) {
+        idleId = window.requestIdleCallback(revealExtras, { timeout: 1500 });
+      } else {
+        timeoutId = setTimeout(revealExtras, 600);
+      }
+    } else {
+      // Không để nội dung phụ bị ẩn mãi nếu nguồn video đang lỗi/chuyển dự phòng.
+      timeoutId = setTimeout(revealExtras, 8000);
+    }
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (idleId !== null && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(idleId);
+      }
+    };
+  }, [movie, playerReady, watchExtrasReady]);
+
   // 1. Fetch movie data from the source selected in admin settings.
   useEffect(() => {
     async function fetchMovieDetail() {
@@ -261,39 +314,6 @@ function WatchContent({ slug }: { slug: string }) {
 
           setMovie(movieDetail);
 
-          // Cào thêm ảnh nét từ TMDB cho watch page
-          const tmdbId = movieDetail.tmdb?.id;
-          const tmdbType = movieDetail.tmdb?.type || "movie";
-          if (tmdbId || movieDetail.name) {
-            (async () => {
-              try {
-                const proxyRes = await fetch(
-                  `${API_URL}/movies/logo/${slug}?title=${encodeURIComponent(movieDetail.origin_name || movieDetail.name)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`
-                );
-                if (proxyRes.ok) {
-                  const proxyData = await proxyRes.json();
-                  if (proxyData.backdropUrl) {
-                    setTmdbBackdrop(proxyData.backdropUrl);
-                  } else if (proxyData.posterUrl) {
-                    setTmdbBackdrop(proxyData.posterUrl);
-                  }
-                  if (proxyData.posterUrl) {
-                    setTmdbPoster(proxyData.posterUrl);
-                  }
-                }
-
-                const creditsRes = await fetch(
-                  `${API_URL}/movies/credits/${slug}?title=${encodeURIComponent(movieDetail.origin_name || movieDetail.name)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`
-                );
-                if (creditsRes.ok) {
-                  const creditsData = await creditsRes.json();
-                  setTmdbCredits(creditsData);
-                }
-              } catch (e) {
-                console.error("Lỗi cào TMDB ảnh/diễn viên cho WatchPage qua proxy:", e);
-              }
-            })();
-          }
         } else {
           // c. Nếu nguồn chính không có, thử tìm trên fallback hoặc Custom Movies
           try {
@@ -398,7 +418,16 @@ function WatchContent({ slug }: { slug: string }) {
     if (!slug || movie?.isCustom || movie?.fallbackOnly) return;
     async function fetchKKPhimDetail() {
       try {
-        const res = await fetch(getProxyUrl(`/phim/${slug}`, "fallback"));
+        const params = new URLSearchParams({
+          source: "fallback",
+          title: movie?.name || "",
+          originTitle: movie?.origin_name || "",
+          year: movie?.year ? String(movie.year) : "",
+          tmdbId: movie?.tmdb?.id ? String(movie.tmdb.id) : "",
+        });
+        const res = await fetch(
+          `${API_URL}/movies/resolved-detail/${slug}?${params.toString()}`
+        );
         if (res.ok) {
           const data = await res.json();
           if (data.status === true || data.status === "success") {
@@ -422,7 +451,44 @@ function WatchContent({ slug }: { slug: string }) {
       }
     }
     fetchKKPhimDetail();
-  }, [slug, movie?.isCustom, movie?.fallbackOnly]);
+  }, [API_URL, slug, movie?.isCustom, movie?.fallbackOnly, movie?.name, movie?.origin_name, movie?.year, movie?.tmdb?.id]);
+
+  useEffect(() => {
+    if (!watchExtrasReady || !movie) return;
+    const controller = new AbortController();
+    const tmdbId = movie.tmdb?.id;
+    const tmdbType = movie.tmdb?.type || "movie";
+    const title = encodeURIComponent(movie.origin_name || movie.name);
+
+    const fetchTmdbExtras = async () => {
+      const [imagesResult, creditsResult] = await Promise.allSettled([
+        fetch(
+          `${API_URL}/movies/logo/${slug}?title=${title}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`,
+          { signal: controller.signal },
+        ),
+        fetch(
+          `${API_URL}/movies/credits/${slug}?title=${title}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`,
+          { signal: controller.signal },
+        ),
+      ]);
+
+      if (imagesResult.status === "fulfilled" && imagesResult.value.ok) {
+        const imageData = await imagesResult.value.json();
+        setTmdbBackdrop(imageData.backdropUrl || imageData.posterUrl || null);
+        setTmdbPoster(imageData.posterUrl || null);
+      }
+      if (creditsResult.status === "fulfilled" && creditsResult.value.ok) {
+        setTmdbCredits(await creditsResult.value.json());
+      }
+    };
+
+    fetchTmdbExtras().catch((error) => {
+      if (!controller.signal.aborted) {
+        console.error("Lỗi tải TMDB sau khi player sẵn sàng:", error);
+      }
+    });
+    return () => controller.abort();
+  }, [API_URL, movie, slug, watchExtrasReady]);
 
 
   const cleanedName = movie ? cleanMovieName(movie.name) : "";
@@ -457,6 +523,7 @@ function WatchContent({ slug }: { slug: string }) {
     isProbing: isProbingServers,
     getMatchingEpisode,
     selectServer: selectSmartServer,
+    selectAutomaticServer,
     reportPlaybackSuccess,
     failover: failoverStream,
   } = useSmartStreamServer({
@@ -471,24 +538,70 @@ function WatchContent({ slug }: { slug: string }) {
   const currentServer = servers[activeServerIndex];
   const episodesData = currentServer?.server_data || [];
 
-  // Helper to generate list of friendly labels for all combined servers
-  const getFriendlyLabels = (serversList: Server[]) => {
-    const counts: Record<string, number> = {};
-    return serversList.map((srv) => {
-      const nameLower = (srv.server_name || "").toLowerCase();
-      let typeLabel = "Vietsub";
-      if (nameLower.includes("thuyết minh") || nameLower.includes("thuyet minh")) {
-        typeLabel = "Thuyết minh";
-      } else if (nameLower.includes("lồng tiếng") || nameLower.includes("long tieng")) {
-        typeLabel = "Lồng tiếng";
-      }
-
-      counts[typeLabel] = (counts[typeLabel] || 0) + 1;
-      return `${typeLabel} #${counts[typeLabel]}`;
-    });
+  const getServerAudioTrack = (serverName: string) => {
+    const normalizedName = serverName
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/đ/g, "d")
+      .toLowerCase();
+    if (normalizedName.includes("thuyet minh")) return "thuyet-minh";
+    if (normalizedName.includes("long tieng")) return "long-tieng";
+    return "vietsub";
   };
 
-  const friendlyLabels = getFriendlyLabels(servers);
+  const audioTrackLabels: Record<string, string> = {
+    vietsub: "Vietsub",
+    "long-tieng": "Lồng tiếng",
+    "thuyet-minh": "Thuyết minh",
+  };
+  const availableAudioTracks = Array.from(
+    new Set(servers.map((server) => getServerAudioTrack(server.server_name))),
+  );
+  const serverDisplayLabels = (() => {
+    const counts: Record<string, number> = {};
+    return servers.map((server) => {
+      const audioTrack = getServerAudioTrack(server.server_name);
+      counts[audioTrack] = (counts[audioTrack] || 0) + 1;
+      return `${audioTrackLabels[audioTrack] || "Vietsub"} · Máy chủ ${counts[audioTrack]}`;
+    });
+  })();
+  const activeAudioTrack = getServerAudioTrack(currentServer?.server_name || "");
+  const visibleServerIndexes = servers
+    .map((server, serverIndex) => ({ server, serverIndex }))
+    .filter(({ server }) => getServerAudioTrack(server.server_name) === activeAudioTrack)
+    .map(({ serverIndex }) => serverIndex);
+  const recommendedServerIndex = [...visibleServerIndexes].sort(
+    (left, right) =>
+      (serverLatencies[left] ?? Number.MAX_SAFE_INTEGER) -
+      (serverLatencies[right] ?? Number.MAX_SAFE_INTEGER),
+  )[0] ?? visibleServerIndexes[0] ?? 0;
+
+  const chooseServer = (serverIndex: number, mode: "auto" | "manual") => {
+    const episode = getMatchingEpisode(serverIndex);
+    if (!episode) return;
+    setSourceSelectionMode(mode);
+    manualPlayerSelectionKeyRef.current = `${slug}:${serverIndex}:${episode.name || ""}`;
+    const streamType = episode.link_m3u8 ? "hls" : "embed";
+    if (mode === "auto") {
+      selectAutomaticServer(serverIndex, streamType);
+    } else {
+      selectSmartServer(serverIndex, streamType);
+    }
+    scrollToPlayer();
+  };
+
+  const chooseAudioTrack = (audioTrack: string) => {
+    const matchingIndexes = servers
+      .map((server, serverIndex) => ({ server, serverIndex }))
+      .filter(({ server }) => getServerAudioTrack(server.server_name) === audioTrack)
+      .map(({ serverIndex }) => serverIndex);
+    const bestIndex = [...matchingIndexes].sort(
+      (left, right) =>
+        (serverLatencies[left] ?? Number.MAX_SAFE_INTEGER) -
+        (serverLatencies[right] ?? Number.MAX_SAFE_INTEGER),
+    )[0];
+    if (bestIndex !== undefined) chooseServer(bestIndex, "auto");
+  };
 
   // Natural sorting helper for episodes
   const getEpisodeNumber = (name: string): number => {
@@ -507,17 +620,30 @@ function WatchContent({ slug }: { slug: string }) {
 
   const activeEpisode = episodesData[activeEpisodeIndex];
   const activeEmbed = activeEpisode?.link_embed || null;
+  const formatEpisodeLabel = (episodeName = "") => {
+    const normalizedName = episodeName.trim();
+    if (!normalizedName) return "";
+    if (/^full$/i.test(normalizedName)) return "Full";
+    return /^tập\s/i.test(normalizedName) ? normalizedName : `Tập ${normalizedName}`;
+  };
+
+  useEffect(() => {
+    if (episodesData.length <= 1 || playerType !== "hls") {
+      setAutoplayNext(false);
+    }
+  }, [episodesData.length, playerType]);
 
   const handleStreamFailure = () => {
     const currentTime = videoRef.current?.currentTime || 0;
     if (currentTime > 0) pendingFailoverTimeRef.current = currentTime;
+    // Thử HLS cùng ngôn ngữ ở nguồn còn lại trước, rồi mới dùng Embed.
     if (failoverStream()) {
-      showToast("Nguồn phát đang lỗi, đã tự chuyển sang server khác.", "warning");
+      showToast("HLS nguồn hiện tại lỗi, đã chuyển sang HLS dự phòng cùng ngôn ngữ.", "warning");
       return;
     }
     if (activeEpisode?.link_embed) {
       setPlayerType("embed");
-      showToast("Luồng HLS lỗi, đã chuyển sang bản phát dự phòng.", "warning");
+      showToast("Các nguồn HLS phù hợp đều lỗi, đã chuyển sang Embed cùng nguồn.", "warning");
       return;
     }
     showToast("Các nguồn phát hiện tại đều không phản hồi.", "error");
@@ -538,7 +664,7 @@ function WatchContent({ slug }: { slug: string }) {
 
   // 1.7. Đồng bộ đánh giá theo phim qua Backend
   useEffect(() => {
-    if (!movie) return;
+    if (!movie || !watchExtrasReady) return;
 
     async function fetchRating() {
       try {
@@ -557,7 +683,7 @@ function WatchContent({ slug }: { slug: string }) {
     }
 
     fetchRating();
-  }, [movie, slug, API_URL]);
+  }, [movie, slug, API_URL, watchExtrasReady]);
 
 
   // 2. Đồng bộ tập phim đang hoạt động dựa trên query queryEp
@@ -596,14 +722,26 @@ function WatchContent({ slug }: { slug: string }) {
   // 2.5. HLS + Plyr.io dynamic initialization
   useEffect(() => {
     let active = true;
+    let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
 
     if (playerType === "hls" && activeEpisode?.link_m3u8) {
-      const scriptId = "dlowphim-hls-script";
-      let script = document.getElementById(scriptId) as HTMLScriptElement;
+      let failureHandled = false;
+      let networkRecoveryCount = 0;
+      let mediaRecoveryCount = 0;
 
       const initPlayer = async () => {
         if (!active) return;
-        const Hls = (window as any).Hls;
+        let Hls: any;
+        try {
+          Hls = await loadHlsLibrary();
+        } catch (error) {
+          console.warn("[HLS] Không thể tải trình phát, chuyển nguồn dự phòng.", error);
+          if (active && !failureHandled) {
+            failureHandled = true;
+            handleStreamFailure();
+          }
+          return;
+        }
         const video = document.getElementById("dlow-hls-video") as HTMLVideoElement;
         if (!video) return;
 
@@ -621,17 +759,62 @@ function WatchContent({ slug }: { slug: string }) {
         const PlyrClass = (await import("plyr")).default;
 
         if (Hls && Hls.isSupported()) {
-          const hls = new Hls();
+          const hls = new Hls({
+            enableWorker: true,
+            lowLatencyMode: false,
+            capLevelToPlayerSize: true,
+            startLevel: -1,
+            backBufferLength: 60,
+            maxBufferLength: 30,
+            maxMaxBufferLength: 90,
+            manifestLoadingMaxRetry: 2,
+            levelLoadingMaxRetry: 3,
+            fragLoadingMaxRetry: 4,
+            fragLoadingRetryDelay: 500,
+            abrEwmaDefaultEstimate: 3_000_000,
+          });
           hlsAttemptStartedAtRef.current = performance.now();
           hls.loadSource(activeEpisode.link_m3u8);
           hls.attachMedia(video);
           hlsRef.current = hls;
 
-          // Thử server HLS tốt kế tiếp trước, sau cùng mới dùng embed.
+          // Thử tự phục hồi lỗi mạng/media ngắn trước khi chuyển nguồn.
           hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
             if (!active) return;
-            if (data && data.fatal) {
+            if (data && data.fatal && !failureHandled) {
+              if (
+                data.type === Hls.ErrorTypes.NETWORK_ERROR &&
+                networkRecoveryCount < 2
+              ) {
+                networkRecoveryCount += 1;
+                recoveryTimer = setTimeout(
+                  () => {
+                    if (!active) return;
+                    if (
+                      data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
+                      data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT ||
+                      data.details === Hls.ErrorDetails.MANIFEST_PARSING_ERROR
+                    ) {
+                      hls.loadSource(activeEpisode.link_m3u8);
+                    } else {
+                      hls.startLoad();
+                    }
+                  },
+                  networkRecoveryCount * 600,
+                );
+                return;
+              }
+              if (
+                data.type === Hls.ErrorTypes.MEDIA_ERROR &&
+                mediaRecoveryCount < 1
+              ) {
+                mediaRecoveryCount += 1;
+                hls.recoverMediaError();
+                return;
+              }
+              failureHandled = true;
               console.warn("[HLS] Fatal playback error, switching source...", data);
+              if (hlsRef.current === hls) hlsRef.current = null;
               try { hls.destroy(); } catch (e) {}
               handleStreamFailure();
             }
@@ -644,6 +827,8 @@ function WatchContent({ slug }: { slug: string }) {
               Math.round(performance.now() - hlsAttemptStartedAtRef.current)
             );
             reportPlaybackSuccess(manifestLatency);
+            networkRecoveryCount = 0;
+            mediaRecoveryCount = 0;
 
             // Đọc vị trí xem trước đó
             let savedTime = 0;
@@ -698,9 +883,8 @@ function WatchContent({ slug }: { slug: string }) {
                 "play-large", "play", "progress", "current-time",
                 "duration", "mute", "volume", "settings", "pip", "fullscreen"
               ],
-              settings: ["quality", "speed"],
+              settings: ["speed"],
               speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
-              quality: { default: 1080, options: [1080, 720, 480, 360] },
               i18n: {
                 play: "Phát",
                 pause: "Tạm dừng",
@@ -715,6 +899,10 @@ function WatchContent({ slug }: { slug: string }) {
 
             plyrRef.current = player;
             setupEvents(player, savedTime);
+          });
+
+          hls.on(Hls.Events.FRAG_LOADED, () => {
+            networkRecoveryCount = 0;
           });
         } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
           // Dành cho Safari gốc
@@ -776,20 +964,12 @@ function WatchContent({ slug }: { slug: string }) {
         }
       };
 
-      if (script) {
-        initPlayer();
-      } else {
-        script = document.createElement("script");
-        script.id = scriptId;
-        script.src = "https://cdn.jsdelivr.net/npm/hls.js@1.4.12/dist/hls.min.js";
-        script.async = true;
-        script.onload = initPlayer;
-        document.body.appendChild(script);
-      }
+      void initPlayer();
     }
 
     return () => {
       active = false;
+      if (recoveryTimer) clearTimeout(recoveryTimer);
       if (plyrRef.current) {
         try { plyrRef.current.destroy(); } catch (e) { }
         plyrRef.current = null;
@@ -803,15 +983,19 @@ function WatchContent({ slug }: { slug: string }) {
 
   // 3. Fetch phim liên quan
   useEffect(() => {
-    if (!movie || !movie.category || movie.category.length === 0) return;
+    if (!watchExtrasReady || !movie || !movie.category || movie.category.length === 0) return;
 
     const movieSlug = movie.slug;
     const genreSlug = movie.category[0].slug;
+    const controller = new AbortController();
 
     async function fetchRelated() {
       try {
         setLoadingRelated(true);
-        const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/the-loai/${genreSlug}?page=1`));
+        const res = await fetch(
+          getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/the-loai/${genreSlug}?page=1`),
+          { signal: controller.signal },
+        );
         const data = await res.json();
 
         if (data.status === true || data.status === "success") {
@@ -820,14 +1004,15 @@ function WatchContent({ slug }: { slug: string }) {
           setRelatedMovies(filtered);
         }
       } catch (err) {
-        console.error("Lỗi lấy phim liên quan:", err);
+        if (!controller.signal.aborted) console.error("Lỗi lấy phim liên quan:", err);
       } finally {
-        setLoadingRelated(false);
+        if (!controller.signal.aborted) setLoadingRelated(false);
       }
     }
 
     fetchRelated();
-  }, [movie]);
+    return () => controller.abort();
+  }, [movie, watchExtrasReady]);
 
   const getImageUrl = (path: string) => {
     if (!path) return "";
@@ -1076,27 +1261,27 @@ function WatchContent({ slug }: { slug: string }) {
           </button>
 
           <span className="text-xs font-bold text-pink-400 select-none">
-            Bạn đang xem: {cleanedName} {activeEpisode ? ` - Tập ${activeEpisode.name}` : ""}
+            Bạn đang xem: {cleanedName} {activeEpisode ? ` - ${formatEpisodeLabel(activeEpisode.name)}` : ""}
           </span>
         </div>
 
         {/* 1. TRÌNH PHÁT VIDEO CHÍNH (VIDEO PLAYER SECTION) */}
         <div
           id="watch-player-section"
-          className={`space-y-4 transition-all duration-300 ${cinemaMode ? "relative z-50 w-full" : ""}`}
+          className={`transition-all duration-300 ${
+            cinemaMode
+              ? "fixed inset-0 z-[80] flex flex-col justify-center gap-3 overflow-hidden bg-black/95 px-3 py-3 md:px-6 md:py-5"
+              : "space-y-4"
+          }`}
         >
-          {cinemaMode && (
-            <div
-              onClick={() => setCinemaMode(false)}
-              className="fixed inset-0 bg-black/95 z-40 transition-all duration-300"
-            />
-          )}
-
-          <div className={`flex items-center justify-between pb-2.5 ${cinemaMode ? "relative z-50" : ""}`}>
+          <div
+            className={`flex items-center justify-between gap-3 ${cinemaMode ? "relative z-50 mx-auto w-full" : "pb-2.5"}`}
+            style={cinemaMode ? { maxWidth: "min(96vw, 145vh)" } : undefined}
+          >
             <div className="flex items-center gap-2 text-left">
               <Film size={18} className="text-pink-500" />
               <h3 className="text-base md:text-lg font-bold uppercase tracking-tight">
-                Đang phát: {cleanedName} {activeEpisode ? `(Tập ${activeEpisode.name})` : ""}
+                Đang phát: {cleanedName} {activeEpisode ? `(${formatEpisodeLabel(activeEpisode.name)})` : ""}
               </h3>
             </div>
 
@@ -1107,7 +1292,7 @@ function WatchContent({ slug }: { slug: string }) {
                   : "bg-[#1b1d2a] text-zinc-400 hover:text-white"
                 }`}
             >
-              <span>Chế Độ Rạp Chiếu</span>
+              <span>{cinemaMode ? "Thoát chế độ rạp" : "Chế Độ Rạp Chiếu"}</span>
               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded leading-none transition-all ${cinemaMode
                   ? "text-white bg-white/20"
                   : "text-zinc-500 bg-[#252839]"
@@ -1118,7 +1303,10 @@ function WatchContent({ slug }: { slug: string }) {
           </div>
 
           {/* Ambient Glow Wrapper */}
-          <div className="relative w-full z-10">
+          <div
+            className={`relative z-10 ${cinemaMode ? "mx-auto w-full" : "w-full"}`}
+            style={cinemaMode ? { maxWidth: "min(96vw, 145vh)" } : undefined}
+          >
             {/* Ambient Image Glow (Philips Ambilight / Ambient Mode style) */}
             <div className="absolute -inset-4 z-0 pointer-events-none select-none overflow-hidden blur-[60px] opacity-40 scale-[1.04] rounded-[32px] transition-opacity duration-500">
               <img
@@ -1132,7 +1320,7 @@ function WatchContent({ slug }: { slug: string }) {
             {/* Unified Movie Player Frame + Action Bar Container with soft shadow, no border */}
             <div
               className={`w-full overflow-hidden bg-black rounded-2xl md:rounded-3xl shadow-[0_15px_45px_rgba(0,0,0,0.85)] transition-all duration-300 relative z-10 ${cinemaMode
-                  ? "shadow-pink-500/10 w-full max-w-[92vw] mx-auto"
+                  ? "shadow-pink-500/10"
                   : ""
                 }`}
             >
@@ -1142,6 +1330,7 @@ function WatchContent({ slug }: { slug: string }) {
                 activeEmbed ? (
                   <iframe
                     src={activeEmbed}
+                    onLoad={() => setPlayerReady(true)}
                     referrerPolicy="no-referrer"
                     allowFullScreen
                     frameBorder="0"
@@ -1163,6 +1352,8 @@ function WatchContent({ slug }: { slug: string }) {
                       ref={videoRef}
                       playsInline
                       controls
+                      onCanPlay={() => setPlayerReady(true)}
+                      onEnded={handleHlsVideoEnded}
                       className="w-full h-full bg-black"
                       title="DlowPhim HLS Video Player"
                     />
@@ -1182,7 +1373,7 @@ function WatchContent({ slug }: { slug: string }) {
                   <h4 className="text-sm md:text-base font-extrabold text-white tracking-tight leading-tight">{cleanedName}</h4>
                   {episodesData.length > 1 && activeEpisode && (
                     <p className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider mt-0.5">
-                      Tập {activeEpisode.name}
+                      {formatEpisodeLabel(activeEpisode.name)}
                     </p>
                   )}
                 </div>
@@ -1224,24 +1415,19 @@ function WatchContent({ slug }: { slug: string }) {
                         value={activeServerIndex}
                         onChange={(e) => {
                           const serverIndex = parseInt(e.target.value, 10);
-                          const episode = getMatchingEpisode(serverIndex);
-                          selectSmartServer(
-                            serverIndex,
-                            episode?.link_m3u8 ? "hls" : "embed"
-                          );
+                          chooseServer(serverIndex, "manual");
                         }}
                         className="bg-[#1b1d2a] border border-zinc-800 text-zinc-200 text-xs rounded-lg px-2.5 py-1 focus:outline-none focus:border-pink-500 font-extrabold cursor-pointer"
                       >
-                        {servers.map((s, idx) => (
+                        {servers.map((_, idx) => (
                           <option key={`drawer-server-opt-${idx}`} value={idx}>
-                            {friendlyLabels[idx] || s.server_name || `Server #${idx + 1}`}
-                            {serverLatencies[idx] ? ` - ${serverLatencies[idx]}ms` : ""}
+                            {serverDisplayLabels[idx] || `Máy chủ ${idx + 1}`}
                           </option>
                         ))}
                       </select>
                     </div>
                     {activeEpisode && (
-                      <span className="text-xs text-zinc-500 font-semibold">Tập {activeEpisode.name}</span>
+                      <span className="text-xs text-zinc-500 font-semibold">{formatEpisodeLabel(activeEpisode.name)}</span>
                     )}
                   </div>
 
@@ -1283,7 +1469,7 @@ function WatchContent({ slug }: { slug: string }) {
                           </div>
 
                           {/* Ep title */}
-                          <span className="text-xs font-bold truncate">Tập {ep.name}</span>
+                          <span className="text-xs font-bold truncate">{formatEpisodeLabel(ep.name)}</span>
                         </div>
                       );
                     })}
@@ -1307,7 +1493,7 @@ function WatchContent({ slug }: { slug: string }) {
 
             {/* Actions Control Bar directly below the player */}
             {!cinemaMode && (
-              <div className="w-full bg-[#0d0e13]/90 px-3 py-2 md:py-2.5 flex flex-wrap items-center justify-between gap-3 text-[11px] md:text-xs select-none border-b border-zinc-900/40">
+              <div className={`w-full bg-[#0d0e13]/90 px-3 py-2 md:py-2.5 flex flex-wrap items-center justify-between gap-3 text-[11px] md:text-xs select-none border-b border-zinc-900/40 ${cinemaMode ? "rounded-b-2xl" : ""}`}>
                 <div className="flex flex-wrap items-center gap-3">
                   <button
                     onClick={handleToggleFavorite}
@@ -1401,18 +1587,20 @@ function WatchContent({ slug }: { slug: string }) {
                     )}
                   </div>
 
-                  <button
-                    onClick={() => setAutoplayNext(!autoplayNext)}
-                    className="flex items-center gap-1 text-zinc-400 hover:text-white transition-all cursor-pointer bg-transparent border-none hover:bg-zinc-800/30 px-2 py-1 rounded-lg"
-                  >
-                    <span>Chuyển tập</span>
-                    <span className={`text-[8px] font-bold ml-1 px-1 py-0.2 rounded border leading-none transition-colors ${autoplayNext
-                        ? "border-pink-500 text-pink-500 bg-pink-500/5 shadow-[0_0_8px_rgba(236,72,153,0.2)]"
-                        : "border-zinc-700 text-zinc-500 bg-transparent"
-                      }`}>
-                      {autoplayNext ? "ON" : "OFF"}
-                    </span>
-                  </button>
+                  {episodesData.length > 1 && playerType === "hls" && (
+                    <button
+                      onClick={() => setAutoplayNext(!autoplayNext)}
+                      className="flex items-center gap-1 text-zinc-400 hover:text-white transition-all cursor-pointer bg-transparent border-none hover:bg-zinc-800/30 px-2 py-1 rounded-lg"
+                    >
+                      <span>Chuyển tập</span>
+                      <span className={`text-[8px] font-bold ml-1 px-1 py-0.2 rounded border leading-none transition-colors ${autoplayNext
+                          ? "border-pink-500 text-pink-500 bg-pink-500/5 shadow-[0_0_8px_rgba(236,72,153,0.2)]"
+                          : "border-zinc-700 text-zinc-500 bg-transparent"
+                        }`}>
+                        {autoplayNext ? "ON" : "OFF"}
+                      </span>
+                    </button>
+                  )}
 
 
                   <button
@@ -1535,58 +1723,64 @@ function WatchContent({ slug }: { slug: string }) {
             {/* Unified Sources & Episodes Selection Panel */}
             <div className="bg-[#0d0e13]/30 p-5 rounded-2xl border border-zinc-900/60 space-y-5">
 
-              {/* Row 1: Chọn Nguồn Phát */}
+              {/* Chọn bản dịch và máy chủ; tên nhà cung cấp/công nghệ chỉ dùng nội bộ. */}
               {servers.length > 0 && (
-                <div className="space-y-3">
-                  <span className="block text-xs font-black text-zinc-455 uppercase tracking-wider">
-                    Chọn Nguồn Phát:
+                <div className="space-y-4">
+                  <div className="space-y-2.5">
+                    <span className="block text-xs font-black text-zinc-455 uppercase tracking-wider">
+                      Chọn bản dịch:
+                    </span>
+                    <div className="flex flex-wrap gap-2.5">
+                      {availableAudioTracks.map((audioTrack) => (
+                        <button
+                          key={`audio-track-${audioTrack}`}
+                          onClick={() => chooseAudioTrack(audioTrack)}
+                          className={`px-4 py-2 text-xs font-black rounded-xl transition-all border-none cursor-pointer ${
+                            activeAudioTrack === audioTrack
+                              ? "bg-pink-500 text-white shadow-md shadow-pink-500/20"
+                              : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-zinc-800 hover:text-white"
+                          }`}
+                        >
+                          {audioTrackLabels[audioTrack] || "Vietsub"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <span className="block text-xs font-black text-zinc-455 uppercase tracking-wider">
+                      Chọn máy chủ:
                     {isProbingServers && (
                       <span className="ml-2 normal-case text-[10px] text-emerald-400">
-                        Đang đo server nhanh nhất...
+                          Đang chọn máy chủ tốt nhất...
                       </span>
                     )}
-                  </span>
-
-                  <div className="flex flex-wrap gap-2.5">
-                    {servers.flatMap((server, sIdx) => {
-                      const currentEp = getMatchingEpisode(sIdx);
-                      const baseLabel = friendlyLabels[sIdx] || server.server_name;
-                      const options: { type: "embed" | "hls"; label: string }[] = [];
-
-                      if (currentEp?.link_m3u8) {
-                        options.push({ type: "hls", label: `${baseLabel} (HLS)` });
-                      }
-                      if (currentEp?.link_embed) {
-                        options.push({ type: "embed", label: `${baseLabel} (EMBED)` });
-                      }
-
-                      return options.map((opt) => {
-                        const isOptionActive = sIdx === activeServerIndex && playerType === opt.type;
-
-                        return (
-                          <button
-                            key={`source-btn-${sIdx}-${opt.type}`}
-                            onClick={() => {
-                              manualPlayerSelectionKeyRef.current = `${slug}:${sIdx}:${currentEp?.name || ""}`;
-                              selectSmartServer(sIdx, opt.type);
-                              scrollToPlayer();
-                            }}
-                            className={`px-4 py-2 text-xs font-black rounded-xl transition-all border-none cursor-pointer uppercase ${
-                              isOptionActive
-                                ? "bg-pink-500 text-white font-extrabold shadow-md shadow-pink-500/20"
-                                : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-zinc-800 hover:text-white"
-                            }`}
-                          >
-                            {opt.label}
-                            {opt.type === "hls" && serverLatencies[sIdx] && (
-                              <span className="ml-1.5 text-[9px] opacity-75">
-                                {serverLatencies[sIdx]}ms
-                              </span>
-                            )}
-                          </button>
-                        );
-                      });
-                    })}
+                    </span>
+                    <div className="flex flex-wrap gap-2.5">
+                      <button
+                        onClick={() => chooseServer(recommendedServerIndex, "auto")}
+                        className={`px-4 py-2 text-xs font-black rounded-xl transition-all border-none cursor-pointer ${
+                          sourceSelectionMode === "auto"
+                            ? "bg-pink-500 text-white shadow-md shadow-pink-500/20"
+                            : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-zinc-800 hover:text-white"
+                        }`}
+                      >
+                        Tự động · Đề xuất
+                      </button>
+                      {visibleServerIndexes.map((serverIndex, visibleIndex) => (
+                        <button
+                          key={`friendly-server-${serverIndex}`}
+                          onClick={() => chooseServer(serverIndex, "manual")}
+                          className={`px-4 py-2 text-xs font-black rounded-xl transition-all border-none cursor-pointer ${
+                            sourceSelectionMode === "manual" && activeServerIndex === serverIndex
+                              ? "bg-pink-500 text-white shadow-md shadow-pink-500/20"
+                              : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-zinc-800 hover:text-white"
+                          }`}
+                        >
+                          Máy chủ {visibleIndex + 1}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1612,12 +1806,19 @@ function WatchContent({ slug }: { slug: string }) {
             </div>
 
             {/* 4. KHU VỰC BÌNH LUẬN */}
-            <CommentRatingSection
-              slug={slug}
-              title="Bình luận"
-              episodeLabel={activeEpisode && episodesData.length > 1 ? `P.1 - Tập ${activeEpisode.name}` : undefined}
-              showTabs={false}
-            />
+            {watchExtrasReady ? (
+              <CommentRatingSection
+                slug={slug}
+                title="Bình luận"
+                episodeLabel={activeEpisode && episodesData.length > 1 ? `P.1 - ${formatEpisodeLabel(activeEpisode.name)}` : undefined}
+                showTabs={false}
+              />
+            ) : (
+              <div id="movie-comments" className="pt-6 border-t border-zinc-900/60 space-y-3 animate-pulse">
+                <div className="h-5 w-32 rounded bg-zinc-900" />
+                <div className="h-24 rounded-2xl bg-zinc-950/60" />
+              </div>
+            )}
           </div>
 
           {/* CỘT PHẢI: INTERACTION, DISCORD BANNER, DIỄN VIÊN */}
