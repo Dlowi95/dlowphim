@@ -750,7 +750,7 @@ export default function KamenRiderRow() {
                 {/* Nút xem ngay, Hồ Sơ Siêu Nhân 3D & yêu thích */}
                 <div className="flex flex-wrap items-center gap-3 pt-4">
                   <button
-                    onClick={() => router.push(`/movie/${activeMovie.slug}`)}
+                    onClick={() => router.push(`/watch/${activeMovie.slug}`)}
                     className={`px-7 h-12 rounded-xl text-xs md:text-sm font-black uppercase tracking-widest transition-all active:scale-95 cursor-pointer relative overflow-hidden flex items-center justify-center gap-2 group/btn border border-white/20 bg-gradient-to-r ${theme.buttonBg} shadow-lg shadow-black/40`}
                   >
                     <Play size={16} className="fill-current" />

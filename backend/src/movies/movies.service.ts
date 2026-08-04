@@ -3,6 +3,9 @@ import {
   ConflictException,
   NotFoundException,
   BadRequestException,
+  OnModuleDestroy,
+  OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -11,16 +14,39 @@ import { CustomMovie, CustomMovieDocument } from './schemas/custom-movie.schema'
 import { MovieLogo, MovieLogoDocument } from './schemas/movie-logo.schema';
 import { MovieOverride, MovieOverrideDocument } from './schemas/movie-override.schema';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
+import { User, UserDocument } from '../auth/schemas/user.schema';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
-export class MoviesService {
+export class MoviesService implements OnModuleInit, OnModuleDestroy {
+  private readonly upcomingCache = new Map<string, { data: any; expiry: number }>();
+  private readonly upcomingCacheTtlMs = 6 * 60 * 60 * 1000;
+  private readonly upcomingCacheMaxEntries = 200;
+  private upcomingScanTimer?: NodeJS.Timeout;
+  private upcomingInitialScanTimer?: NodeJS.Timeout;
+
   constructor(
     @InjectModel(BlockedMovie.name) private blockedModel: Model<BlockedMovieDocument>,
     @InjectModel(CustomMovie.name) private customModel: Model<CustomMovieDocument>,
     @InjectModel(MovieLogo.name) private movieLogoModel: Model<MovieLogoDocument>,
     @InjectModel(MovieOverride.name) private overrideModel: Model<MovieOverrideDocument>,
     private readonly settingsService: SystemSettingsService,
+    @Optional() @InjectModel(User.name) private readonly userModel?: Model<UserDocument>,
+    @Optional() private readonly notificationsService?: NotificationsService,
   ) {}
+
+  onModuleInit() {
+    if (!this.userModel || !this.notificationsService) return;
+    this.upcomingInitialScanTimer = setTimeout(() => void this.scanUpcomingReminders(), 60_000);
+    this.upcomingScanTimer = setInterval(() => void this.scanUpcomingReminders(), 30 * 60_000);
+    this.upcomingInitialScanTimer.unref?.();
+    this.upcomingScanTimer.unref?.();
+  }
+
+  onModuleDestroy() {
+    if (this.upcomingInitialScanTimer) clearTimeout(this.upcomingInitialScanTimer);
+    if (this.upcomingScanTimer) clearInterval(this.upcomingScanTimer);
+  }
 
   // ─── BLOCKED MOVIES ───
   async getBlockedMovies(): Promise<any[]> {
@@ -148,6 +174,294 @@ export class MoviesService {
     } finally {
       clearTimeout(timeoutId);
     }
+  }
+
+  private setUpcomingCache(key: string, data: any): void {
+    const now = Date.now();
+    for (const [cacheKey, entry] of this.upcomingCache) {
+      if (entry.expiry <= now) this.upcomingCache.delete(cacheKey);
+    }
+    while (this.upcomingCache.size >= this.upcomingCacheMaxEntries) {
+      const oldestKey = this.upcomingCache.keys().next().value;
+      if (!oldestKey) break;
+      this.upcomingCache.delete(oldestKey);
+    }
+    this.upcomingCache.set(key, { data, expiry: now + this.upcomingCacheTtlMs });
+  }
+
+  async getUpcomingMovies(page = 1): Promise<any> {
+    const safePage = Math.min(20, Math.max(1, Math.floor(Number(page) || 1)));
+    const cacheKey = `list:${safePage}`;
+    const cached = this.upcomingCache.get(cacheKey);
+    if (cached && cached.expiry > Date.now()) return cached.data;
+
+    const settings = await this.settingsService.getSettings();
+    const apiKey = settings.tmdbApiKey || '591c025bb1641315ae087330271132bc';
+    const response = await this.safeFetchTmdb(
+      `https://api.themoviedb.org/3/movie/upcoming?api_key=${apiKey}&language=vi-VN&region=VN&page=${safePage}`,
+    );
+    if (!response?.ok) {
+      if (cached) return cached.data;
+      return { status: false, source: 'tmdb', items: [], page: safePage, totalPages: 1 };
+    }
+
+    const payload = await response.json();
+    const items = (payload.results || [])
+      .filter((item: any) => item?.id && (item.poster_path || item.backdrop_path))
+      .map((item: any) => ({
+        _id: `tmdb-${item.id}`,
+        name: item.title || item.original_title,
+        origin_name: item.original_title || item.title,
+        slug: `tmdb-${item.id}-${this.generateSlug(item.original_title || item.title || 'movie')}`,
+        poster_url: item.poster_path ? `https://image.tmdb.org/t/p/w780${item.poster_path}` : '',
+        thumb_url: item.backdrop_path
+          ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}`
+          : `https://image.tmdb.org/t/p/w780${item.poster_path}`,
+        year: Number(String(item.release_date || '').slice(0, 4)) || undefined,
+        release_date: item.release_date || '',
+        episode_current: 'Trailer',
+        status: 'trailer',
+        quality: 'HD',
+        lang: 'Trailer',
+        tmdb: { id: String(item.id), type: 'movie', vote_average: item.vote_average || 0 },
+      }));
+    const data = {
+      status: true,
+      source: 'tmdb',
+      titlePage: 'Phim sắp chiếu',
+      items,
+      page: Number(payload.page) || safePage,
+      totalPages: Math.min(20, Number(payload.total_pages) || 1),
+      totalItems: Number(payload.total_results) || items.length,
+    };
+    this.setUpcomingCache(cacheKey, data);
+    return data;
+  }
+
+  async getUpcomingMovieDetail(tmdbId: string): Promise<any> {
+    if (!/^\d+$/.test(tmdbId)) throw new BadRequestException('TMDB ID không hợp lệ');
+    const cacheKey = `detail:${tmdbId}`;
+    const cached = this.upcomingCache.get(cacheKey);
+    if (cached && cached.expiry > Date.now()) return cached.data;
+
+    const settings = await this.settingsService.getSettings();
+    const apiKey = settings.tmdbApiKey || '591c025bb1641315ae087330271132bc';
+    const [response, englishVideosResponse] = await Promise.all([
+      this.safeFetchTmdb(
+        `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${apiKey}&language=vi-VN&append_to_response=videos,release_dates`,
+      ),
+      this.safeFetchTmdb(
+        `https://api.themoviedb.org/3/movie/${tmdbId}/videos?api_key=${apiKey}&language=en-US`,
+      ),
+    ]);
+    if (!response?.ok) throw new NotFoundException('Không tìm thấy phim sắp chiếu trên TMDB');
+    const item = await response.json();
+    const releaseDate = this.resolveTmdbReleaseDate(item);
+
+    // Khi PhimAPI/OPhim đã có bản phát thật, đổi từ trang lịch chiếu sang slug có tập xem.
+    for (const source of ['active', 'ophim']) {
+      try {
+        const providerDetail = await this.resolveMovieDetailAcrossSources(
+          `tmdb-${tmdbId}`,
+          source,
+          item.title,
+          item.original_title,
+          Number(String(releaseDate || '').slice(0, 4)) || undefined,
+          tmdbId,
+        );
+        const hasPlayableEpisode = (providerDetail?.episodes || []).some((server: any) =>
+          (server?.server_data || []).some((episode: any) => episode?.link_m3u8 || episode?.link_embed),
+        );
+        if (hasPlayableEpisode && providerDetail?._resolvedSlug) {
+          const providerResult = { ...providerDetail, source, redirectSlug: providerDetail._resolvedSlug };
+          this.setUpcomingCache(cacheKey, providerResult);
+          return providerResult;
+        }
+      } catch {
+        // Chưa có trên nguồn này là trạng thái bình thường đối với phim chưa công chiếu.
+      }
+    }
+
+    const englishVideos = englishVideosResponse?.ok ? await englishVideosResponse.json() : { results: [] };
+    const availableVideos = [
+      ...(item.videos?.results || []),
+      ...(englishVideos.results || englishVideos.videos?.results || []),
+    ];
+    const trailer = availableVideos.find(
+      (video: any) => video.site === 'YouTube' && video.type === 'Trailer',
+    ) || availableVideos.find((video: any) => video.site === 'YouTube');
+    const slug = `tmdb-${item.id}-${this.generateSlug(item.original_title || item.title || 'movie')}`;
+    const movie = {
+      _id: `tmdb-${item.id}`,
+      name: item.title || item.original_title,
+      origin_name: item.original_title || item.title,
+      slug,
+      content: item.overview || 'Nội dung phim đang được cập nhật.',
+      type: 'single',
+      status: 'trailer',
+      thumb_url: item.backdrop_path
+        ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}`
+        : `https://image.tmdb.org/t/p/w780${item.poster_path}`,
+      poster_url: item.poster_path ? `https://image.tmdb.org/t/p/w780${item.poster_path}` : '',
+      time: item.runtime ? `${item.runtime} phút` : 'Chưa công bố',
+      episode_current: 'Trailer',
+      episode_total: '0',
+      year: Number(String(releaseDate || '').slice(0, 4)) || new Date().getFullYear(),
+      release_date: releaseDate,
+      trailer_url: trailer ? `https://www.youtube.com/embed/${trailer.key}` : '',
+      actor: [],
+      director: [],
+      category: (item.genres || []).map((genre: any) => ({ name: genre.name, slug: this.generateSlug(genre.name) })),
+      country: (item.production_countries || []).map((country: any) => ({ name: country.name, slug: country.iso_3166_1?.toLowerCase() })),
+      episodes: [],
+      tmdb: { id: String(item.id), type: 'movie', vote_average: item.vote_average || 0 },
+    };
+    const data = { status: true, source: 'tmdb', movie, episodes: [] };
+    this.setUpcomingCache(cacheKey, data);
+    return data;
+  }
+
+  async getUpcomingReminderStatus(userId: string, tmdbId: string) {
+    if (!/^\d+$/.test(tmdbId)) throw new BadRequestException('TMDB ID không hợp lệ');
+    if (!this.userModel) return { active: false };
+    const user = await this.userModel.findById(userId).select('upcomingReminders').lean().exec();
+    const reminder = (user?.upcomingReminders || []).find((item: any) => String(item.tmdbId) === tmdbId);
+    return { active: Boolean(reminder), reminder: reminder || null };
+  }
+
+  async toggleUpcomingReminder(
+    userId: string,
+    tmdbId: string,
+    input: { slug?: string; movieName?: string; originName?: string; releaseDate?: string; year?: number },
+  ) {
+    if (!/^\d+$/.test(tmdbId)) throw new BadRequestException('TMDB ID không hợp lệ');
+    if (!this.userModel) throw new BadRequestException('Tính năng nhắc phim chưa sẵn sàng');
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) throw new NotFoundException('Không tìm thấy người dùng');
+    user.upcomingReminders ||= [];
+    const index = user.upcomingReminders.findIndex((item: any) => String(item.tmdbId) === tmdbId);
+    if (index >= 0) {
+      user.upcomingReminders.splice(index, 1);
+      await user.save();
+      return { active: false };
+    }
+
+    const movieName = String(input.movieName || '').trim();
+    if (!movieName) throw new BadRequestException('Tên phim không hợp lệ');
+    user.upcomingReminders.push({
+      tmdbId,
+      slug: String(input.slug || `tmdb-${tmdbId}`).trim(),
+      movieName,
+      originName: String(input.originName || '').trim(),
+      releaseDate: /^\d{4}-\d{2}-\d{2}$/.test(String(input.releaseDate || '')) ? input.releaseDate : '',
+      year: Number(input.year) || undefined,
+      createdAt: new Date(),
+    });
+    await user.save();
+    return { active: true };
+  }
+
+  async scanUpcomingReminders(): Promise<{ checked: number; available: number }> {
+    if (!this.userModel || !this.notificationsService) return { checked: 0, available: 0 };
+    const userModel = this.userModel;
+    const notificationsService = this.notificationsService;
+    const users = await userModel
+      .find({ 'upcomingReminders.0': { $exists: true } })
+      .select('_id upcomingReminders')
+      .limit(100)
+      .lean()
+      .exec();
+    const uniqueReminders = new Map<string, any>();
+    for (const user of users) {
+      for (const reminder of user.upcomingReminders || []) {
+        const key = String(reminder.tmdbId || '');
+        if (key && !reminder.availableNotifiedAt && !uniqueReminders.has(key)) uniqueReminders.set(key, reminder);
+      }
+    }
+
+    const now = new Date();
+    for (const user of users) {
+      for (const reminder of user.upcomingReminders || []) {
+        if (!reminder.releaseNotifiedAt && reminder.releaseDate) {
+          const releaseTime = new Date(`${reminder.releaseDate}T00:00:00+07:00`).getTime();
+          if (Number.isFinite(releaseTime) && releaseTime <= now.getTime()) {
+            const result = await userModel.updateOne(
+              { _id: user._id, upcomingReminders: { $elemMatch: { tmdbId: reminder.tmdbId, releaseNotifiedAt: { $exists: false } } } },
+              { $set: { 'upcomingReminders.$.releaseNotifiedAt': now } },
+            ).exec();
+            if (result.modifiedCount > 0) {
+              await notificationsService.createUserNotification({
+                userId: String(user._id),
+                type: 'upcoming_release',
+                title: `${reminder.movieName} đến ngày công chiếu`,
+                content: 'Phim bạn đặt nhắc đã đến lịch phát hành. DlowPhim đang kiểm tra nguồn xem.',
+                link: `/movie/${reminder.slug}`,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    let available = 0;
+    const remindersToCheck = Array.from(uniqueReminders.values()).slice(0, 30);
+    const processReminder = async (reminder: any) => {
+      try {
+        let detail: any = null;
+        for (const source of ['active', 'ophim']) {
+          const candidate = await this.resolveMovieDetailAcrossSources(
+            reminder.slug,
+            source,
+            reminder.movieName,
+            reminder.originName,
+            reminder.year,
+            reminder.tmdbId,
+          );
+          const candidatePlayable = (candidate?.episodes || []).some((server: any) =>
+            (server?.server_data || []).some((episode: any) => episode?.link_m3u8 || episode?.link_embed),
+          );
+          if (candidatePlayable) {
+            detail = candidate;
+            break;
+          }
+        }
+        const playable = (detail?.episodes || []).some((server: any) =>
+          (server?.server_data || []).some((episode: any) => episode?.link_m3u8 || episode?.link_embed),
+        );
+        if (!playable || !detail?._resolvedSlug) return;
+        available += 1;
+        for (const user of users) {
+          const userReminder = (user.upcomingReminders || []).find(
+            (item: any) => String(item.tmdbId) === String(reminder.tmdbId) && !item.availableNotifiedAt,
+          );
+          if (!userReminder) continue;
+          const result = await userModel.updateOne(
+            { _id: user._id, upcomingReminders: { $elemMatch: { tmdbId: reminder.tmdbId, availableNotifiedAt: { $exists: false } } } },
+            { $set: { 'upcomingReminders.$.availableNotifiedAt': now, 'upcomingReminders.$.resolvedSlug': detail._resolvedSlug } },
+          ).exec();
+          if (result.modifiedCount > 0) {
+            await notificationsService.createUserNotification({
+              userId: String(user._id),
+              type: 'movie_available',
+              title: `${reminder.movieName} đã có bản xem`,
+              content: 'Phim bạn đặt nhắc hiện đã có nguồn phát trên DlowPhim.',
+              link: `/movie/${detail._resolvedSlug}`,
+            });
+          }
+        }
+      } catch {
+        // Nguồn chưa có phim hoặc tạm gián đoạn; vòng quét sau sẽ thử lại.
+      }
+    };
+    let reminderCursor = 0;
+    const workers = Array.from({ length: Math.min(3, remindersToCheck.length) }, async () => {
+      while (reminderCursor < remindersToCheck.length) {
+        const reminder = remindersToCheck[reminderCursor++];
+        await processReminder(reminder);
+      }
+    });
+    await Promise.all(workers);
+    return { checked: remindersToCheck.length, available };
   }
 
   // ─── MOVIE LOGO PROXY CACHE ───
@@ -377,6 +691,7 @@ export class MoviesService {
     movieStatus?: string;
     episodeCurrent?: string;
     episodeTotal?: string;
+    releaseDate?: string;
   }): Promise<any> {
     const fallbackState = this.deriveMovieReleaseState(
       input.movieStatus,
@@ -392,7 +707,7 @@ export class MoviesService {
       cached?.scheduleUpdatedAt &&
       Date.now() - new Date(cached.scheduleUpdatedAt).getTime() < cacheTtlMs
     ) {
-      return this.buildScheduleResponse(cached, fallbackState);
+      return this.buildScheduleResponse(cached, fallbackState, input.releaseDate);
     }
 
     let targetId = input.tmdbId || (cached as any)?.tmdbId || '';
@@ -414,17 +729,18 @@ export class MoviesService {
     }
 
     if (!targetId) {
-      return { state: fallbackState, source: 'provider', nextEpisode: null, tmdbStatus: '', updatedAt: null };
+      return { state: fallbackState, source: 'provider', nextEpisode: null, releaseDate: input.releaseDate || '', tmdbStatus: '', updatedAt: null };
     }
 
     try {
       const settings = await this.settingsService.getSettings();
       const apiKey = settings.tmdbApiKey || '591c025bb1641315ae087330271132bc';
       const response = await this.safeFetchTmdb(
-        `https://api.themoviedb.org/3/${targetType}/${targetId}?api_key=${apiKey}&language=vi-VN`,
+        `https://api.themoviedb.org/3/${targetType}/${targetId}?api_key=${apiKey}&language=vi-VN${targetType === 'movie' ? '&append_to_response=release_dates' : ''}`,
       );
       if (response?.ok) {
         const details = await response.json();
+        const releaseDate = input.releaseDate || this.resolveTmdbReleaseDate(details);
         const scheduleUpdatedAt = new Date();
         const nextEpisode = details.next_episode_to_air
           ? {
@@ -441,15 +757,22 @@ export class MoviesService {
             tmdbType: targetType,
             tmdbStatus: details.status || '',
             nextEpisodeToAir: nextEpisode,
-            lastAirDate: details.last_air_date || details.release_date || '',
+            lastAirDate: details.last_air_date || releaseDate,
+            releaseDate,
             scheduleUpdatedAt,
           },
           { upsert: true, returnDocument: 'after' },
         ).exec();
         return {
-          state: this.deriveTmdbReleaseState(details.status, targetType, fallbackState),
+          state: this.deriveTmdbReleaseState(
+            details.status,
+            targetType,
+            fallbackState,
+            releaseDate,
+          ),
           source: 'tmdb',
           nextEpisode,
+          releaseDate,
           tmdbStatus: details.status || '',
           updatedAt: scheduleUpdatedAt,
         };
@@ -458,20 +781,47 @@ export class MoviesService {
       // Dữ liệu nguồn phim vẫn đủ để hiển thị trạng thái khi TMDB gián đoạn.
     }
 
-    return { state: fallbackState, source: 'provider', nextEpisode: null, tmdbStatus: '', updatedAt: null };
+    return { state: fallbackState, source: 'provider', nextEpisode: null, releaseDate: input.releaseDate || '', tmdbStatus: '', updatedAt: null };
   }
 
-  private buildScheduleResponse(cached: any, fallbackState: string) {
+  private buildScheduleResponse(cached: any, fallbackState: string, preferredReleaseDate = '') {
+    const releaseDate = preferredReleaseDate || cached.releaseDate || '';
     return {
-      state: this.deriveTmdbReleaseState(cached.tmdbStatus, cached.tmdbType, fallbackState),
+      state: this.deriveTmdbReleaseState(
+        cached.tmdbStatus,
+        cached.tmdbType,
+        fallbackState,
+        releaseDate,
+      ),
       source: 'tmdb-cache',
       nextEpisode: cached.nextEpisodeToAir || null,
+      releaseDate,
       tmdbStatus: cached.tmdbStatus || '',
       updatedAt: cached.scheduleUpdatedAt || null,
     };
   }
 
-  private deriveTmdbReleaseState(status = '', type = 'movie', fallback = 'unknown') {
+  private resolveTmdbReleaseDate(details: any): string {
+    const regionalEntries = (details?.release_dates?.results || [])
+      .find((entry: any) => entry?.iso_3166_1 === 'VN')
+      ?.release_dates || [];
+    const preferredType = [3, 4, 2, 1, 5, 6]
+      .map((type) => regionalEntries.find((entry: any) => entry?.type === type && entry?.release_date))
+      .find(Boolean);
+    const regional = String(preferredType?.release_date || '').slice(0, 10);
+    return regional || details?.release_date || details?.first_air_date || '';
+  }
+
+  private deriveTmdbReleaseState(
+    status = '',
+    type = 'movie',
+    fallback = 'unknown',
+    releaseDate = '',
+  ) {
+    if (releaseDate) {
+      const releaseTime = new Date(`${releaseDate}T23:59:59Z`).getTime();
+      if (Number.isFinite(releaseTime) && releaseTime > Date.now()) return 'upcoming';
+    }
     const value = status.toLowerCase();
     if (/ended|canceled|released/.test(value)) return 'completed';
     if (/planned|pilot|post production/.test(value)) return 'upcoming';

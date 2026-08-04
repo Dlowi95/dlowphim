@@ -41,6 +41,9 @@ export class MovieLogo {
   @Prop({ default: '' })
   lastAirDate: string;
 
+  @Prop({ default: '' })
+  releaseDate: string;
+
   @Prop({ type: Date, default: null })
   scheduleUpdatedAt: Date;
 }

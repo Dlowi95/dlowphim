@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Sparkles, Tv, HelpCircle, Send, Plus, MessageSquare, Image, Users, Flame, ExternalLink, Compass, Check } from "lucide-react";
+import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Sparkles, Tv, HelpCircle, Send, Plus, MessageSquare, Image, Users, Flame, ExternalLink, Compass, Check, BellRing } from "lucide-react";
 import CommentRatingSection from "@/components/CommentRatingSection";
 import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
 import MovieCard from "@/components/MovieCard";
@@ -41,13 +41,17 @@ interface MovieDetail {
   episode_current: string;
   episode_total: string;
   year: number;
+  release_date?: string;
   actor: string[];
   director: string[];
   category: { name: string; slug: string }[];
   country: { name: string; slug: string }[];
   episodes: Server[];
   trailer_url?: string;
-  tmdb?: { id?: string | number; type?: string };
+  tmdb?: { id?: string | number; type?: string; vote_average?: number };
+  imdb?: { vote_average?: number };
+  age_rating?: string;
+  rating?: string;
 }
 
 
@@ -57,7 +61,7 @@ interface MovieDetail {
 export default function MovieDetail({ params }: { params: { slug: string } }) {
   const slug = params.slug;
   const router = useRouter();
-  const { user, toggleFavorite: toggleFavoriteCtx, createPlaylist, toggleMovieInPlaylist } = useAuth();
+  const { user, toggleFavorite: toggleFavoriteCtx, createPlaylist, toggleMovieInPlaylist, showAuthToast, showToast } = useAuth();
 
   const [movie, setMovie] = useState<MovieDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -65,6 +69,13 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
   const [tmdbImages, setTmdbImages] = useState<{ backdrop?: string; poster?: string } | null>(null);
   const [tmdbCredits, setTmdbCredits] = useState<any[]>([]);
   const [averageRating, setAverageRating] = useState<number | null>(null);
+  const [reminderActive, setReminderActive] = useState(false);
+  const [reminderLoading, setReminderLoading] = useState(false);
+  const isUpcomingMovie = Boolean(movie && (
+    movie.status === "trailer" ||
+    movie.episode_current?.toLowerCase().includes("trailer") ||
+    !movie.episodes?.some((server) => server.server_data?.length > 0)
+  ));
 
   // States tương tác
   const isFavorite = user?.favorites?.includes(movie?.slug || "") || false;
@@ -95,17 +106,23 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
 
   // 1. Fetch thông tin phim từ OPhim API hoặc Custom API
   useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+
     async function fetchMovieDetail() {
       try {
         setLoading(true);
         setError(null);
+        setMovie(null);
+        setTmdbImages(null);
+        setTmdbCredits([]);
         setSelectedEpisodeBatch(0); // Reset episode batch on movie change
 
         const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
         // a. Kiểm tra xem phim có bị Block (Ẩn) hay không
         try {
-          const blockRes = await fetch(`${API_URL}/movies/check-blocked/${slug}`);
+          const blockRes = await fetch(`${API_URL}/movies/check-blocked/${slug}`, { signal: controller.signal });
           if (blockRes.ok) {
             const blockData = await blockRes.json();
             if (blockData.isBlocked) {
@@ -119,26 +136,42 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
           // Lỗi mạng hoặc server chặn không cản trở việc load tiếp
           console.error("Lỗi kiểm tra chặn phim:", blockErr);
         }
-        // b. Tải phim từ API chính thức
+        // b. Phim chưa công chiếu do TMDB quản lý riêng, không ép qua API tập phim.
         let ophimDetail: any = null;
-        try {
-          const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${slug}`));
-          if (res.ok) {
-            const data = await res.json();
-            if (data.status === true || data.status === "success") {
-              ophimDetail = {
-                ...(data.movie || data.data?.item),
-                episodes: data.episodes || data.data?.item?.episodes || []
-              };
+        const tmdbUpcomingMatch = slug.match(/^tmdb-(\d+)(?:-|$)/);
+        if (tmdbUpcomingMatch) {
+          const upcomingRes = await fetch(`${API_URL}/movies/upcoming/${tmdbUpcomingMatch[1]}`, { signal: controller.signal });
+          if (upcomingRes.ok) {
+            const upcomingData = await upcomingRes.json();
+            if (upcomingData.redirectSlug && upcomingData.redirectSlug !== slug) {
+              router.replace(`/movie/${upcomingData.redirectSlug}`);
+              return;
             }
+            ophimDetail = {
+              ...(upcomingData.movie || upcomingData.data?.item),
+              episodes: upcomingData.episodes || upcomingData.movie?.episodes || [],
+            };
           }
-        } catch (e) {
-          console.warn("Lỗi tải từ API chính thức, thử chi tiết v1...");
+        } else {
+          try {
+            const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${slug}`), { signal: controller.signal });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.status === true || data.status === "success") {
+                ophimDetail = {
+                  ...(data.movie || data.data?.item),
+                  episodes: data.episodes || data.data?.item?.episodes || []
+                };
+              }
+            }
+          } catch (e) {
+            console.warn("Lỗi tải từ API chính thức, thử chi tiết v1...");
+          }
         }
 
         if (!ophimDetail) {
           try {
-            const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${slug}`));
+            const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${slug}`), { signal: controller.signal });
             if (res.ok) {
               const data = await res.json();
               if (data.status === true || data.status === "success") {
@@ -152,7 +185,24 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
           }
         }
 
+        // c. Slug lấy từ danh sách OPhim có thể chưa tồn tại trên nguồn mặc định PhimAPI.
+        if (!ophimDetail) {
+          try {
+            const res = await fetch(getProxyUrl(`/v1/api/phim/${slug}`, "ophim"), { signal: controller.signal });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.status === true || data.status === "success") {
+                const item = data.movie || data.data?.item;
+                ophimDetail = { ...item, episodes: data.episodes || item?.episodes || [] };
+              }
+            }
+          } catch {
+            console.warn("Không tìm thấy phim trên OPhim, thử kho phim tự đăng...");
+          }
+        }
+
         if (ophimDetail) {
+          if (cancelled) return;
           setMovie(ophimDetail);
 
           // Cào thêm ảnh nét từ TMDB cho phim chi tiết
@@ -161,11 +211,15 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
           if (tmdbId || ophimDetail.name) {
             (async () => {
               try {
-                const proxyRes = await fetch(
-                  `${API_URL}/movies/logo/${slug}?title=${encodeURIComponent(ophimDetail.origin_name || ophimDetail.name)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`
-                );
-                if (proxyRes.ok) {
-                  const proxyData = await proxyRes.json();
+                const title = encodeURIComponent(ophimDetail.origin_name || ophimDetail.name);
+                const [imagesResult, creditsResult] = await Promise.allSettled([
+                  fetch(`${API_URL}/movies/logo/${slug}?title=${title}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`, { signal: controller.signal }),
+                  fetch(`${API_URL}/movies/credits/${slug}?title=${title}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`, { signal: controller.signal }),
+                ]);
+
+                if (cancelled) return;
+                if (imagesResult.status === "fulfilled" && imagesResult.value.ok) {
+                  const proxyData = await imagesResult.value.json();
                   const images: { backdrop?: string; poster?: string } = {};
                   if (proxyData.backdropUrl) {
                     images.backdrop = proxyData.backdropUrl;
@@ -176,12 +230,9 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                   setTmdbImages(images);
                 }
 
-                // Cào thêm danh sách Diễn viên & Hình ảnh chân thực từ TMDB
-                const creditsRes = await fetch(
-                  `${API_URL}/movies/credits/${slug}?title=${encodeURIComponent(ophimDetail.origin_name || ophimDetail.name)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`
-                );
-                if (creditsRes.ok) {
-                  const creditsData = await creditsRes.json();
+                if (creditsResult.status === "fulfilled" && creditsResult.value.ok) {
+                  const creditsData = await creditsResult.value.json();
+                  if (cancelled) return;
                   setTmdbCredits(creditsData);
                 }
               } catch (e) {
@@ -191,7 +242,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
           }
         } else {
           // d. Nếu OPhim không có, thử tìm trong Custom Movies của hệ thống
-          const customRes = await fetch(`${API_URL}/movies/custom/${slug}`);
+          const customRes = await fetch(`${API_URL}/movies/custom/${slug}`, { signal: controller.signal });
           if (!customRes.ok) {
             throw new Error("Không tìm thấy thông tin phim.");
           }
@@ -229,18 +280,23 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
               }
             ]
           };
-          setMovie(adaptedMovie);
+          if (!cancelled) setMovie(adaptedMovie);
         }
       } catch (err: any) {
+        if (err?.name === "AbortError" || cancelled) return;
         console.error("Lỗi lấy chi tiết phim:", err);
         setError(err.message || "Đã xảy ra lỗi ngoài ý muốn.");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
     fetchMovieDetail();
-  }, [slug]);
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [router, slug]);
 
   // Fetch điểm đánh giá trung bình của phim
   useEffect(() => {
@@ -261,6 +317,24 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
     }
     fetchAverageRating();
   }, [slug]);
+
+  useEffect(() => {
+    const tmdbId = movie?.tmdb?.id;
+    const token = Cookies.get("token");
+    if (!user || !token || !tmdbId || !isUpcomingMovie) {
+      setReminderActive(false);
+      return;
+    }
+    const controller = new AbortController();
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}/movies/upcoming/${tmdbId}/reminder`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => data && setReminderActive(Boolean(data.active)))
+      .catch((error) => error?.name !== "AbortError" && console.error("Lỗi tải trạng thái nhắc phim:", error));
+    return () => controller.abort();
+  }, [isUpcomingMovie, movie?.tmdb?.id, user]);
 
   // Tự động cuộn xuống khu vực bình luận nếu URL chứa hash #movie-comments
   useEffect(() => {
@@ -286,12 +360,13 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
   // 2. Fetch phim liên quan dựa trên thể loại đầu tiên của phim hiện tại
   useEffect(() => {
     if (!movie || !movie.category || movie.category.length === 0) return;
+    const controller = new AbortController();
 
     async function fetchRelated() {
       try {
         setLoadingRelated(true);
         const genreSlug = movie!.category[0].slug;
-        const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/the-loai/${genreSlug}?page=1`));
+        const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/the-loai/${genreSlug}?page=1`), { signal: controller.signal });
         const data = await res.json();
 
         if (data.status === true || data.status === "success") {
@@ -300,27 +375,28 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
           const filtered = items.filter((item: any) => item.slug !== movie!.slug).slice(0, 6);
           setRelatedMovies(filtered);
         }
-      } catch (err) {
+      } catch (err: any) {
+        if (err?.name === "AbortError") return;
         console.error("Lỗi lấy phim liên quan:", err);
       } finally {
         setLoadingRelated(false);
       }
     }
 
-    fetchRelated();
+    const timer = window.setTimeout(fetchRelated, 700);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [movie]);
 
 
 
-  // Sinh điểm IMDb giả lập
-  const getImdbScore = () => {
-    if (!movie?.name) return "8.5";
-    const score = (movie.name.length % 3) * 0.4 + 8.1;
-    return score.toFixed(1);
-  };
+  const movieScore = Number(movie?.tmdb?.vote_average || movie?.imdb?.vote_average || averageRating || 0);
+  const movieAgeRating = movie?.age_rating || movie?.rating || "";
 
   // Chuyển đổi YouTube URL thành định dạng nhúng
-  const getYoutubeEmbedUrl = (url?: string, fallbackQuery?: string) => {
+  const getYoutubeEmbedUrl = (url?: string) => {
     if (url && url.trim()) {
       let videoId = "";
       if (url.includes("v=")) {
@@ -331,9 +407,6 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
         return url;
       }
       if (videoId) return `https://www.youtube.com/embed/${videoId}`;
-    }
-    if (fallbackQuery && fallbackQuery.trim()) {
-      return `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(fallbackQuery + " trailer")}`;
     }
     return "";
   };
@@ -376,6 +449,38 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
     router.push(`/watch/${movie.slug}?ep=${encodeURIComponent(firstEp.name)}`);
   };
 
+  const handleToggleReminder = async () => {
+    if (!movie?.tmdb?.id) return;
+    if (!user) {
+      showAuthToast();
+      return;
+    }
+    const token = Cookies.get("token");
+    if (!token || reminderLoading) return;
+    setReminderLoading(true);
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}/movies/upcoming/${movie.tmdb.id}/reminder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          slug: movie.slug,
+          movieName: movie.name,
+          originName: movie.origin_name,
+          releaseDate: movie.release_date,
+          year: movie.year,
+        }),
+      });
+      if (!response.ok) throw new Error("Không thể cập nhật lời nhắc");
+      const data = await response.json();
+      setReminderActive(Boolean(data.active));
+      showToast(data.active ? "Đã bật nhắc lịch công chiếu" : "Đã tắt lời nhắc", "success");
+    } catch {
+      showToast("Chưa thể cập nhật lời nhắc, bạn thử lại nhé", "error");
+    } finally {
+      setReminderLoading(false);
+    }
+  };
+
   // Chuyển hướng khi click vào tập phim cụ thể
   const handleWatchEpisode = (episodeName: string) => {
     if (!movie) return;
@@ -416,7 +521,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
 
   // Nhận diện trạng thái phim chưa ra mắt (Trailer Only)
   const hasNoEpisodes = !movie.episodes || movie.episodes.length === 0 || movie.episodes[0]?.server_data?.length === 0;
-  const isTrailerOnly = movie.status === "trailer" || movie.episode_current?.toLowerCase().includes("trailer") || hasNoEpisodes;
+  const isTrailerOnly = isUpcomingMovie || hasNoEpisodes;
 
   return (
     <div className="w-full flex-grow flex flex-col bg-[#07070a] text-white pb-16 relative overflow-hidden">
@@ -455,7 +560,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                     }}
                     className="flex items-center gap-2 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-extrabold text-xs md:text-sm px-6 py-3 rounded-full transition-all duration-300 hover:scale-105 hover:shadow-[0_0_25px_rgba(236,72,153,0.7)] active:scale-95 cursor-pointer shadow-lg shadow-pink-500/25"
                   >
-                    <Play size={14} className="fill-white" /> Xem Trailer
+                    <Play size={14} className="fill-white" /> {movie.trailer_url ? "Xem Trailer" : "Xem thông tin"}
                   </button>
                 ) : (
                   <button
@@ -474,6 +579,17 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
                   <Heart size={18} className={isFavorite ? "fill-pink-500 text-pink-500 drop-shadow-[0_0_8px_rgba(236,72,153,0.9)]" : ""} />
                   <span>Yêu thích</span>
                 </button>
+
+                {isTrailerOnly && movie.tmdb?.id && (
+                  <button
+                    onClick={handleToggleReminder}
+                    disabled={reminderLoading}
+                    className={`flex flex-col items-center gap-1 text-[10px] md:text-[11px] font-bold transition-colors cursor-pointer select-none disabled:opacity-50 ${reminderActive ? "text-amber-400" : "text-zinc-400 hover:text-white"}`}
+                  >
+                    <BellRing size={18} className={reminderActive ? "fill-amber-400/20" : ""} />
+                    <span>{reminderActive ? "Đã nhắc" : "Nhắc tôi"}</span>
+                  </button>
+                )}
 
                 <div className="relative">
                   <button
@@ -658,12 +774,16 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
 
           {/* Badges thông số bên dưới Tiêu đề */}
           <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-400 font-extrabold select-none justify-center lg:justify-start">
-            <span className="bg-amber-400 text-black border border-amber-400 font-black px-2 py-0.5 rounded flex items-center gap-0.5 shadow-sm">
-              IMDb {getImdbScore()}
-            </span>
-            <span className="border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 rounded">
-              T16
-            </span>
+            {movieScore > 0 && (
+              <span className="bg-amber-400 text-black border border-amber-400 font-black px-2 py-0.5 rounded flex items-center gap-0.5 shadow-sm">
+                {movie?.tmdb?.vote_average ? "TMDB" : "Đánh giá"} {movieScore.toFixed(1)}
+              </span>
+            )}
+            {movieAgeRating && (
+              <span className="border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 rounded">
+                {movieAgeRating}
+              </span>
+            )}
             <span className="border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 rounded">
               {movie.year}
             </span>
@@ -683,6 +803,7 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
             movieStatus={movie.status}
             episodeCurrent={movie.episode_current}
             episodeTotal={movie.episode_total}
+            releaseDate={movie.release_date}
             tmdbId={movie.tmdb?.id}
             tmdbType={movie.tmdb?.type}
             delayMs={300}
@@ -780,18 +901,26 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
               {isTrailerOnly ? (
                 <div className="space-y-4">
                   <h3 className="text-base font-bold uppercase tracking-tight flex items-center gap-2">
-                    <Film size={16} className="text-pink-500" /> Trailer phim chính thức
+                    <Film size={16} className="text-pink-500" /> {movie.trailer_url ? "Trailer phim chính thức" : "Thông tin phát hành"}
                   </h3>
-                  <div className="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl bg-black border border-zinc-800">
-                    <iframe
-                      src={getYoutubeEmbedUrl(movie.trailer_url, cleanedName)}
-                      frameBorder="0"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                      className="w-full h-full"
-                      title={`${cleanedName} - Trailer`}
-                    />
-                  </div>
+                  {movie.trailer_url ? (
+                    <div className="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl bg-black border border-zinc-800">
+                      <iframe
+                        src={getYoutubeEmbedUrl(movie.trailer_url)}
+                        frameBorder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                        className="w-full h-full"
+                        title={`${cleanedName} - Trailer`}
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex min-h-48 flex-col items-center justify-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/70 px-6 text-center">
+                      <Film size={28} className="text-zinc-600" />
+                      <p className="text-sm font-black text-zinc-300">Trailer chính thức chưa được phát hành</p>
+                      <p className="max-w-lg text-xs leading-5 text-zinc-500">DlowPhim sẽ tự cập nhật trailer và nút xem ngay khi nguồn phim có dữ liệu.</p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-4">

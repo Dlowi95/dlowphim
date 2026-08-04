@@ -9,6 +9,7 @@ import { MovieOverride, MovieOverrideSchema } from './schemas/movie-override.sch
 import { User, UserSchema } from '../auth/schemas/user.schema';
 import { AuthModule } from '../auth/auth.module';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
     ]),
     AuthModule,
     SystemSettingsModule,
+    NotificationsModule,
   ],
   controllers: [MoviesController],
   providers: [MoviesService],

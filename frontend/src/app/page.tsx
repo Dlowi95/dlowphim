@@ -329,22 +329,6 @@ export default function HomePage() {
     return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
   };
 
-  // Tính tuổi phân loại tượng trưng dựa trên thể loại để giao diện sinh động
-  const getAgeRating = () => {
-    if (!heroDetail?.category) return "P";
-    const hasAdultGenre = heroDetail.category.some((c: any) =>
-      ["kinh-di", "hinh-su", "tam-ly", "hanh-dong", "chien-tranh"].includes(c.slug)
-    );
-    return hasAdultGenre ? "T16" : "P";
-  };
-
-  // Sinh điểm IMDb giả lập cao cấp dựa trên thông tin phim (tạo độ uy tín)
-  const getImdbScore = () => {
-    if (!heroDetail?.name) return "8.8";
-    const base = (heroDetail.name.length % 3) * 0.4 + 8.2;
-    return base.toFixed(1);
-  };
-
   const handleHeroFavoriteToggle = async () => {
     const movieObj = heroCandidates[activeHeroIndex];
     if (!movieObj) return;
@@ -353,6 +337,8 @@ export default function HomePage() {
 
   const activeMovie = heroCandidates[activeHeroIndex];
   const heroDetail = activeMovie ? detailsCache[activeMovie.slug] : null;
+  const heroScore = Number(heroDetail?.tmdb?.vote_average || heroDetail?.imdb?.vote_average || 0);
+  const heroAgeRating = heroDetail?.age_rating || heroDetail?.rating || "";
   const logoUrl = activeMovie ? logoCache[activeMovie.slug] : null;
   const loadingDetail = activeMovie && !heroDetail;
   const titleStyle = getMovieTitleStyle(heroDetail || activeMovie);
@@ -456,12 +442,16 @@ export default function HomePage() {
 
             {/* Hàng nhãn phân loại (IMDb, Tuổi, Năm, Tập, Thời lượng) */}
             <div className="flex flex-wrap items-center gap-2.5 text-xs text-zinc-300 font-bold select-none">
-              <span className="bg-amber-400 text-black border border-amber-400 font-black px-2 py-0.5 rounded text-[11px] flex items-center gap-0.5 shadow-sm">
-                IMDb {getImdbScore()}
-              </span>
-              <span className="border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 rounded text-zinc-400">
-                {getAgeRating()}
-              </span>
+              {heroScore > 0 && (
+                <span className="bg-amber-400 text-black border border-amber-400 font-black px-2 py-0.5 rounded text-[11px] flex items-center gap-0.5 shadow-sm">
+                  TMDB {heroScore.toFixed(1)}
+                </span>
+              )}
+              {heroAgeRating && (
+                <span className="border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 rounded text-zinc-400">
+                  {heroAgeRating}
+                </span>
+              )}
               <span className="border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 rounded">
                 {activeMovie.year}
               </span>
@@ -508,7 +498,7 @@ export default function HomePage() {
             <div className="flex items-center gap-3.5 pt-3">
               {/* Nút Play to lớn màu Hồng */}
               <button
-                onClick={() => router.push(`/movie/${activeMovie.slug}`)}
+                onClick={() => router.push(`/watch/${activeMovie.slug}`)}
                 className="w-14 h-14 rounded-full bg-pink-500 hover:bg-pink-600 flex items-center justify-center shadow-lg shadow-pink-500/25 hover:scale-110 active:scale-95 transition-all duration-300 group"
               >
                 <Play className="text-white fill-white ml-1 group-hover:scale-105 transition-transform" size={22} />

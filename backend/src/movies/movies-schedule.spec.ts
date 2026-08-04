@@ -55,6 +55,7 @@ describe('MoviesService release schedule', () => {
       json: async () => ({
         id: 123,
         status: 'Returning Series',
+        first_air_date: '2026-01-10',
         next_episode_to_air: {
           episode_number: 9,
           season_number: 1,
@@ -74,6 +75,7 @@ describe('MoviesService release schedule', () => {
     expect(result).toEqual(expect.objectContaining({
       state: 'airing',
       source: 'tmdb',
+      releaseDate: '2026-01-10',
       nextEpisode: expect.objectContaining({ episodeNumber: 9, airDate: '2026-08-08' }),
     }));
     expect(movieLogoModel.findOneAndUpdate).toHaveBeenCalledWith(
@@ -95,5 +97,23 @@ describe('MoviesService release schedule', () => {
     });
 
     expect(result).toEqual(expect.objectContaining({ state: 'completed', source: 'provider' }));
+  });
+
+  it('keeps a movie upcoming when its regional release date is still in the future', async () => {
+    const { service } = createService({
+      tmdbStatus: 'Released',
+      tmdbType: 'movie',
+      releaseDate: '2099-12-31',
+      scheduleUpdatedAt: new Date(),
+    });
+
+    const result = await service.getMovieSchedule({
+      slug: 'future-movie',
+      movieType: 'single',
+      movieStatus: 'trailer',
+      episodeCurrent: 'Trailer',
+    });
+
+    expect(result).toEqual(expect.objectContaining({ state: 'upcoming', releaseDate: '2099-12-31' }));
   });
 });

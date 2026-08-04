@@ -11,6 +11,7 @@ interface MovieReleaseStatusProps {
   movieStatus?: string;
   episodeCurrent?: string;
   episodeTotal?: string;
+  releaseDate?: string;
   tmdbId?: string | number;
   tmdbType?: string;
   compact?: boolean;
@@ -26,6 +27,7 @@ interface ScheduleData {
     name?: string;
     airDate?: string;
   };
+  releaseDate?: string;
 }
 
 function formatAirDate(value = "") {
@@ -48,6 +50,7 @@ export default function MovieReleaseStatus({
   movieStatus = "",
   episodeCurrent = "",
   episodeTotal = "",
+  releaseDate = "",
   tmdbId,
   tmdbType,
   compact = false,
@@ -66,6 +69,7 @@ export default function MovieReleaseStatus({
         movieStatus,
         episodeCurrent,
         episodeTotal,
+        releaseDate,
         tmdbType: tmdbType || (movieType === "series" ? "tv" : "movie"),
       });
       if (tmdbId) params.set("tmdbId", String(tmdbId));
@@ -82,12 +86,13 @@ export default function MovieReleaseStatus({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [API_URL, delayMs, episodeCurrent, episodeTotal, movieStatus, movieType, originTitle, slug, title, tmdbId, tmdbType]);
+  }, [API_URL, delayMs, episodeCurrent, episodeTotal, movieStatus, movieType, originTitle, releaseDate, slug, title, tmdbId, tmdbType]);
 
   const presentation = useMemo(() => {
     if (!schedule) return null;
     const next = schedule.nextEpisode;
     const airDate = formatAirDate(next?.airDate);
+    const releaseDate = formatAirDate(schedule.releaseDate);
     if (next && airDate) {
       return {
         icon: CalendarDays,
@@ -110,8 +115,8 @@ export default function MovieReleaseStatus({
       return {
         icon: Clock3,
         label: "Sắp phát hành",
-        title: "Đang chờ lịch công chiếu",
-        detail: "Chưa có ngày phát chính xác",
+        title: releaseDate ? `Công chiếu ${releaseDate}` : "Đang chờ lịch công chiếu",
+        detail: releaseDate ? "Ngày phát hành do TMDB cung cấp" : "Chưa có ngày phát chính xác",
         tone: "border-amber-500/20 bg-amber-500/[0.07] text-amber-400",
       };
     }

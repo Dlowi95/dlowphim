@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Query, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { MoviesService } from './movies.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -61,6 +62,7 @@ export class MoviesController {
     @Query('movieStatus') movieStatus?: string,
     @Query('episodeCurrent') episodeCurrent?: string,
     @Query('episodeTotal') episodeTotal?: string,
+    @Query('releaseDate') releaseDate?: string,
   ) {
     return this.moviesService.getMovieSchedule({
       slug,
@@ -72,7 +74,37 @@ export class MoviesController {
       movieStatus,
       episodeCurrent,
       episodeTotal,
+      releaseDate,
     });
+  }
+
+  @Get('upcoming')
+  async getUpcomingMovies(@Query('page') page = '1') {
+    return this.moviesService.getUpcomingMovies(Math.max(1, Number(page) || 1));
+  }
+
+  @Get('upcoming/:tmdbId')
+  async getUpcomingMovieDetail(@Param('tmdbId') tmdbId: string) {
+    return this.moviesService.getUpcomingMovieDetail(tmdbId);
+  }
+
+  @Get('upcoming/:tmdbId/reminder')
+  @UseGuards(AuthGuard)
+  async getUpcomingReminder(
+    @Req() request: Request,
+    @Param('tmdbId') tmdbId: string,
+  ) {
+    return this.moviesService.getUpcomingReminderStatus(request['user'].sub, tmdbId);
+  }
+
+  @Post('upcoming/:tmdbId/reminder')
+  @UseGuards(AuthGuard)
+  async toggleUpcomingReminder(
+    @Req() request: Request,
+    @Param('tmdbId') tmdbId: string,
+    @Body() body: { slug?: string; movieName?: string; originName?: string; releaseDate?: string; year?: number },
+  ) {
+    return this.moviesService.toggleUpcomingReminder(request['user'].sub, tmdbId, body);
   }
 
   @Get('ophim-proxy')

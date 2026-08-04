@@ -28,6 +28,7 @@ function SearchContent() {
     async function fetchSearchData() {
       try {
         setLoading(true);
+        const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
         let url = "";
         let sourcePreference: MovieSourcePreference = "active";
         
@@ -43,8 +44,7 @@ function SearchContent() {
           url = `${MOVIE_API_DOMAIN}/v1/api/quoc-gia/${country}?page=${pageUrl}`;
         } else if (type) {
           if (type === "phim-sap-chieu") {
-            url = `/v1/api/danh-sach/phim-sap-chieu?page=${pageUrl}`;
-            sourcePreference = "ophim";
+            url = `${API_URL}/movies/upcoming?page=${pageUrl}`;
           } else {
             url = `${MOVIE_API_DOMAIN}/v1/api/danh-sach/${type}?page=${pageUrl}`;
           }
@@ -70,11 +70,12 @@ function SearchContent() {
             data = searchResult.data;
             fetchSuccess = searchResult.items.length > 0;
           } else {
-            const res = await fetch(getProxyUrl(url, sourcePreference), { signal: controller.signal });
+            const requestUrl = type === "phim-sap-chieu" ? url : getProxyUrl(url, sourcePreference);
+            const res = await fetch(requestUrl, { signal: controller.signal });
             if (res.ok) {
               data = await res.json();
               if (data.status === "success" || data.status === true) {
-                const items = data.data?.items || data.items || [];
+                const items = data.items || data.data?.items || [];
                 if (items.length > 0) {
                   fetchSuccess = true;
                 }
@@ -86,7 +87,7 @@ function SearchContent() {
         clearTimeout(timeoutId);
 
         if (fetchSuccess && data) {
-          const items = data.data?.items || data.items || [];
+          const items = data.items || data.data?.items || [];
           
           // Deduplicate based on base slug to avoid showing duplicate seasons/parts of the same series
           const seen = new Set<string>();
@@ -106,6 +107,8 @@ function SearchContent() {
             const total = pagination.totalItems;
             const perPage = pagination.totalItemsPerPage;
             setTotalPages(Math.ceil(total / perPage) || 1);
+          } else if (data.totalPages) {
+            setTotalPages(Number(data.totalPages) || 1);
           } else {
             setTotalPages(1);
           }

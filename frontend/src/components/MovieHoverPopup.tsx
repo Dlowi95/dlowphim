@@ -208,7 +208,7 @@ export default function MovieHoverPopup({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                router.push(`/movie/${movie.slug}`);
+                router.push(`/watch/${movie.slug}`);
               }}
               className="flex-1 h-11 rounded-xl bg-pink-500/10 border border-pink-500/30 hover:bg-pink-500/20 active:scale-95 text-pink-500 font-extrabold text-sm flex items-center justify-center gap-1.5 shadow-md shadow-pink-500/5 cursor-pointer transition-all duration-200"
             >

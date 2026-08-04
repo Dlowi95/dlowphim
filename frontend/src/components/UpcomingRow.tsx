@@ -3,9 +3,9 @@
 import React, { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronRight } from "lucide-react";
+import { CalendarDays, ChevronRight, RefreshCw } from "lucide-react";
 import { cleanMovieName, cleanSlug, getImageUrl } from "@/utils/movieUtils";
-import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
+import ProgressiveImage from "@/components/ProgressiveImage";
 
 interface Movie {
   _id: string;
@@ -14,11 +14,15 @@ interface Movie {
   origin_name: string;
   poster_url?: string;
   thumb_url?: string;
+  release_date?: string;
+  year?: number;
 }
 
 export default function UpcomingRow() {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const router = useRouter();
 
   // Drag-to-scroll state refs
@@ -30,39 +34,73 @@ export default function UpcomingRow() {
   const scrollLeftRef = useRef(0);
 
   useEffect(() => {
-    async function fetchUpcoming() {
-      try {
-        setLoading(true);
-        let items: any[] = [];
-        
-        try {
-          // Luôn fetch từ OPhim đối với danh mục sắp chiếu vì PhimAPI không hỗ trợ danh mục này
-          const res = await fetch(
-            getProxyUrl(`/v1/api/danh-sach/phim-sap-chieu?page=1`, "ophim")
-          );
-          if (res.ok) {
-            const data = await res.json();
-            items = data.data?.items || data.items || [];
-          }
-        } catch (e) {}
+    let disposed = false;
+    let activeController: AbortController | null = null;
+    const cacheKey = "dlowphim_upcoming_v1";
+    let hasCachedMovies = false;
 
-        const seen = new Set<string>();
-        const uniqueItems = items.filter((item: any) => {
-          const baseSlug = cleanSlug(item.slug);
-          if (seen.has(baseSlug)) return false;
-          seen.add(baseSlug);
-          return true;
-        });
-        setMovies(uniqueItems.slice(0, 10));
-      } catch (err) {
-        console.error("Lỗi lấy danh sách phim đề xuất:", err);
-      } finally {
+    try {
+      const cached = JSON.parse(sessionStorage.getItem(cacheKey) || "null");
+      if (cached?.savedAt > Date.now() - 6 * 60 * 60 * 1000 && Array.isArray(cached.items) && cached.items.length > 0) {
+        hasCachedMovies = true;
+        setMovies(cached.items);
         setLoading(false);
+      }
+    } catch {
+      sessionStorage.removeItem(cacheKey);
+    }
+
+    async function fetchUpcoming() {
+      if (!hasCachedMovies) setLoading(true);
+      setLoadError(false);
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      let lastError: unknown = null;
+
+      for (let attempt = 0; attempt < 3 && !disposed; attempt += 1) {
+        activeController = new AbortController();
+        const timeout = window.setTimeout(() => activeController?.abort(), 8000 + attempt * 2000);
+        try {
+          const res = await fetch(`${API_URL}/movies/upcoming?page=1`, { signal: activeController.signal });
+          if (!res.ok) throw new Error(`Upcoming API ${res.status}`);
+          const data = await res.json();
+          const seen = new Set<string>();
+          const uniqueItems = (data.items || []).filter((item: any) => {
+            const baseSlug = cleanSlug(item.slug);
+            if (seen.has(baseSlug)) return false;
+            seen.add(baseSlug);
+            return true;
+          }).slice(0, 10);
+          if (uniqueItems.length === 0) throw new Error("Upcoming API không có dữ liệu");
+          if (!disposed) {
+            setMovies(uniqueItems);
+            sessionStorage.setItem(cacheKey, JSON.stringify({ savedAt: Date.now(), items: uniqueItems }));
+            setLoadError(false);
+          }
+          return;
+        } catch (error: any) {
+          lastError = error;
+          if (disposed) return;
+          if (attempt < 2) await new Promise((resolve) => window.setTimeout(resolve, 700 * (attempt + 1)));
+        } finally {
+          window.clearTimeout(timeout);
+        }
+      }
+
+      if (!disposed && !hasCachedMovies) {
+        console.error("Lỗi lấy danh sách phim sắp chiếu:", lastError);
+        setMovies([]);
+        setLoadError(true);
       }
     }
 
-    fetchUpcoming();
-  }, []);
+    void fetchUpcoming().finally(() => {
+      if (!disposed) setLoading(false);
+    });
+    return () => {
+      disposed = true;
+      activeController?.abort();
+    };
+  }, [reloadKey]);
 
   // Mouse Drag-to-scroll Handlers
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -97,18 +135,6 @@ export default function UpcomingRow() {
     }, 50);
   };
 
-  const handleCardClick = (slug: string) => {
-    if (wasDraggingRef.current) {
-      return; // Block click action if dragging occurred
-    }
-    router.push(`/movie/${slug}`);
-  };
-
-  const getUpcomingImageUrl = (movieObj: Movie) => {
-    const path = movieObj.poster_url || movieObj.thumb_url;
-    return getImageUrl(path);
-  };
-
   if (loading) {
     return (
       <div className="container mx-auto px-6 mt-12 max-w-7xl select-none text-left">
@@ -125,7 +151,7 @@ export default function UpcomingRow() {
     );
   }
 
-  if (movies.length === 0) return null;
+  if (movies.length === 0 && !loadError) return null;
 
   return (
     <div className="container mx-auto px-6 mt-12 max-w-7xl select-none text-left">
@@ -149,7 +175,17 @@ export default function UpcomingRow() {
         </div>
       </div>
 
-      {/* Drag-to-scroll Horizontal Row container */}
+      {loadError ? (
+        <div className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-2xl border border-zinc-800/70 bg-zinc-950/60 text-center">
+          <p className="text-sm font-bold text-zinc-400">Chưa tải được lịch phim sắp chiếu</p>
+          <button
+            onClick={() => setReloadKey((value) => value + 1)}
+            className="flex items-center gap-2 rounded-xl border border-pink-500/30 bg-pink-500/10 px-4 py-2 text-xs font-black text-pink-400 hover:bg-pink-500/20"
+          >
+            <RefreshCw size={14} /> Thử lại
+          </button>
+        </div>
+      ) : (
       <div
         ref={scrollContainerRef}
         onMouseDown={handleMouseDown}
@@ -173,6 +209,7 @@ export default function UpcomingRow() {
           />
         ))}
       </div>
+      )}
     </div>
   );
 }
@@ -225,6 +262,21 @@ function UpcomingMovieCard({ movie, wasDraggingRef, router }: { movie: Movie; wa
     router.push(`/movie/${movie.slug}`);
   };
 
+  const releaseDate = movie.release_date ? new Date(`${movie.release_date}T00:00:00+07:00`) : null;
+  const releaseDays = releaseDate ? Math.ceil((releaseDate.getTime() - Date.now()) / 86_400_000) : null;
+  const formattedReleaseDate = releaseDate
+    ? releaseDate.toLocaleDateString("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      })
+    : "";
+  const releaseLabel = releaseDays === 0
+    ? "Khởi chiếu hôm nay"
+    : releaseDays !== null && releaseDays > 0
+      ? `Còn ${releaseDays} ngày • ${formattedReleaseDate}`
+      : formattedReleaseDate || (movie.year ? `Dự kiến ${movie.year}` : "Đang cập nhật");
+
   return (
     <div
       onClick={handleCardClick}
@@ -237,17 +289,15 @@ function UpcomingMovieCard({ movie, wasDraggingRef, router }: { movie: Movie; wa
           maskImage: "radial-gradient(white, black)"
         }}
       >
-        <img
+        <ProgressiveImage
           src={imgSrc}
           alt={cleanedName}
           onError={handleImgError}
           referrerPolicy="no-referrer"
           className="w-full h-full object-cover rounded-2xl transition-transform duration-500 group-hover/upcoming:scale-105"
-          loading="lazy"
-          decoding="async"
         />
-        <div className="absolute bottom-3 left-3 bg-white text-zinc-900 text-[10px] font-extrabold px-2 py-0.5 rounded uppercase tracking-wider shadow-md">
-          Sắp Chiếu
+        <div className="absolute bottom-3 left-3 flex items-center gap-1.5 rounded bg-amber-400 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider text-zinc-950 shadow-md">
+          <CalendarDays size={11} /> {releaseLabel}
         </div>
       </div>
       <div className="px-1 text-left">

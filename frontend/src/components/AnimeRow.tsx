@@ -561,7 +561,7 @@ export default function AnimeRow() {
             <div className="flex items-center gap-4 mt-6">
               {/* Pink Play Button */}
               <button
-                onClick={() => router.push(`/movie/${activeMovie.slug}`)}
+                onClick={() => router.push(`/watch/${activeMovie.slug}`)}
                 className="bg-pink-500 hover:bg-pink-600 text-white rounded-full w-12 h-12 md:w-14 md:h-14 flex items-center justify-center transition-all duration-300 shadow-[0_4px_20px_rgba(236,72,153,0.45)] hover:scale-105 active:scale-95 cursor-pointer shrink-0"
               >
                 <Play size={20} className="fill-white ml-0.5" />

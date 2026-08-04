@@ -59,6 +59,20 @@ export class User {
   @Prop({ type: [Object], default: [] })
   playlists: { id: string; name: string; movies: string[] }[];
 
+  @Prop({ type: [Object], default: [] })
+  upcomingReminders: {
+    tmdbId: string;
+    slug: string;
+    movieName: string;
+    originName?: string;
+    releaseDate?: string;
+    year?: number;
+    createdAt: Date;
+    releaseNotifiedAt?: Date;
+    availableNotifiedAt?: Date;
+    resolvedSlug?: string;
+  }[];
+
   @Prop({ default: 'member' })
   role: string;
 
