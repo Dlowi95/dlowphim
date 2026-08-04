@@ -8,6 +8,29 @@ import * as bcrypt from 'bcrypt';
 import { User, UserDocument } from './schemas/user.schema';
 import { UserNotification, UserNotificationDocument } from '../notifications/schemas/user-notification.schema';
 
+function normalizeEpisodeKey(name = ''): string {
+  const normalized = String(name)
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
+  if (!normalized) return '';
+  if (/\b(full|tron bo|complete)\b/.test(normalized)) return 'full';
+  const numberTokens = normalized.match(/\d+(?:\.\d+)?/g);
+  if (numberTokens?.length) {
+    return numberTokens
+      .map((token) => {
+        const value = Number(token);
+        return Number.isFinite(value) ? String(value) : token;
+      })
+      .join('-');
+  }
+  return normalized
+    .replace(/\b(tap|episode|ep)\b/g, '')
+    .replace(/[^a-z0-9]+/g, '') || normalized.replace(/\s+/g, '-');
+}
+
 @Injectable()
 export class AuthService {
   private googleClient: OAuth2Client;
@@ -289,12 +312,14 @@ export class AuthService {
       movieSlug: historyItem.movieSlug,
       movieName: historyItem.movieName,
       episodeName: historyItem.episodeName,
+      episodeKey: normalizeEpisodeKey(historyItem.episodeName),
       currentTime: historyItem.currentTime,
       duration: historyItem.duration,
+      progressMode: historyItem.progressMode === 'embed' ? 'embed' : 'exact',
       updatedAt: new Date(),
     };
 
-    // Atomic pull existing entry for this movieSlug to avoid duplicates
+    // Keep only the latest episode and resume point for each movie.
     await this.userModel.updateOne(
       { _id: userId },
       { $pull: { watchHistory: { movieSlug: historyItem.movieSlug } } }
@@ -341,8 +366,10 @@ export class AuthService {
           movieSlug: item.movieSlug,
           movieName: item.movieName,
           episodeName: item.episodeName,
+          episodeKey: normalizeEpisodeKey(item.episodeName),
           currentTime: item.currentTime,
           duration: item.duration,
+          progressMode: item.progressMode === 'embed' ? 'embed' : 'exact',
           updatedAt: item.updatedAt ? new Date(item.updatedAt) : new Date(),
         });
       }

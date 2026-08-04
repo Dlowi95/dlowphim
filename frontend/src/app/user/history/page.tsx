@@ -9,13 +9,16 @@ import Link from "next/link";
 import Pagination from "@/components/Pagination";
 import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
+import ProgressiveImage from "@/components/ProgressiveImage";
 
 interface HistoryItem {
   movieSlug: string;
   movieName: string;
   episodeName: string;
+  episodeKey?: string;
   currentTime: number;
   duration: number;
+  progressMode?: "exact" | "embed";
   updatedAt: string;
 }
 
@@ -84,7 +87,10 @@ export default function UserHistoryPage() {
     const fetchMovieDetails = async () => {
       setLoadingDetails(true);
       try {
-        const promises = historyItems.map(async (item) => {
+        const uniqueMovies = Array.from(
+          new Map(historyItems.map((item) => [item.movieSlug, item])).values(),
+        );
+        const promises = uniqueMovies.map(async (item) => {
           if (movieDetails[item.movieSlug]) return null;
           try {
             let movie: any = null;
@@ -359,7 +365,10 @@ function HistoryItemCard({
     }
   };
 
-  const progressPct = Math.min(100, Math.max(0, Math.round((item.currentTime / (item.duration || 1)) * 100)));
+  const hasExactProgress = item.progressMode !== "embed" && item.duration > 0;
+  const progressPct = hasExactProgress
+    ? Math.min(100, Math.max(0, Math.round((item.currentTime / item.duration) * 100)))
+    : 0;
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -374,13 +383,12 @@ function HistoryItemCard({
     >
       {/* Poster card with X button overlay */}
       <div className="relative aspect-[2/3] rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800/80 group-hover:border-zinc-700 transition-all select-none shadow-md">
-        <img
+        <ProgressiveImage
           src={imgSrc || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80"}
           alt={item.movieName}
           onError={handleImgError}
           referrerPolicy="no-referrer"
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          loading="lazy"
         />
         
         {/* Remove item button */}
@@ -400,12 +408,14 @@ function HistoryItemCard({
         </div>
 
         {/* Watch Progress Bar */}
-        <div className="absolute bottom-0 inset-x-0 h-1.5 bg-white/10 z-10">
-          <div 
-            style={{ width: `${progressPct}%` }}
-            className="h-full bg-pink-500 transition-all duration-300"
-          />
-        </div>
+        {hasExactProgress && (
+          <div className="absolute bottom-0 inset-x-0 h-1.5 bg-white/10 z-10">
+            <div
+              style={{ width: `${progressPct}%` }}
+              className="h-full bg-pink-500 transition-all duration-300"
+            />
+          </div>
+        )}
       </div>
 
       {/* Title & Info */}
@@ -414,10 +424,13 @@ function HistoryItemCard({
           {cleanMovieName(item.movieName)}
         </h4>
         <p className="text-[11px] font-bold text-pink-400">
-          Đang xem Tập {item.episodeName} ({progressPct}%)
+          Đang xem {/^tập\s|^full$/i.test(item.episodeName) ? item.episodeName : `Tập ${item.episodeName}`}
+          {hasExactProgress ? ` (${progressPct}%)` : ""}
         </p>
         <p className="text-[10px] text-zinc-550 font-semibold truncate">
-          Đã xem {formatTime(item.currentTime)} / {formatTime(item.duration)}
+          {hasExactProgress
+            ? `Đã xem ${formatTime(item.currentTime)} / ${formatTime(item.duration)}`
+            : "Đã mở bằng chế độ tương thích · Không có thời gian chính xác"}
         </p>
       </div>
     </div>

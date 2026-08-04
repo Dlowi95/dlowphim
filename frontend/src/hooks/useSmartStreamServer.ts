@@ -1,6 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { findMatchingEpisodeIndex, normalizeEpisodeKey } from "@/utils/episodeUtils";
+import {
+  getGlobalPlaybackPenalty,
+  isPlaybackOriginGloballyBlocked,
+  isPlaybackOriginQuarantined,
+  loadPlaybackReputation,
+  quarantinePlaybackOrigin,
+  reportPlaybackHealth,
+  type PlaybackOriginReputation,
+} from "@/utils/playbackHealth";
 
 export interface SmartStreamEpisode {
   name: string;
@@ -52,27 +62,12 @@ const EMPTY_HEALTH: ServerHealth = {
   updatedAt: 0,
 };
 
-function normalizeEpisodeName(name = ""): string {
-  return name
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/đ/g, "d")
-    .replace(/tap\s*/g, "")
-    .replace(/[^a-z0-9]/g, "");
-}
-
 function findEpisodeIndex(
   server: SmartStreamServer,
   targetName: string,
   fallbackIndex: number,
 ): number {
-  const normalizedTarget = normalizeEpisodeName(targetName);
-  const matchedIndex = server.server_data.findIndex(
-    (episode) => normalizeEpisodeName(episode.name) === normalizedTarget,
-  );
-  if (matchedIndex >= 0) return matchedIndex;
-  return server.server_data[fallbackIndex] ? fallbackIndex : 0;
+  return findMatchingEpisodeIndex(server.server_data, targetName, fallbackIndex);
 }
 
 function getServerKey(server: SmartStreamServer): string {
@@ -102,6 +97,7 @@ function getHealthScore(
   server: SmartStreamServer,
   latency: number | undefined,
   health: Record<string, ServerHealth>,
+  reputation: PlaybackOriginReputation[] = [],
 ): number {
   const saved = health[getServerKey(server)];
   const fresh = saved && Date.now() - saved.updatedAt <= HEALTH_TTL_MS
@@ -116,8 +112,13 @@ function getHealthScore(
     failureRate * 6000 +
     stallsPerStart * 1200 +
     fresh.avgStartupMs * 0.35 +
-    fresh.avgBufferMs * 0.25
+    fresh.avgBufferMs * 0.25 +
+    getGlobalPlaybackPenalty(firstHlsUrl(server), reputation)
   );
+}
+
+function firstHlsUrl(server: SmartStreamServer): string {
+  return server.server_data.find((episode) => episode.link_m3u8)?.link_m3u8 || "";
 }
 
 async function probeManifest(url: string): Promise<number | null> {
@@ -171,6 +172,7 @@ export function useSmartStreamServer({
   const [latencies, setLatencies] = useState<Record<number, number>>({});
   const [isProbing, setIsProbing] = useState(false);
   const [healthVersion, setHealthVersion] = useState(0);
+  const [globalReputation, setGlobalReputation] = useState<PlaybackOriginReputation[]>([]);
   const failedServerKeysRef = useRef(new Set<string>());
   const manualSelectionRef = useRef(false);
   const switchingRef = useRef(false);
@@ -257,7 +259,15 @@ export function useSmartStreamServer({
     setLatencies({});
   }, [movieSlug]);
 
-  const activeEpisodeName = normalizeEpisodeName(
+  useEffect(() => {
+    let cancelled = false;
+    void loadPlaybackReputation().then((reputation) => {
+      if (!cancelled) setGlobalReputation(reputation);
+    });
+    return () => { cancelled = true; };
+  }, [movieSlug]);
+
+  const activeEpisodeName = normalizeEpisodeKey(
     servers[activeServerIndex]?.server_data[activeEpisodeIndex]?.name || "",
   );
   const activeAudioTrack = getAudioTrackKey(
@@ -311,6 +321,8 @@ export function useSmartStreamServer({
         const episode = servers[preferredIndex].server_data[episodeIndex];
         if (
           getAudioTrackKey(servers[preferredIndex].server_name) === activeAudioTrack &&
+          !isPlaybackOriginQuarantined(episode?.link_m3u8 || "") &&
+          !isPlaybackOriginGloballyBlocked(episode?.link_m3u8 || "", globalReputation) &&
           (episode?.link_m3u8 || episode?.link_embed)
         ) {
           switchToServer(
@@ -338,7 +350,9 @@ export function useSmartStreamServer({
         .filter(
           (candidate) =>
             getAudioTrackKey(candidate.server.server_name) === activeAudioTrack &&
-            Boolean(candidate.episode?.link_m3u8),
+            Boolean(candidate.episode?.link_m3u8) &&
+            !isPlaybackOriginQuarantined(candidate.episode?.link_m3u8 || "") &&
+            !isPlaybackOriginGloballyBlocked(candidate.episode?.link_m3u8 || "", globalReputation),
         );
 
       const results = await mapWithConcurrency(
@@ -365,11 +379,13 @@ export function useSmartStreamServer({
               left.server,
               nextLatencies[left.serverIndex],
               healthRef.current,
+              globalReputation,
             ) -
             getHealthScore(
               right.server,
               nextLatencies[right.serverIndex],
               healthRef.current,
+              globalReputation,
             ),
         )[0];
 
@@ -392,6 +408,7 @@ export function useSmartStreamServer({
     activeEpisodeName,
     activeAudioTrack,
     movieSlug,
+    globalReputation,
     readPreference,
     savePreference,
     serverSignature,
@@ -448,7 +465,11 @@ export function useSmartStreamServer({
       const serverIndex = activeServerIndexRef.current;
       const server = serversRef.current[serverIndex];
       if (!server) return;
+      const episode = server.server_data[activeEpisodeIndexRef.current];
       failedServerKeysRef.current.delete(getServerKey(server));
+      if (episode?.link_m3u8) {
+        reportPlaybackHealth(episode.link_m3u8, { kind: "success" });
+      }
       if (latency && Number.isFinite(latency)) {
         const nextLatencies = {
           ...latenciesRef.current,
@@ -492,6 +513,11 @@ export function useSmartStreamServer({
             ? current.avgStartupMs * 0.75 + startupMs * 0.25
             : startupMs,
       }));
+      const server = serversRef.current[activeServerIndexRef.current];
+      const episode = server?.server_data[activeEpisodeIndexRef.current];
+      if (episode?.link_m3u8) {
+        reportPlaybackHealth(episode.link_m3u8, { kind: "start", durationMs: startupMs });
+      }
     },
     [updateActiveServerHealth],
   );
@@ -507,11 +533,24 @@ export function useSmartStreamServer({
             ? current.avgBufferMs * 0.75 + bufferMs * 0.25
             : bufferMs,
       }));
+      const server = serversRef.current[activeServerIndexRef.current];
+      const episode = server?.server_data[activeEpisodeIndexRef.current];
+      if (episode?.link_m3u8) {
+        reportPlaybackHealth(episode.link_m3u8, { kind: "buffer", durationMs: bufferMs });
+      }
     },
     [updateActiveServerHealth],
   );
 
-  const reportPlaybackFailure = useCallback(() => {
+  const reportPlaybackFailure = useCallback((failureType = "unknown") => {
+    const server = serversRef.current[activeServerIndexRef.current];
+    const episode = server?.server_data[activeEpisodeIndexRef.current];
+    if (episode?.link_m3u8) {
+      reportPlaybackHealth(episode.link_m3u8, { kind: "failure", failureType });
+      if (/network|cors|manifest|level|fragment/i.test(failureType)) {
+        quarantinePlaybackOrigin(episode.link_m3u8);
+      }
+    }
     updateActiveServerHealth((current) => ({
       ...current,
       failures: current.failures + 1,
@@ -547,6 +586,7 @@ export function useSmartStreamServer({
             server,
             latenciesRef.current[serverIndex],
             healthRef.current,
+            globalReputation,
           ),
         };
       })
@@ -555,6 +595,8 @@ export function useSmartStreamServer({
           serverIndex !== currentIndex &&
           getAudioTrackKey(server.server_name) === currentAudioTrack &&
           !failedServerKeysRef.current.has(getServerKey(server)) &&
+          !isPlaybackOriginQuarantined(episode?.link_m3u8 || "") &&
+          !isPlaybackOriginGloballyBlocked(episode?.link_m3u8 || "", globalReputation) &&
           Boolean(episode?.link_m3u8),
       )
       .sort((left, right) => {
@@ -573,14 +615,14 @@ export function useSmartStreamServer({
       "hls",
     );
     return true;
-  }, [switchToServer]);
+  }, [globalReputation, switchToServer]);
 
   const serverScores = useMemo(
     () =>
       servers.map((server, index) =>
-        getHealthScore(server, latencies[index], healthRef.current),
+        getHealthScore(server, latencies[index], healthRef.current, globalReputation),
       ),
-    [healthVersion, latencies, serverSignature, servers],
+    [globalReputation, healthVersion, latencies, serverSignature, servers],
   );
 
   return {

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { cleanMovieName, getImageUrl, getBestMovieImage } from "@/utils/movieUtils";
 import MovieHoverPopup from "./MovieHoverPopup";
-import Image from "next/image";
+import ProgressiveImage from "./ProgressiveImage";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 
 interface Movie {
@@ -160,12 +160,10 @@ export default function MovieCard({ movie, aspect = "landscape" }: MovieCardProp
             maskImage: "radial-gradient(white, black)"
           }}
         >
-          <img
+          <ProgressiveImage
             src={imgSrc}
             alt={cleanedName}
             onError={handleImageError}
-            loading="lazy"
-            decoding="async"
             className="w-full h-full object-cover rounded-xl group-hover/card:scale-105 transition-transform duration-300"
           />
 

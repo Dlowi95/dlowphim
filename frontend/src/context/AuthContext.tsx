@@ -432,7 +432,9 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
   const updateWatchHistory = (historyItem: any) => {
     setUser((prev) => {
       if (!prev) return null;
-      const filtered = (prev.watchHistory || []).filter((item: any) => item.movieSlug !== historyItem.movieSlug);
+      const filtered = (prev.watchHistory || []).filter(
+        (item: any) => item.movieSlug !== historyItem.movieSlug,
+      );
       return {
         ...prev,
         watchHistory: [historyItem, ...filtered].slice(0, 50),
@@ -440,7 +442,9 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     });
     try {
       const localHist = JSON.parse(localStorage.getItem("dlowphim_history") || "[]");
-      const filteredLocal = localHist.filter((item: any) => item.movieSlug !== historyItem.movieSlug);
+      const filteredLocal = localHist.filter(
+        (item: any) => item.movieSlug !== historyItem.movieSlug,
+      );
       localStorage.setItem("dlowphim_history", JSON.stringify([historyItem, ...filteredLocal].slice(0, 50)));
     } catch (e) {
       console.error("Lỗi cập nhật localStorage history:", e);

@@ -14,6 +14,7 @@ import { SystemSettingsModule } from './system-settings/system-settings.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { RoomsModule } from './rooms/rooms.module';
+import { PlaybackHealthModule } from './playback-health/playback-health.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { RoomsModule } from './rooms/rooms.module';
     NotificationsModule,
     SystemSettingsModule,
     RoomsModule,
+    PlaybackHealthModule,
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),
       serveRoot: '/uploads',

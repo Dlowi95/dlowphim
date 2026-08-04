@@ -5,6 +5,39 @@ const HLS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/hls.js@1.4.12/dist/hls.min.
 
 let hlsLoadPromise: Promise<any> | null = null;
 
+export const WATCH_HLS_CONFIG = {
+  enableWorker: true,
+  lowLatencyMode: false,
+  capLevelToPlayerSize: true,
+  startLevel: -1,
+  backBufferLength: 60,
+  maxBufferLength: 30,
+  maxMaxBufferLength: 90,
+  manifestLoadingMaxRetry: 2,
+  levelLoadingMaxRetry: 3,
+  fragLoadingMaxRetry: 4,
+  fragLoadingRetryDelay: 500,
+  abrEwmaDefaultEstimate: 3_000_000,
+};
+
+export const WATCH_TOGETHER_HLS_CONFIG = {
+  enableWorker: true,
+  lowLatencyMode: false,
+  backBufferLength: 30,
+  maxBufferLength: 30,
+  maxMaxBufferLength: 60,
+  manifestLoadingMaxRetry: 2,
+  levelLoadingMaxRetry: 3,
+  fragLoadingMaxRetry: 4,
+  fragLoadingRetryDelay: 500,
+};
+
+export function destroyHlsInstance(instance: any) {
+  if (!instance) return;
+  try { instance.detachMedia?.(); } catch { }
+  try { instance.destroy?.(); } catch { }
+}
+
 export function loadHlsLibrary(): Promise<any> {
   if (typeof window === "undefined") {
     return Promise.reject(new Error("HLS chỉ có thể khởi tạo ở trình duyệt"));

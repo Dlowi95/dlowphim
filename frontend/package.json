@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:episodes": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/utils/episodeUtils.test.ts",
+    "test:watch": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/utils/episodeUtils.test.ts src/utils/watchPlaybackFlow.test.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:list": "playwright test --list"
   },
   "dependencies": {
     "@heroui/react": "^2.4.8",
@@ -22,6 +26,7 @@
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "@types/js-cookie": "^3.0.6",
     "@types/node": "^20.17.6",
     "@types/react": "^18.3.12",

@@ -367,6 +367,138 @@ export class MoviesService {
     return credits;
   }
 
+  async getMovieSchedule(input: {
+    slug: string;
+    title?: string;
+    originTitle?: string;
+    tmdbId?: string;
+    tmdbType?: string;
+    movieType?: string;
+    movieStatus?: string;
+    episodeCurrent?: string;
+    episodeTotal?: string;
+  }): Promise<any> {
+    const fallbackState = this.deriveMovieReleaseState(
+      input.movieStatus,
+      input.movieType,
+      input.episodeCurrent,
+      input.episodeTotal,
+    );
+    const trimmedSlug = input.slug.trim().toLowerCase();
+    const cacheTtlMs = 6 * 60 * 60 * 1000;
+    let cached = await this.movieLogoModel.findOne({ slug: trimmedSlug }).exec();
+
+    if (
+      cached?.scheduleUpdatedAt &&
+      Date.now() - new Date(cached.scheduleUpdatedAt).getTime() < cacheTtlMs
+    ) {
+      return this.buildScheduleResponse(cached, fallbackState);
+    }
+
+    let targetId = input.tmdbId || (cached as any)?.tmdbId || '';
+    let targetType = input.tmdbType === 'tv' || input.movieType === 'series'
+      ? 'tv'
+      : (cached as any)?.tmdbType || 'movie';
+
+    if (!targetId) {
+      const metadata = await this.getMovieLogo(
+        input.slug,
+        input.title,
+        undefined,
+        targetType,
+        input.originTitle,
+      );
+      targetId = metadata.tmdbId || '';
+      targetType = metadata.tmdbType || targetType;
+      cached = await this.movieLogoModel.findOne({ slug: trimmedSlug }).exec();
+    }
+
+    if (!targetId) {
+      return { state: fallbackState, source: 'provider', nextEpisode: null, tmdbStatus: '', updatedAt: null };
+    }
+
+    try {
+      const settings = await this.settingsService.getSettings();
+      const apiKey = settings.tmdbApiKey || '591c025bb1641315ae087330271132bc';
+      const response = await this.safeFetchTmdb(
+        `https://api.themoviedb.org/3/${targetType}/${targetId}?api_key=${apiKey}&language=vi-VN`,
+      );
+      if (response?.ok) {
+        const details = await response.json();
+        const scheduleUpdatedAt = new Date();
+        const nextEpisode = details.next_episode_to_air
+          ? {
+              episodeNumber: details.next_episode_to_air.episode_number,
+              seasonNumber: details.next_episode_to_air.season_number,
+              name: details.next_episode_to_air.name || '',
+              airDate: details.next_episode_to_air.air_date || '',
+            }
+          : null;
+        await this.movieLogoModel.findOneAndUpdate(
+          { slug: trimmedSlug },
+          {
+            tmdbId: String(details.id || targetId),
+            tmdbType: targetType,
+            tmdbStatus: details.status || '',
+            nextEpisodeToAir: nextEpisode,
+            lastAirDate: details.last_air_date || details.release_date || '',
+            scheduleUpdatedAt,
+          },
+          { upsert: true, returnDocument: 'after' },
+        ).exec();
+        return {
+          state: this.deriveTmdbReleaseState(details.status, targetType, fallbackState),
+          source: 'tmdb',
+          nextEpisode,
+          tmdbStatus: details.status || '',
+          updatedAt: scheduleUpdatedAt,
+        };
+      }
+    } catch {
+      // Dữ liệu nguồn phim vẫn đủ để hiển thị trạng thái khi TMDB gián đoạn.
+    }
+
+    return { state: fallbackState, source: 'provider', nextEpisode: null, tmdbStatus: '', updatedAt: null };
+  }
+
+  private buildScheduleResponse(cached: any, fallbackState: string) {
+    return {
+      state: this.deriveTmdbReleaseState(cached.tmdbStatus, cached.tmdbType, fallbackState),
+      source: 'tmdb-cache',
+      nextEpisode: cached.nextEpisodeToAir || null,
+      tmdbStatus: cached.tmdbStatus || '',
+      updatedAt: cached.scheduleUpdatedAt || null,
+    };
+  }
+
+  private deriveTmdbReleaseState(status = '', type = 'movie', fallback = 'unknown') {
+    const value = status.toLowerCase();
+    if (/ended|canceled|released/.test(value)) return 'completed';
+    if (/planned|pilot|post production/.test(value)) return 'upcoming';
+    if (type === 'tv' && /returning series|in production/.test(value)) return 'airing';
+    return fallback;
+  }
+
+  private deriveMovieReleaseState(
+    status = '',
+    type = '',
+    episodeCurrent = '',
+    episodeTotal = '',
+  ) {
+    const combined = `${status} ${episodeCurrent}`
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    if (/trailer|sap chieu|upcoming/.test(combined)) return 'upcoming';
+    if (/completed|complete|hoan tat|full/.test(combined)) return 'completed';
+
+    const current = Number((episodeCurrent.match(/\d+/) || [])[0]);
+    const total = Number((episodeTotal.match(/\d+/) || [])[0]);
+    if (current > 0 && total > 0 && current >= total) return 'completed';
+    if (type === 'series' || /ongoing/.test(combined)) return 'airing';
+    return 'unknown';
+  }
+
   // ─── DYNAMIC MOVIE API PROXY CACHE ───
   private movieApiCache = new Map<string, { data: any; expiry: number }>();
   private readonly movieApiCacheMaxEntries = 500;

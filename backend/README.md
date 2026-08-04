@@ -31,6 +31,13 @@
 $ npm install
 ```
 
+### Shared playback health (optional)
+
+When the backend runs on more than one instance, configure `UPSTASH_REDIS_REST_URL`
+and `UPSTASH_REDIS_REST_TOKEN`. Playback CDN health is then shared with a 30-minute
+TTL. Without these variables, the service safely uses bounded in-memory storage.
+`PLAYBACK_HEALTH_REDIS_PREFIX` can optionally isolate environments.
+
 ## Compile and run the project
 
 ```bash

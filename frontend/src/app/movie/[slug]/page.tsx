@@ -7,6 +7,8 @@ import CommentRatingSection from "@/components/CommentRatingSection";
 import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
 import MovieCard from "@/components/MovieCard";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
+import MovieReleaseStatus from "@/components/MovieReleaseStatus";
+import ProgressiveImage from "@/components/ProgressiveImage";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { getTmdbApiKey } from "@/utils/tmdb";
@@ -45,6 +47,7 @@ interface MovieDetail {
   country: { name: string; slug: string }[];
   episodes: Server[];
   trailer_url?: string;
+  tmdb?: { id?: string | number; type?: string };
 }
 
 
@@ -422,10 +425,11 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
       <div className="relative w-full h-[400px] lg:h-[480px] bg-zinc-950 overflow-hidden flex items-end pt-24 select-none">
         {/* Background Backdrop image */}
         <div className="absolute inset-0 z-0">
-          <img
+          <ProgressiveImage
             src={tmdbImages?.backdrop || getImageUrl(movie.poster_url || movie.thumb_url)}
             alt={cleanedName}
             referrerPolicy="no-referrer"
+            priority
             className="w-full h-full object-cover opacity-70 md:opacity-85"
           />
           <HalftoneOverlay />
@@ -633,10 +637,11 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
 
           {/* Poster chính thu nhỏ tỷ lệ */}
           <div className="w-[110px] md:w-[130px] lg:w-[150px] mx-auto lg:mx-0 relative aspect-[2/3] rounded-2xl overflow-hidden shadow-[0_15px_40px_rgba(0,0,0,0.85)] bg-zinc-950 select-none">
-            <img
+            <ProgressiveImage
               src={tmdbImages?.poster || getImageUrl(movie.thumb_url || movie.poster_url)}
               alt={cleanedName}
               referrerPolicy="no-referrer"
+              priority
               className="w-full h-full object-cover"
             />
           </div>
@@ -670,6 +675,19 @@ export default function MovieDetail({ params }: { params: { slug: string } }) {
           </div>
 
           {/* Danh sách Thể loại */}
+          <MovieReleaseStatus
+            slug={movie.slug}
+            title={movie.name}
+            originTitle={movie.origin_name}
+            movieType={movie.type}
+            movieStatus={movie.status}
+            episodeCurrent={movie.episode_current}
+            episodeTotal={movie.episode_total}
+            tmdbId={movie.tmdb?.id}
+            tmdbType={movie.tmdb?.type}
+            delayMs={300}
+          />
+
           {movie.category && movie.category.length > 0 && (
             <div className="flex flex-wrap items-center gap-1 justify-center lg:justify-start">
               {movie.category.map((cat) => (

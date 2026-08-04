@@ -24,6 +24,7 @@ const TAB_LABELS: Record<string, string> = {
   users: "Người dùng",
   banners: "Banner",
   reports: "Báo cáo lỗi",
+  playback: "Sức khỏe nguồn phát",
   notifications: "Thông báo",
   settings: "Cài đặt",
 };

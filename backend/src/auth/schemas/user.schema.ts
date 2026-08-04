@@ -14,11 +14,17 @@ export class HistoryItem {
   @Prop({ required: true })
   episodeName: string;
 
+  @Prop()
+  episodeKey?: string;
+
   @Prop({ required: true })
   currentTime: number;
 
   @Prop({ required: true })
   duration: number;
+
+  @Prop({ enum: ['exact', 'embed'], default: 'exact' })
+  progressMode?: 'exact' | 'embed';
 
   @Prop({ default: Date.now })
   updatedAt: Date;

@@ -31,6 +31,18 @@ export class MovieLogo {
 
   @Prop({ type: Array, default: [] })
   credits: any[]; // danh sách dàn diễn viên nét từ TMDB [{ id, name, character, profileUrl }]
+
+  @Prop({ default: '' })
+  tmdbStatus: string;
+
+  @Prop({ type: Object, default: null })
+  nextEpisodeToAir: any;
+
+  @Prop({ default: '' })
+  lastAirDate: string;
+
+  @Prop({ type: Date, default: null })
+  scheduleUpdatedAt: Date;
 }
 
 export const MovieLogoSchema = SchemaFactory.createForClass(MovieLogo);

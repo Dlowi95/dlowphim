@@ -50,6 +50,31 @@ export class MoviesController {
     return this.moviesService.getMovieCredits(slug, title, tmdbId, tmdbType);
   }
 
+  @Get('schedule/:slug')
+  async getMovieSchedule(
+    @Param('slug') slug: string,
+    @Query('title') title?: string,
+    @Query('originTitle') originTitle?: string,
+    @Query('tmdbId') tmdbId?: string,
+    @Query('tmdbType') tmdbType?: string,
+    @Query('movieType') movieType?: string,
+    @Query('movieStatus') movieStatus?: string,
+    @Query('episodeCurrent') episodeCurrent?: string,
+    @Query('episodeTotal') episodeTotal?: string,
+  ) {
+    return this.moviesService.getMovieSchedule({
+      slug,
+      title,
+      originTitle,
+      tmdbId,
+      tmdbType,
+      movieType,
+      movieStatus,
+      episodeCurrent,
+      episodeTotal,
+    });
+  }
+
   @Get('ophim-proxy')
   async fetchOphimProxy(
     @Query('path') path: string,

@@ -11,9 +11,10 @@ import Cookies from "js-cookie";
 import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import EpisodeSelector from "@/components/EpisodeSelector";
+import EmbedCompatibilityPlayer from "@/components/EmbedCompatibilityPlayer";
 import { io } from "socket.io-client";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
-import { loadHlsLibrary } from "@/utils/hlsLoader";
+import { destroyHlsInstance, loadHlsLibrary, WATCH_TOGETHER_HLS_CONFIG } from "@/utils/hlsLoader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -897,8 +898,7 @@ export default function RoomPage() {
 
         // Dọn dẹp MediaSource cũ trước khi đổi tập/nguồn.
         if (hlsRef.current) {
-          try { hlsRef.current.detachMedia(); } catch (e) { }
-          try { hlsRef.current.destroy(); } catch (e) { }
+          destroyHlsInstance(hlsRef.current);
           hlsRef.current = null;
         }
         try {
@@ -981,11 +981,7 @@ export default function RoomPage() {
         if (Hls && Hls.isSupported()) {
           hlsNetworkRetriesRef.current = 0;
           hlsMediaRetriesRef.current = 0;
-          const hls = new Hls({
-            maxBufferLength: 30,
-            backBufferLength: 30,
-            enableWorker: true,
-          });
+          const hls = new Hls(WATCH_TOGETHER_HLS_CONFIG);
           hls.loadSource(activeEp.link_m3u8);
           hls.attachMedia(video);
           hlsRef.current = hls;
@@ -1021,7 +1017,7 @@ export default function RoomPage() {
             }
 
             console.error("[WatchTogether] HLS fatal error:", data);
-            try { hls.destroy(); } catch (e) { }
+            destroyHlsInstance(hls);
             if (activeEp.link_embed) {
               setPlayerType("embed");
               setStreamNotice("HLS không phản hồi, đã chuyển sang Embed dự phòng.");
@@ -1065,8 +1061,7 @@ export default function RoomPage() {
         delete (video as any)._dlowListeners;
       }
       if (hlsRef.current) {
-        try { hlsRef.current.detachMedia(); } catch (e) { }
-        try { hlsRef.current.destroy(); } catch (e) { }
+        destroyHlsInstance(hlsRef.current);
         hlsRef.current = null;
       }
       if (video) {
@@ -1436,14 +1431,10 @@ export default function RoomPage() {
 
                   {playerType === "embed" ? (
                     activeEp?.link_embed ? (
-                      <iframe
+                      <EmbedCompatibilityPlayer
                         src={activeEp.link_embed}
-                        referrerPolicy="no-referrer"
-                        allowFullScreen
-                        frameBorder="0"
-                        scrolling="no"
-                        className="absolute -top-8 -left-4 w-[calc(100%+16px)] h-[calc(100%+32px)]"
                         title="DlowPhim Watch Together Player"
+                        notice="Nguồn Embed không hỗ trợ đồng bộ play, pause và tua chính xác giữa các thành viên."
                       />
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-zinc-900">

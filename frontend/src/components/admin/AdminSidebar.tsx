@@ -15,6 +15,7 @@ import {
   Settings,
   Clapperboard,
   Sword,
+  Activity,
 } from "lucide-react";
 
 interface AdminSidebarProps {
@@ -34,6 +35,7 @@ const NAV_ITEMS = [
   { id: "comments", label: "Bình luận & Báo xấu", icon: MessageSquare, countKey: "reports" },
   { id: "banners", label: "Banner", icon: ImageIcon },
   { id: "reports", label: "Báo cáo lỗi", icon: AlertTriangle, countKey: "movieReports" },
+  { id: "playback", label: "Sức khỏe nguồn", icon: Activity },
   { id: "notifications", label: "Thông báo", icon: Bell, countKey: "notifications" },
 ];
 

@@ -13,7 +13,7 @@ import UpcomingRow from "@/components/UpcomingRow";
 import CinemaRow from "@/components/CinemaRow";
 import AnimeRow from "@/components/AnimeRow";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
-import Image from "next/image";
+import ProgressiveImage from "@/components/ProgressiveImage";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { getTmdbApiKey } from "@/utils/tmdb";
@@ -412,12 +412,11 @@ export default function HomePage() {
 
           {/* Ảnh nền Full-width trong suốt và sáng đẹp giống hệt mockup */}
           <div className="absolute inset-0 z-0 select-none bg-black">
-            <img
+            <ProgressiveImage
               src={heroBackdropSrc}
               alt={activeMovie.name}
               onError={handleHeroBackdropError}
-              loading="eager"
-              decoding="async"
+              priority
               className={`w-full h-full object-cover transition-all duration-500 ease-in-out ${isTransitioning ? "opacity-0 scale-102 blur-[4px]" : "opacity-100 scale-100 blur-0"
                 }`}
             />
@@ -549,14 +548,12 @@ export default function HomePage() {
                     : "border border-zinc-800/80 opacity-50 hover:opacity-90 hover:scale-[1.02]"
                     }`}
                 >
-                  <img
+                  <ProgressiveImage
                     src={backdropCache[movie.slug] || getImageUrl(movie.thumb_url || movie.poster_url)}
                     alt={movie.name}
                     onError={(e) => {
                       (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80";
                     }}
-                    loading="lazy"
-                    decoding="async"
                     className="w-full h-full object-cover"
                   />
                   <div className="absolute inset-0 bg-black/10 hover:bg-transparent transition-colors" />
