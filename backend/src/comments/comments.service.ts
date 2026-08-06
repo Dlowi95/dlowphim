@@ -13,6 +13,7 @@ import { User, UserDocument } from '../auth/schemas/user.schema';
 import { Report, ReportDocument } from './schemas/report.schema';
 import { NotificationsService } from '../notifications/notifications.service';
 import { createHash } from 'node:crypto';
+import { maskVietnameseProfanity } from './moderation/vietnamese-profanity';
 
 const COMMENT_COOLDOWN_MS = 8_000;
 const COMMENT_BURST_WINDOW_MS = 60_000;
@@ -107,8 +108,10 @@ export class CommentsService {
       throw new BadRequestException('Đường dẫn phim không hợp lệ');
     }
 
-    const content = this.normalizeContent(createDto.content);
-    this.validateContent(content);
+    const originalContent = this.normalizeContent(createDto.content);
+    this.validateContent(originalContent);
+    const moderation = maskVietnameseProfanity(originalContent);
+    const content = moderation.content;
 
     const userObjectId = new Types.ObjectId(userId);
     const user = await this.userModel
@@ -135,7 +138,7 @@ export class CommentsService {
       threadRootId = parentComment.parentId || parentComment._id;
     }
 
-    const contentFingerprint = this.getContentFingerprint(content);
+    const contentFingerprint = this.getContentFingerprint(originalContent);
     await this.assertNotSpamming(userObjectId, contentFingerprint);
 
     const newComment = new this.commentModel({
@@ -145,6 +148,9 @@ export class CommentsService {
       avatar: user.avatar,
       role: user.role || 'member',
       content,
+      originalContent: moderation.maskedCount > 0 ? originalContent : undefined,
+      moderationFlags: moderation.matchedTerms,
+      maskedProfanityCount: moderation.maskedCount,
       contentFingerprint,
       rateLimitBucket: Math.floor(Date.now() / COMMENT_COOLDOWN_MS),
       isSpoiler: !!createDto.isSpoiler,
@@ -205,6 +211,10 @@ export class CommentsService {
       parentId: saved.parentId ? saved.parentId.toString() : null,
       reactionsSummary: [],
       userReaction: null,
+      moderation: {
+        masked: moderation.maskedCount > 0,
+        maskedCount: moderation.maskedCount,
+      },
     };
   }
   async toggleReaction(commentId: string, userId: string, reactionType: string) {
@@ -355,6 +365,7 @@ export class CommentsService {
       .find()
       .populate({
         path: 'commentId',
+        select: '+originalContent',
         populate: { path: 'userId', select: 'displayName email avatar' },
       })
       .populate('reporterId', 'displayName email avatar')
@@ -376,6 +387,9 @@ export class CommentsService {
         comment: {
           id: c._id.toString(),
           content: c.content,
+          originalContent: c.originalContent || c.content,
+          moderationFlags: c.moderationFlags || [],
+          maskedProfanityCount: c.maskedProfanityCount || 0,
           movieSlug: c.movieSlug,
           time: getFormattedDate(c.createdAt || new Date()),
           author: {
@@ -409,7 +423,7 @@ export class CommentsService {
   async getAllComments() {
     const comments = await this.commentModel
       .find()
-      .select('-reactions -contentFingerprint -rateLimitBucket')
+      .select('-reactions -contentFingerprint -rateLimitBucket +originalContent')
       .populate('userId', 'displayName email avatar role')
       .sort({ createdAt: -1 })
       .limit(MAX_ADMIN_COMMENTS)
@@ -423,6 +437,9 @@ export class CommentsService {
         avatar: c.userId?.avatar || c.avatar || '',
         role: c.userId?.role || c.role || 'member',
         content: c.content,
+        originalContent: c.originalContent || c.content,
+        moderationFlags: c.moderationFlags || [],
+        maskedProfanityCount: c.maskedProfanityCount || 0,
         time: getFormattedDate((c as any).createdAt || new Date()),
         isSpoiler: c.isSpoiler,
         episodeLabel: c.episodeLabel,

@@ -44,6 +44,18 @@ export class User {
   @Prop()
   googleId?: string;
 
+  @Prop({ index: true })
+  emailVerifiedAt?: Date;
+
+  @Prop({ select: false, index: true })
+  emailVerificationTokenHash?: string;
+
+  @Prop({ select: false })
+  emailVerificationRequestedAt?: Date;
+
+  @Prop({ select: false })
+  emailVerificationExpiresAt?: Date;
+
   @Prop({ default: 0 })
   tokenVersion: number;
 
@@ -90,6 +102,31 @@ export class User {
 
   @Prop({ default: true })
   isActive: boolean;
+
+  @Prop({ index: true })
+  lastLoginAt?: Date;
+
+  @Prop({ index: true })
+  lastActiveAt?: Date;
+
+  @Prop()
+  suspendedAt?: Date;
+
+  @Prop({ maxlength: 200 })
+  suspensionReason?: string;
+
+  @Prop({ default: false, index: true })
+  isDeleted?: boolean;
+
+  @Prop()
+  deletedAt?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+
+UserSchema.index({ isActive: 1, lastActiveAt: -1 });
+UserSchema.index({ role: 1, isActive: 1 });
+UserSchema.index({ createdAt: -1 });
+// Chỉ tài khoản đăng ký tay đang chờ xác minh mới có trường này.
+// Khi xác minh thành công trường bị xóa, vì vậy TTL không ảnh hưởng user thật/legacy/Google.
+UserSchema.index({ emailVerificationExpiresAt: 1 }, { expireAfterSeconds: 0 });

@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Put, Delete, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Body, Get, Put, Delete, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './guards/auth.guard';
 import { RolesGuard } from './guards/roles.guard';
@@ -21,6 +21,17 @@ export class AuthController {
   @Post('google')
   async googleLogin(@Body() googleDto: { idToken?: string; accessToken?: string }) {
     return this.authService.googleLogin(googleDto);
+  }
+
+  @Post('verify-email')
+  async verifyEmail(@Body('token') token: string) {
+    return this.authService.verifyEmail(token);
+  }
+
+  @Post('resend-verification')
+  async resendVerification(@Req() req: express.Request, @Body('email') email: string) {
+    const clientKey = req.ip || req.socket.remoteAddress || 'unknown';
+    return this.authService.resendVerification(email, clientKey);
   }
 
   @Post('forgot-password')
@@ -81,8 +92,17 @@ export class AuthController {
 
   @Get('admin/users')
   @UseGuards(AuthGuard, RolesGuard)
-  async getAllUsers() {
-    return this.authService.getAllUsers();
+  async getAllUsers(
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('role') role?: string,
+    @Query('status') status?: string,
+    @Query('activity') activity?: string,
+    @Query('provider') provider?: string,
+    @Query('verification') verification?: string,
+  ) {
+    return this.authService.getAllUsers({ search, page, limit, role, status, activity, provider, verification });
   }
 
   @Put('admin/users/:id/role')
@@ -102,9 +122,10 @@ export class AuthController {
     @Req() req: express.Request,
     @Param('id') userId: string,
     @Body('isActive') isActive: boolean,
+    @Body('reason') reason?: string,
   ) {
     const adminId = req['user']?.sub;
-    return this.authService.updateUserStatus(adminId, userId, isActive);
+    return this.authService.updateUserStatus(adminId, userId, isActive, reason);
   }
 
   @Delete('admin/users/:id')

@@ -36,6 +36,10 @@ interface Comment {
   parentId?: string | null;
   reactionsSummary?: { type: string; count: number }[];
   userReaction?: string | null;
+  moderation?: {
+    masked: boolean;
+    maskedCount: number;
+  };
 }
 
 interface RatingData {
@@ -317,6 +321,9 @@ export default function CommentRatingSection({
         setCommentText("");
         setIsSpoiler(false);
         setCommentCooldown(8);
+        if (newComment.moderation?.masked) {
+          showToast("Một số từ không phù hợp đã được tự động ẩn.", "warning");
+        }
       } else {
         const data = await res.json().catch(() => ({}));
         if (typeof data.retryAfter === "number") setCommentCooldown(data.retryAfter);
@@ -359,6 +366,9 @@ export default function CommentRatingSection({
         setReplyToUserId(null);
         setReplyIsSpoiler(false);
         setCommentCooldown(8);
+        if (newReply.moderation?.masked) {
+          showToast("Một số từ không phù hợp đã được tự động ẩn.", "warning");
+        }
       } else {
         const data = await res.json().catch(() => ({}));
         if (typeof data.retryAfter === "number") setCommentCooldown(data.retryAfter);

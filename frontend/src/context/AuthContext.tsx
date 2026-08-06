@@ -22,7 +22,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   loginManual: (email: string, password: string) => Promise<void>;
-  registerManual: (displayName: string, email: string, password: string) => Promise<void>;
+  registerManual: (displayName: string, email: string, password: string) => Promise<{ requiresEmailVerification?: boolean; email?: string; message?: string }>;
   loginGoogle: (token: string, isAccessToken?: boolean) => Promise<void>;
   logout: () => void;
   showAuthToast: () => void;
@@ -217,7 +217,8 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
       throw new Error(data.message || "Đăng ký thất bại");
     }
 
-    saveTokenAndUser(data.accessToken, data.user);
+    if (data.accessToken && data.user) saveTokenAndUser(data.accessToken, data.user);
+    return data;
   };
 
   const loginGoogle = async (token: string, isAccessToken = true) => {

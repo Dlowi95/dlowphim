@@ -22,6 +22,9 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
+
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
   const { loginManual, registerManual, loginGoogle, showToast } = useAuth();
 
@@ -35,6 +38,7 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
       setError(null);
       setShowPassword(false);
       setShowConfirmPassword(false);
+      setNeedsVerification(false);
     }
   }, [isOpen]);
 
@@ -81,12 +85,35 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
           setSubmitting(false);
           return;
         }
-        await registerManual(displayName, email, password);
-        showToast("Đăng ký tài khoản thành công", "success");
+        const result = await registerManual(displayName, email, password);
+        showToast(result.message || "Đăng ký thành công. Hãy kiểm tra email để xác minh tài khoản.", "success");
         onOpenChange(false);
       }
     } catch (err: any) {
-      setError(err.message || "Đã xảy ra lỗi trong quá trình xác thực");
+      const message = err.message || "Đã xảy ra lỗi trong quá trình xác thực";
+      setError(message);
+      setNeedsVerification(String(message).toLowerCase().includes("xác minh"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const resendVerification = async () => {
+    if (!email.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      const response = await fetch(`${API_URL}/auth/resend-verification`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Chưa thể gửi lại email xác minh");
+      showToast(data.message, "success");
+      setNeedsVerification(false);
+      setError(null);
+    } catch (err: any) {
+      setError(err.message || "Chưa thể gửi lại email xác minh");
     } finally {
       setSubmitting(false);
     }
@@ -187,8 +214,9 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
 
                 {/* Hiển thị lỗi nếu có */}
                 {error && (
-                  <div role="alert" aria-live="polite" className="text-xs text-red-400 font-bold bg-red-500/10 border border-red-500/20 px-3 py-2 rounded-xl select-none">
-                    {error}
+                  <div role="alert" aria-live="polite" className="text-xs text-red-400 font-bold bg-red-500/10 border border-red-500/20 px-3 py-2 rounded-xl">
+                    <p>{error}</p>
+                    {needsVerification && <button type="button" disabled={submitting} onClick={() => void resendVerification()} className="mt-2 text-pink-400 underline hover:text-pink-300">Gửi lại email xác minh</button>}
                   </div>
                 )}
 

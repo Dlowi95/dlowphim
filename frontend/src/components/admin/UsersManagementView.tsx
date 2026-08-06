@@ -1,565 +1,340 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useAuth } from "@/context/AuthContext";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import Cookies from "js-cookie";
 import {
-  Search,
-  RefreshCw,
-  UserCheck,
-  UserX,
-  Trash2,
-  Shield,
-  User,
   AlertTriangle,
-  Calendar,
+  CalendarDays,
+  KeyRound,
+  LockKeyhole,
+  MailCheck,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Trash2,
+  UserCheck,
+  Users,
 } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 import Pagination from "./Pagination";
+
+type UserRole = "member" | "admin";
+type AuthProvider = "password" | "google" | "hybrid";
 
 interface UserItem {
   _id: string;
   email: string;
   displayName: string;
   avatar?: string;
-  role: string;
+  role: UserRole;
   isActive: boolean;
   createdAt: string;
+  lastLoginAt?: string;
+  lastActiveAt?: string;
+  suspendedAt?: string;
+  suspensionReason?: string;
+  authProvider: AuthProvider;
+  verificationStatus?: "verified" | "pending";
+  verificationExpiresAt?: string;
+}
+
+interface UsersResponse {
+  items: UserItem[];
+  pagination: { page: number; limit: number; totalItems: number; totalPages: number };
+  summary: {
+    totalUsers: number;
+    activeUsers: number;
+    blockedUsers: number;
+    inactiveUsers: number;
+    newUsers: number;
+    admins: number;
+    pendingVerification: number;
+  };
+  policy: { inactiveAfterDays: number; autoDeleteInactiveUsers: boolean };
+}
+
+const EMPTY_SUMMARY: UsersResponse["summary"] = {
+  totalUsers: 0,
+  activeUsers: 0,
+  blockedUsers: 0,
+  inactiveUsers: 0,
+  newUsers: 0,
+  admins: 0,
+  pendingVerification: 0,
+};
+
+const providerLabel: Record<AuthProvider, string> = {
+  password: "Mật khẩu",
+  google: "Google",
+  hybrid: "Google + mật khẩu",
+};
+
+function formatDate(value?: string) {
+  if (!value) return "Chưa ghi nhận";
+  return new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+}
+
+function activityLabel(user: UserItem) {
+  const value = user.lastActiveAt || user.lastLoginAt || user.createdAt;
+  if (!value) return { text: "Chưa hoạt động", stale: true };
+  const days = Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000);
+  if (days <= 0) return { text: "Hôm nay", stale: false };
+  if (days === 1) return { text: "Hôm qua", stale: false };
+  return { text: `${days} ngày trước`, stale: days >= 15 };
 }
 
 export default function UsersManagementView() {
   const { user: currentUser, showToast } = useAuth();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+  const requestIdRef = useRef(0);
 
-  // State
   const [users, setUsers] = useState<UserItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
-
-  // Modals / Dialog confirmations
-  const [confirmModal, setConfirmModal] = useState<{
-    isOpen: boolean;
-    type: "delete" | "status" | "role";
-    targetUser: UserItem | null;
-    newValue?: any;
-  }>({
-    isOpen: false,
-    type: "status",
-    targetUser: null,
-  });
-
+  const [summary, setSummary] = useState(EMPTY_SUMMARY);
+  const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const [role, setRole] = useState("");
+  const [status, setStatus] = useState("");
+  const [activity, setActivity] = useState("");
+  const [provider, setProvider] = useState("");
+  const [verification, setVerification] = useState("");
+  const [lockTarget, setLockTarget] = useState<UserItem | null>(null);
+  const [lockReason, setLockReason] = useState("");
 
-  // Fetch users from API
-  const fetchUsers = async () => {
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(1);
+    }, 350);
+    return () => window.clearTimeout(timeout);
+  }, [searchInput]);
+
+  const fetchUsers = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     try {
-      const token = Cookies.get("token");
-      const res = await fetch(`${API_URL}/auth/admin/users`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      const params = new URLSearchParams({ page: String(page), limit: "10" });
+      if (search) params.set("search", search);
+      if (role) params.set("role", role);
+      if (status) params.set("status", status);
+      if (activity) params.set("activity", activity);
+      if (provider) params.set("provider", provider);
+      if (verification) params.set("verification", verification);
+      const response = await fetch(`${API_URL}/auth/admin/users?${params}`, {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${Cookies.get("token") || ""}` },
       });
-
-      if (res.ok) {
-        const data = await res.json();
-        setUsers(data);
-      } else {
-        showToast("Không thể tải danh sách người dùng", "error");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Không thể tải danh sách người dùng");
+      if (requestId !== requestIdRef.current) return;
+      const result = data as UsersResponse;
+      setUsers(result.items || []);
+      setSummary(result.summary || EMPTY_SUMMARY);
+      setTotalItems(result.pagination?.totalItems || 0);
+      setTotalPages(result.pagination?.totalPages || 1);
+      if (page > (result.pagination?.totalPages || 1)) setPage(result.pagination?.totalPages || 1);
+    } catch (error) {
+      if (requestId === requestIdRef.current) {
+        showToast(error instanceof Error ? error.message : "Lỗi kết nối máy chủ", "error");
       }
-    } catch (err) {
-      console.error(err);
-      showToast("Lỗi kết nối máy chủ", "error");
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
-  };
+  }, [API_URL, activity, page, provider, role, search, showToast, status, verification]);
 
   useEffect(() => {
-    fetchUsers();
-  }, []);
+    void fetchUsers();
+  }, [fetchUsers]);
 
-  // Filter users by search term
-  const filteredUsers = users.filter((u) => {
-    const q = searchTerm.toLowerCase();
-    return (
-      u.displayName?.toLowerCase().includes(q) ||
-      u.email?.toLowerCase().includes(q) ||
-      u.role?.toLowerCase().includes(q)
-    );
-  });
-
-  // Pagination
-  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
-  const paginatedUsers = filteredUsers.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
-
-  // Reset page to 1 when search term changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm]);
-
-  // Handle action calls
-  const handleConfirmAction = async () => {
-    const { type, targetUser, newValue } = confirmModal;
-    if (!targetUser) return;
-
+  const runAction = async (path: string, init: RequestInit) => {
     setActionLoading(true);
     try {
-      const token = Cookies.get("token");
-      let res;
-
-      if (type === "role") {
-        res = await fetch(`${API_URL}/auth/admin/users/${targetUser._id}/role`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ role: newValue }),
-        });
-      } else if (type === "status") {
-        res = await fetch(`${API_URL}/auth/admin/users/${targetUser._id}/status`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ isActive: newValue }),
-        });
-      } else {
-        res = await fetch(`${API_URL}/auth/admin/users/${targetUser._id}`, {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-      }
-
-      const data = await res.json();
-      if (res.ok) {
-        showToast(data.message || "Thao tác thành công", "success");
-        // Update local state immediately
-        if (type === "role") {
-          setUsers((prev) =>
-            prev.map((u) => (u._id === targetUser._id ? { ...u, role: newValue } : u))
-          );
-        } else if (type === "status") {
-          setUsers((prev) =>
-            prev.map((u) => (u._id === targetUser._id ? { ...u, isActive: newValue } : u))
-          );
-        } else {
-          setUsers((prev) => prev.filter((u) => u._id !== targetUser._id));
-        }
-      } else {
-        showToast(data.message || "Thao tác thất bại", "error");
-      }
-    } catch (err) {
-      console.error(err);
-      showToast("Lỗi kết nối máy chủ", "error");
+      const response = await fetch(`${API_URL}${path}`, {
+        ...init,
+        headers: {
+          ...(init.body ? { "Content-Type": "application/json" } : {}),
+          Authorization: `Bearer ${Cookies.get("token") || ""}`,
+          ...init.headers,
+        },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Thao tác thất bại");
+      showToast(data.message || "Cập nhật người dùng thành công", "success");
+      await fetchUsers();
+      return true;
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Lỗi kết nối máy chủ", "error");
+      return false;
     } finally {
       setActionLoading(false);
-      setConfirmModal({ isOpen: false, type: "status", targetUser: null });
     }
   };
 
-  const openConfirmModal = (type: "delete" | "status" | "role", targetUser: UserItem, newValue?: any) => {
-    if (currentUser?.id === targetUser._id) {
-      showToast("Bạn không thể tự chỉnh sửa hoặc xóa chính mình!", "warning");
-      return;
-    }
-    setConfirmModal({
-      isOpen: true,
-      type,
-      targetUser,
-      newValue,
+  const changeRole = async (target: UserItem, nextRole: UserRole) => {
+    if (nextRole === target.role) return;
+    const accepted = await confirm({
+      title: "Thay đổi quyền tài khoản?",
+      message: `${target.displayName} sẽ được chuyển thành ${nextRole === "admin" ? "quản trị viên" : "thành viên"}. Các phiên đăng nhập cũ sẽ được thu hồi.`,
+      confirmLabel: "Đổi quyền",
+      tone: "warning",
+    });
+    if (!accepted) return;
+    await runAction(`/auth/admin/users/${encodeURIComponent(target._id)}/role`, {
+      method: "PUT",
+      body: JSON.stringify({ role: nextRole }),
     });
   };
 
+  const unlockUser = async (target: UserItem) => {
+    const accepted = await confirm({
+      title: "Mở khóa tài khoản?",
+      message: `${target.displayName} có thể đăng nhập lại, nhưng phải đăng nhập mới vì phiên cũ đã bị thu hồi.`,
+      confirmLabel: "Mở khóa",
+      tone: "warning",
+    });
+    if (!accepted) return;
+    await runAction(`/auth/admin/users/${encodeURIComponent(target._id)}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ isActive: true }),
+    });
+  };
+
+  const submitLock = async () => {
+    if (!lockTarget) return;
+    const success = await runAction(`/auth/admin/users/${encodeURIComponent(lockTarget._id)}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ isActive: false, reason: lockReason.trim() }),
+    });
+    if (success) {
+      setLockTarget(null);
+      setLockReason("");
+    }
+  };
+
+  const deleteUser = async (target: UserItem) => {
+    const accepted = await confirm({
+      title: "Xóa và ẩn danh tài khoản?",
+      message: `Dữ liệu cá nhân của ${target.displayName} sẽ bị xóa và tài khoản bị ẩn. ID vô danh được giữ lại để bình luận, đánh giá cũ không bị hỏng liên kết.`,
+      confirmLabel: "Xóa & ẩn danh",
+      tone: "danger",
+    });
+    if (!accepted) return;
+    const success = await runAction(`/auth/admin/users/${encodeURIComponent(target._id)}`, { method: "DELETE" });
+    if (success && users.length === 1 && page > 1) setPage((value) => value - 1);
+  };
+
+  const resetFilters = () => {
+    setSearchInput("");
+    setSearch("");
+    setRole("");
+    setStatus("");
+    setActivity("");
+    setProvider("");
+    setVerification("");
+    setPage(1);
+  };
+
+  const statCards = [
+    ["Tổng tài khoản", summary.totalUsers, Users, "text-blue-400 bg-blue-500/10"],
+    ["Tài khoản đang mở", summary.activeUsers, UserCheck, "text-emerald-400 bg-emerald-500/10"],
+    ["Không hoạt động 15 ngày", summary.inactiveUsers, CalendarDays, "text-amber-400 bg-amber-500/10"],
+    ["Đang bị khóa", summary.blockedUsers, LockKeyhole, "text-red-400 bg-red-500/10"],
+    ["Mới trong 30 ngày", summary.newUsers, ShieldCheck, "text-pink-400 bg-pink-500/10"],
+    ["Chờ xác minh email", summary.pendingVerification, MailCheck, "text-cyan-400 bg-cyan-500/10"],
+  ] as const;
+
   return (
-    <div className="space-y-6 animate-fadeIn text-left">
-      {/* Header controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-5 animate-fadeIn text-left">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h3 className="text-base md:text-lg font-black text-white tracking-tight">Quản lý Người dùng</h3>
-          <p className="text-[10px] font-semibold text-zinc-500 mt-0.5">
-            Quản lý quyền hạn, chặn truy cập và tài khoản người dùng hệ thống.
-          </p>
+          <h3 className="text-lg font-black tracking-tight text-white">Quản lý Người dùng</h3>
+          <p className="mt-1 text-[10px] font-semibold text-zinc-500">Theo dõi hoạt động, nguồn đăng nhập, quyền và trạng thái tài khoản.</p>
         </div>
+        <button type="button" onClick={() => void fetchUsers()} disabled={loading} className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-white/5 bg-white/[0.03] px-3 text-[10px] font-black text-zinc-400 transition-colors hover:text-white disabled:opacity-50">
+          <RefreshCw size={13} className={loading ? "animate-spin" : ""} /> Làm mới
+        </button>
+      </div>
 
-        <div className="flex gap-2 items-center">
-          {/* Search bar */}
-          <div className="relative">
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Tìm theo tên, email..."
-              className="h-9 w-48 sm:w-60 bg-[#0d0e13] border border-zinc-900 rounded-xl px-3 pl-8 text-xs text-zinc-200 placeholder-zinc-650 focus:outline-none focus:border-pink-500/50"
-            />
-            <Search size={12} className="text-zinc-650 absolute top-1/2 left-3 -translate-y-1/2" />
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
+        {statCards.map(([label, value, Icon, color]) => (
+          <div key={label} className="rounded-2xl border border-white/[0.05] bg-white/[0.025] p-4">
+            <div className={`mb-3 flex h-8 w-8 items-center justify-center rounded-xl ${color}`}><Icon size={15} /></div>
+            <p className="text-xl font-black text-white">{value}</p>
+            <p className="mt-1 text-[9px] font-bold uppercase tracking-wider text-zinc-600">{label}</p>
           </div>
+        ))}
+      </div>
 
-          {/* Reload button */}
-          <button
-            onClick={fetchUsers}
-            disabled={loading}
-            className="w-9 h-9 rounded-xl bg-zinc-900/60 hover:bg-zinc-900 text-zinc-400 hover:text-white flex items-center justify-center transition-all cursor-pointer border-none disabled:opacity-50"
-            title="Tải lại dữ liệu"
-          >
-            <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
-          </button>
+      <div className="flex gap-3 rounded-2xl border border-amber-500/15 bg-amber-500/[0.04] p-4 text-amber-200/80">
+        <AlertTriangle size={17} className="mt-0.5 shrink-0 text-amber-400" />
+        <div>
+          <p className="text-xs font-black">Không tự động xóa tài khoản sau 15 ngày</p>
+          <p className="mt-1 text-[10px] leading-5 text-zinc-500">Mốc 15 ngày chỉ giúp lọc người dùng lâu chưa quay lại. Xóa tự động sẽ làm mất lịch sử xem, yêu thích và danh sách cá nhân; admin chỉ có thể xóa và ẩn danh tài khoản đã khóa.</p>
         </div>
       </div>
 
-      {/* Main Table */}
-      <div className="bg-[#0d0e13] border border-zinc-900 rounded-2xl overflow-hidden shadow-sm">
+      <div className="rounded-2xl border border-white/[0.05] bg-[#0d0e13]">
+        <div className="grid gap-2 border-b border-white/[0.05] p-4 md:grid-cols-2 xl:grid-cols-[minmax(200px,1fr)_repeat(5,135px)_auto]">
+          <label className="relative">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" />
+            <input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Tìm tên hoặc email..." className="h-9 w-full rounded-xl border border-white/[0.06] bg-black/25 pl-9 pr-3 text-xs text-white outline-none transition-colors focus:border-pink-500/40" />
+          </label>
+          <select value={role} onChange={(event) => { setRole(event.target.value); setPage(1); }} className="h-9 rounded-xl border border-white/[0.06] bg-[#090a0f] px-3 text-[10px] font-bold text-zinc-400 outline-none"><option value="">Mọi vai trò</option><option value="member">Thành viên</option><option value="admin">Quản trị viên</option></select>
+          <select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} className="h-9 rounded-xl border border-white/[0.06] bg-[#090a0f] px-3 text-[10px] font-bold text-zinc-400 outline-none"><option value="">Mọi trạng thái</option><option value="active">Đang mở</option><option value="blocked">Đang khóa</option></select>
+          <select value={activity} onChange={(event) => { setActivity(event.target.value); setPage(1); }} className="h-9 rounded-xl border border-white/[0.06] bg-[#090a0f] px-3 text-[10px] font-bold text-zinc-400 outline-none"><option value="">Mọi hoạt động</option><option value="recent">Trong 15 ngày</option><option value="inactive">Quá 15 ngày</option><option value="never">Chưa ghi nhận</option></select>
+          <select value={provider} onChange={(event) => { setProvider(event.target.value); setPage(1); }} className="h-9 rounded-xl border border-white/[0.06] bg-[#090a0f] px-3 text-[10px] font-bold text-zinc-400 outline-none"><option value="">Mọi đăng nhập</option><option value="password">Mật khẩu</option><option value="google">Google</option><option value="hybrid">Hybrid</option></select>
+          <select value={verification} onChange={(event) => { setVerification(event.target.value); setPage(1); }} className="h-9 rounded-xl border border-white/[0.06] bg-[#090a0f] px-3 text-[10px] font-bold text-zinc-400 outline-none"><option value="">Mọi xác minh</option><option value="verified">Đã xác minh</option><option value="pending">Chờ xác minh</option></select>
+          <button type="button" onClick={resetFilters} className="h-9 rounded-xl px-3 text-[10px] font-black text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-300">Xóa lọc</button>
+        </div>
+
         {loading ? (
-          // Skeleton loader
-          <div className="p-6 space-y-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="flex gap-4 p-4 rounded-xl border border-zinc-900 animate-pulse bg-zinc-900/20">
-                <div className="w-9 h-9 rounded-full bg-zinc-800 shrink-0" />
-                <div className="flex-1 space-y-2">
-                  <div className="w-32 h-3.5 bg-zinc-800 rounded" />
-                  <div className="w-1/2 h-3 bg-zinc-900/40 rounded" />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : filteredUsers.length === 0 ? (
-          // Empty State
-          <div className="p-16 text-center flex flex-col items-center justify-center gap-3.5 select-none">
-            <div className="w-14 h-14 rounded-full bg-pink-500/5 border border-pink-500/10 flex items-center justify-center text-pink-400">
-              <User size={28} />
-            </div>
-            <div className="space-y-1">
-              <h4 className="font-extrabold text-xs text-zinc-300">Không tìm thấy người dùng</h4>
-              <p className="text-[10px] text-zinc-500 max-w-sm">
-                Không tìm thấy tài khoản nào khớp với từ khóa tìm kiếm của bạn.
-              </p>
-            </div>
-          </div>
+          <div className="space-y-3 p-5">{Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-16 animate-pulse rounded-xl bg-white/[0.025]" />)}</div>
+        ) : users.length === 0 ? (
+          <div className="flex min-h-56 flex-col items-center justify-center gap-2 p-8 text-center"><Users size={30} className="text-zinc-700" /><p className="text-xs font-black text-zinc-400">Không tìm thấy tài khoản phù hợp</p><button type="button" onClick={resetFilters} className="text-[10px] font-bold text-pink-400">Xóa bộ lọc</button></div>
         ) : (
-          <div className="w-full">
-            {/* Desktop Table View */}
-            <div className="hidden md:block overflow-x-auto w-full">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-zinc-900/80 text-[10px] font-black text-zinc-550 uppercase select-none">
-                    <th className="py-3.5 pl-4">Người dùng</th>
-                    <th className="py-3.5">Ngày đăng ký</th>
-                    <th className="py-3.5">Vai trò (Role)</th>
-                    <th className="py-3.5">Trạng thái (Status)</th>
-                    <th className="py-3.5 pr-4 text-right">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-900/40">
-                  {paginatedUsers.map((u) => {
-                    const isSelf = currentUser?.id === u._id;
-                    const dateStr = u.createdAt ? new Date(u.createdAt).toLocaleDateString("vi-VN") : "N/A";
-
-                    return (
-                      <tr key={u._id} className="hover:bg-zinc-900/10 transition-colors">
-                        {/* Name & Email info */}
-                        <td className="py-4 pl-4">
-                          <div className="flex gap-3 items-center">
-                            {u.avatar ? (
-                              <img
-                                src={u.avatar}
-                                alt={u.displayName}
-                                className="w-8 h-8 rounded-full object-cover shrink-0 select-none border border-zinc-800"
-                                onError={(e) => {
-                                  (e.target as any).style.display = "none";
-                                }}
-                              />
-                            ) : (
-                              <div className="w-8 h-8 rounded-full bg-pink-500/10 border border-pink-500/25 flex items-center justify-center shrink-0 font-black text-xs text-pink-400 select-none">
-                                {u.displayName ? u.displayName[0].toUpperCase() : "U"}
-                              </div>
-                            )}
-
-                            <div className="text-left space-y-0.5 min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-bold text-zinc-200 truncate">{u.displayName}</span>
-                                {isSelf && (
-                                  <span className="text-[8px] bg-pink-500/20 text-pink-400 font-extrabold uppercase px-1 rounded-sm tracking-wider">
-                                    Bạn
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-[10px] text-zinc-500 truncate leading-none">
-                                {u.email}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Reg date */}
-                        <td className="py-4 text-zinc-400 font-medium tabular-nums">
-                          <div className="flex items-center gap-1 text-[11px]">
-                            <Calendar size={12} className="text-zinc-600" />
-                            {dateStr}
-                          </div>
-                        </td>
-
-                        {/* Role selection dropdown */}
-                        <td className="py-4">
-                          {isSelf ? (
-                            <span className="inline-flex items-center gap-1 bg-pink-500/10 text-pink-400 border border-pink-500/20 font-black text-[9px] uppercase px-2 py-0.5 rounded-md">
-                              <Shield size={10} />
-                              {u.role}
-                            </span>
-                          ) : (
-                            <select
-                              value={u.role}
-                              onChange={(e) => openConfirmModal("role", u, e.target.value)}
-                              className="bg-[#07070a] border border-zinc-900 rounded-lg px-2 py-1 text-[11px] text-zinc-300 font-bold focus:outline-none focus:border-pink-500/50 cursor-pointer text-white"
-                            >
-                              <option value="member">Thành viên</option>
-                              <option value="admin">Quản trị viên</option>
-                            </select>
-                          )}
-                        </td>
-
-                        {/* Active/Blocked Status */}
-                        <td className="py-4">
-                          {isSelf ? (
-                            <span className="inline-flex items-center gap-1.5 bg-green-500/5 text-green-400 border border-green-500/10 font-bold text-[9px] px-2.5 py-0.5 rounded-full select-none">
-                              <UserCheck size={11} />
-                              Đang hoạt động
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => openConfirmModal("status", u, !u.isActive)}
-                              className={`inline-flex items-center gap-1.5 font-bold text-[9px] px-2.5 py-0.5 rounded-full select-none transition-all cursor-pointer border ${
-                                u.isActive
-                                  ? "bg-green-500/5 text-green-400 border-green-500/10 hover:bg-green-500/15 hover:border-green-500/20"
-                                  : "bg-red-500/5 text-red-400 border-red-500/10 hover:bg-red-500/15 hover:border-red-500/20"
-                              }`}
-                            >
-                              {u.isActive ? (
-                                <>
-                                  <UserCheck size={11} />
-                                  Hoạt động
-                                </>
-                              ) : (
-                                <>
-                                  <UserX size={11} />
-                                  Bị khóa
-                                </>
-                              )}
-                            </button>
-                          )}
-                        </td>
-
-                        {/* Delete actions */}
-                        <td className="py-4 pr-4 text-right">
-                          {!isSelf && (
-                            <button
-                              onClick={() => openConfirmModal("delete", u)}
-                              className="w-7 h-7 rounded-lg bg-red-500/5 hover:bg-red-500/10 border border-red-500/10 hover:border-red-500/20 text-red-400 hover:text-red-300 flex items-center justify-center transition-all cursor-pointer inline-flex"
-                              title="Xóa người dùng"
-                            >
-                              <Trash2 size={12} />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile Cards Stack View */}
-            <div className="block md:hidden divide-y divide-zinc-900/40">
-              {paginatedUsers.map((u) => {
-                const isSelf = currentUser?.id === u._id;
-                const dateStr = u.createdAt ? new Date(u.createdAt).toLocaleDateString("vi-VN") : "N/A";
-
-                return (
-                  <div key={u._id} className="p-4 space-y-3.5 text-left">
-                    {/* User Header */}
-                    <div className="flex justify-between items-start gap-2">
-                      <div className="flex gap-2.5 items-center">
-                        {u.avatar ? (
-                          <img
-                            src={u.avatar}
-                            alt={u.displayName}
-                            className="w-8 h-8 rounded-full object-cover shrink-0 select-none border border-zinc-800"
-                            onError={(e) => {
-                              (e.target as any).style.display = "none";
-                            }}
-                          />
-                        ) : (
-                          <div className="w-8 h-8 rounded-full bg-pink-500/10 border border-pink-500/25 flex items-center justify-center shrink-0 font-black text-xs text-pink-400 select-none">
-                            {u.displayName ? u.displayName[0].toUpperCase() : "U"}
-                          </div>
-                        )}
-                        <div className="text-left min-w-0 space-y-0.5">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-xs text-zinc-200 truncate">{u.displayName}</span>
-                            {isSelf && (
-                              <span className="text-[8px] bg-pink-500/20 text-pink-400 font-extrabold uppercase px-1 rounded-sm tracking-wider">
-                                Bạn
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[10px] text-zinc-550 truncate leading-none">{u.email}</p>
-                        </div>
-                      </div>
-
-                      <span className="text-[9px] text-zinc-500 font-medium tabular-nums flex items-center gap-0.5 pt-0.5">
-                        <Calendar size={11} className="text-zinc-650" />
-                        {dateStr}
-                      </span>
-                    </div>
-
-                    {/* Settings Details: Role & Status */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 bg-zinc-950/20 p-2.5 rounded-xl border border-zinc-900/60">
-                      {/* Role selection */}
-                      <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">
-                        <span>Vai trò:</span>
-                        {isSelf ? (
-                          <span className="inline-flex items-center gap-1 bg-pink-500/10 text-pink-400 border border-pink-500/20 font-black text-[9px] uppercase px-2 py-0.5 rounded-md">
-                            <Shield size={10} />
-                            {u.role}
-                          </span>
-                        ) : (
-                          <select
-                            value={u.role}
-                            onChange={(e) => openConfirmModal("role", u, e.target.value)}
-                            className="bg-[#07070a] border border-zinc-900 rounded-lg px-2 py-1 text-[11px] text-zinc-300 font-bold focus:outline-none focus:border-pink-500/50 cursor-pointer text-white"
-                          >
-                            <option value="member">Thành viên</option>
-                            <option value="admin">Quản trị viên</option>
-                          </select>
-                        )}
-                      </div>
-
-                      {/* Active toggle */}
-                      <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">
-                        <span>Trạng thái:</span>
-                        {isSelf ? (
-                          <span className="inline-flex items-center gap-1 bg-green-500/5 text-green-400 border border-green-500/10 font-bold text-[9px] px-2 py-0.5 rounded-full select-none">
-                            Hoạt động
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => openConfirmModal("status", u, !u.isActive)}
-                            className={`inline-flex items-center gap-1 font-bold text-[9px] px-2 py-0.5 rounded-md transition-all cursor-pointer border ${
-                              u.isActive
-                                ? "bg-green-500/5 text-green-400 border-green-500/10"
-                                : "bg-red-500/5 text-red-400 border-red-500/10"
-                            }`}
-                          >
-                            {u.isActive ? "Đang hoạt động" : "Bị khóa"}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Actions Footer */}
-                    {!isSelf && (
-                      <div className="flex justify-end pt-1">
-                        <button
-                          onClick={() => openConfirmModal("delete", u)}
-                          className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/10 hover:border-red-500/20 text-red-500 font-extrabold text-[10px] rounded-lg transition-colors cursor-pointer flex items-center gap-1"
-                          title="Xóa người dùng"
-                        >
-                          <Trash2 size={11} /> Xóa tài khoản
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px] border-collapse text-left">
+              <thead><tr className="border-b border-white/[0.05] text-[9px] font-black uppercase tracking-wider text-zinc-600"><th className="px-4 py-3">Người dùng</th><th className="px-3 py-3">Đăng nhập</th><th className="px-3 py-3">Hoạt động gần nhất</th><th className="px-3 py-3">Vai trò</th><th className="px-3 py-3">Trạng thái</th><th className="px-4 py-3 text-right">Thao tác</th></tr></thead>
+              <tbody className="divide-y divide-white/[0.04]">
+                {users.map((target) => {
+                  const self = currentUser?.id === target._id;
+                  const activityMeta = activityLabel(target);
+                  return (
+                    <tr key={target._id} className="transition-colors hover:bg-white/[0.018]">
+                      <td className="px-4 py-3"><div className="flex items-center gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-pink-500/10 text-xs font-black text-pink-400">{target.avatar ? <img src={target.avatar} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : target.displayName?.[0]?.toUpperCase() || "U"}</div><div className="min-w-0"><div className="flex items-center gap-2"><p className="max-w-52 truncate text-xs font-black text-zinc-200">{target.displayName}</p>{self && <span className="rounded bg-pink-500/10 px-1.5 py-0.5 text-[8px] font-black text-pink-400">BẠN</span>}</div><p className="mt-0.5 max-w-60 truncate text-[10px] text-zinc-600">{target.email}</p><p className="mt-1 text-[8px] text-zinc-700">Tạo {formatDate(target.createdAt)}</p></div></div></td>
+                      <td className="px-3 py-3"><span className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.05] bg-white/[0.025] px-2 py-1 text-[9px] font-bold text-zinc-400"><KeyRound size={10} />{providerLabel[target.authProvider]}</span>{target.verificationStatus === "pending" && <p className="mt-1 text-[8px] font-black text-cyan-400">CHỜ XÁC MINH · tự dọn sau 72 giờ</p>}</td>
+                      <td className="px-3 py-3"><p className={`text-[10px] font-black ${activityMeta.stale ? "text-amber-400" : "text-emerald-400"}`}>{activityMeta.text}</p><p className="mt-1 text-[8px] text-zinc-700">{target.lastActiveAt || target.lastLoginAt ? formatDate(target.lastActiveAt || target.lastLoginAt) : "Ước tính theo ngày tạo"}</p></td>
+                      <td className="px-3 py-3">{self ? <span className="text-[9px] font-black uppercase text-pink-400">{target.role}</span> : <select value={target.role} disabled={actionLoading} onChange={(event) => void changeRole(target, event.target.value as UserRole)} className="rounded-lg border border-white/[0.06] bg-[#08090d] px-2 py-1.5 text-[9px] font-black text-zinc-300 outline-none"><option value="member">Thành viên</option><option value="admin">Quản trị viên</option></select>}</td>
+                      <td className="px-3 py-3"><button type="button" disabled={self || actionLoading} onClick={() => target.isActive ? setLockTarget(target) : void unlockUser(target)} className={`rounded-full border px-2.5 py-1 text-[9px] font-black disabled:cursor-not-allowed disabled:opacity-60 ${target.isActive ? "border-emerald-500/15 bg-emerald-500/[0.06] text-emerald-400" : "border-red-500/15 bg-red-500/[0.06] text-red-400"}`}>{target.isActive ? "Đang mở" : "Bị khóa"}</button>{!target.isActive && target.suspensionReason && <p title={target.suspensionReason} className="mt-1 max-w-40 truncate text-[8px] text-zinc-700">{target.suspensionReason}</p>}</td>
+                      <td className="px-4 py-3 text-right">{!self && !target.isActive && <button type="button" disabled={actionLoading} onClick={() => void deleteUser(target)} title="Xóa dữ liệu cá nhân và ẩn danh tài khoản đã khóa" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/10 bg-red-500/[0.04] text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-40"><Trash2 size={12} /></button>}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
 
-        {/* Pagination block */}
-        {!loading && totalPages > 1 && (
-          <div className="border-t border-zinc-900/60 px-4">
-            <Pagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              onPageChange={(page) => setCurrentPage(page)}
-            />
-          </div>
-        )}
+        {!loading && totalPages > 1 && <div className="flex items-center justify-between border-t border-white/[0.05] px-4"><p className="text-[9px] font-bold text-zinc-700">{totalItems} tài khoản phù hợp</p><Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} /></div>}
       </div>
 
-      {/* Confirmation Modal */}
-      {confirmModal.isOpen && confirmModal.targetUser && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
-          <div
-            onClick={() => setConfirmModal({ isOpen: false, type: "status", targetUser: null })}
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-          />
-          <div className="relative w-full max-w-sm bg-[#0d0e13] border border-zinc-900 rounded-2xl p-6 shadow-2xl space-y-4 animate-scaleUp">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-red-500/5 border border-red-500/10 flex items-center justify-center text-red-400 shrink-0">
-                <AlertTriangle size={20} />
-              </div>
-              <div className="text-left">
-                <h4 className="font-extrabold text-sm text-zinc-150">Xác nhận thao tác</h4>
-                <p className="text-[10px] text-zinc-500 mt-0.5">
-                  Thao tác này ảnh hưởng trực tiếp đến người dùng.
-                </p>
-              </div>
-            </div>
-
-            <div className="text-xs text-zinc-400 bg-[#07070a] border border-zinc-900/60 rounded-xl p-3.5 text-left leading-relaxed">
-              {confirmModal.type === "delete" && (
-                <>
-                  Bạn có chắc chắn muốn <span className="text-red-400 font-bold">xóa vĩnh viễn</span> tài khoản của{" "}
-                  <span className="text-zinc-200 font-extrabold">{confirmModal.targetUser.displayName}</span>? Hành động này không thể hoàn tác!
-                </>
-              )}
-              {confirmModal.type === "status" && (
-                <>
-                  Bạn có chắc chắn muốn {confirmModal.newValue ? "mở khóa" : "khóa"} tài khoản của{" "}
-                  <span className="text-zinc-200 font-extrabold">{confirmModal.targetUser.displayName}</span>?{" "}
-                  {!confirmModal.newValue && "Người dùng này sẽ không thể đăng nhập vào hệ thống nữa."}
-                </>
-              )}
-              {confirmModal.type === "role" && (
-                <>
-                  Bạn có chắc chắn muốn chuyển vai trò của{" "}
-                  <span className="text-zinc-200 font-extrabold">{confirmModal.targetUser.displayName}</span> thành{" "}
-                  <span className="text-pink-400 font-black uppercase">
-                    {confirmModal.newValue === "admin" ? "Quản trị viên" : "Thành viên"}
-                  </span>
-                  ?
-                </>
-              )}
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <button
-                disabled={actionLoading}
-                onClick={() => setConfirmModal({ isOpen: false, type: "status", targetUser: null })}
-                className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-[11px] font-black rounded-lg transition-colors cursor-pointer border-none"
-              >
-                Hủy bỏ
-              </button>
-              <button
-                disabled={actionLoading}
-                onClick={handleConfirmAction}
-                className="px-4 py-2 bg-pink-500 hover:bg-pink-600 disabled:opacity-50 text-white text-[11px] font-black rounded-lg transition-colors cursor-pointer border-none flex items-center justify-center gap-1.5"
-              >
-                {actionLoading && <RefreshCw size={11} className="animate-spin" />}
-                Xác nhận
-              </button>
-            </div>
-          </div>
+      {lockTarget && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !actionLoading) setLockTarget(null); }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="lock-user-title" className="w-full max-w-md rounded-3xl border border-amber-500/20 bg-[#101119] p-6 shadow-2xl">
+            <div className="flex items-start gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-400"><LockKeyhole size={20} /></div><div><h3 id="lock-user-title" className="text-base font-black text-white">Khóa tài khoản {lockTarget.displayName}?</h3><p className="mt-1 text-xs leading-5 text-zinc-500">Người dùng sẽ bị đăng xuất và không thể đăng nhập cho tới khi được mở khóa.</p></div></div>
+            <label className="mt-5 block"><span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Lý do quản trị</span><textarea value={lockReason} onChange={(event) => setLockReason(event.target.value.slice(0, 200))} maxLength={200} rows={3} placeholder="Ví dụ: Spam bình luận hoặc vi phạm điều khoản..." className="mt-2 w-full resize-none rounded-2xl border border-white/[0.07] bg-black/25 p-3 text-xs text-white outline-none focus:border-amber-500/30" /><span className="mt-1 block text-right text-[8px] text-zinc-700">{lockReason.length}/200</span></label>
+            <div className="mt-5 flex justify-end gap-2"><button type="button" disabled={actionLoading} onClick={() => { setLockTarget(null); setLockReason(""); }} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-xs font-black text-zinc-400">Hủy</button><button type="button" disabled={actionLoading} onClick={() => void submitLock()} className="inline-flex min-w-28 items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-xs font-black text-black disabled:opacity-50">{actionLoading && <RefreshCw size={13} className="animate-spin" />}Khóa tài khoản</button></div>
+          </section>
         </div>
       )}
+
+      {confirmDialog}
     </div>
   );
 }

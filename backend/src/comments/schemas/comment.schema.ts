@@ -23,6 +23,16 @@ export class Comment {
   @Prop({ required: true })
   content: string;
 
+  // Chỉ admin service chủ động select trường này; API công khai luôn trả content đã che.
+  @Prop({ select: false })
+  originalContent?: string;
+
+  @Prop({ type: [String], default: [] })
+  moderationFlags?: string[];
+
+  @Prop({ default: 0 })
+  maskedProfanityCount?: number;
+
   @Prop({ index: true })
   contentFingerprint?: string;
 
