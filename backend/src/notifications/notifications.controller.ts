@@ -13,30 +13,59 @@ export class NotificationsController {
   @Get()
   @UseGuards(RolesGuard)
   async getNotifications(
+    @Req() req: express.Request,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('read') read?: string,
+    @Query('type') type?: string,
+    @Query('search') search?: string,
   ) {
     const p = page ? parseInt(page, 10) : 1;
     const l = limit ? parseInt(limit, 10) : 10;
-    return this.notificationsService.getNotifications(p, l);
+    return this.notificationsService.getNotifications(req['user']?.sub, p, l, {
+      read,
+      type,
+      search,
+    });
   }
 
   @Put('read-all')
   @UseGuards(RolesGuard)
-  async markAllAsRead() {
-    return this.notificationsService.markAllAsRead();
+  async markAllAsRead(@Req() req: express.Request) {
+    return this.notificationsService.markAllAsRead(req['user']?.sub);
   }
 
   @Put(':id/read')
   @UseGuards(RolesGuard)
-  async markAsRead(@Param('id') id: string) {
-    return this.notificationsService.markAsRead(id);
+  async markAsRead(@Req() req: express.Request, @Param('id') id: string) {
+    return this.notificationsService.markAsRead(req['user']?.sub, id);
   }
 
   @Delete('clear')
   @UseGuards(RolesGuard)
-  async clearAll() {
-    return this.notificationsService.clearAll();
+  async clearAll(@Req() req: express.Request) {
+    return this.notificationsService.clearAll(req['user']?.sub);
+  }
+
+  @Get('admin/broadcasts')
+  @UseGuards(RolesGuard)
+  async getBroadcasts(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.notificationsService.getBroadcasts(
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 10,
+    );
+  }
+
+  @Post('admin/broadcasts')
+  @UseGuards(RolesGuard)
+  async createBroadcast(
+    @Req() req: express.Request,
+    @Body() body: { title?: string; content?: string; link?: string; expiresInDays?: number },
+  ) {
+    return this.notificationsService.createBroadcast(req['user']?.sub, body);
   }
 
   // ─── USER NOTIFICATION ENDPOINTS ───

@@ -36,7 +36,7 @@ const NAV_ITEMS = [
   { id: "banners", label: "Banner", icon: ImageIcon },
   { id: "reports", label: "Báo cáo lỗi", icon: AlertTriangle, countKey: "movieReports" },
   { id: "playback", label: "Sức khỏe nguồn", icon: Activity },
-  { id: "notifications", label: "Thông báo", icon: Bell, countKey: "notifications" },
+  { id: "notifications", label: "Trung tâm thông báo", icon: Bell, countKey: "notifications" },
 ];
 
 export default function AdminSidebar({

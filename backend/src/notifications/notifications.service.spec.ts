@@ -79,4 +79,77 @@ describe('NotificationsService user isolation', () => {
     ).resolves.toBe(existing);
     expect(gateway.emitToUser).not.toHaveBeenCalled();
   });
+
+  it('scopes admin read state to the authenticated admin', async () => {
+    const adminId = new Types.ObjectId().toString();
+    const findQuery = {
+      sort: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue([
+        { _id: notificationId, title: 'Báo lỗi', readBy: [new Types.ObjectId(adminId)] },
+      ]),
+    };
+    const notificationModel = {
+      find: jest.fn().mockReturnValue(findQuery),
+      countDocuments: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(1) }),
+    };
+    const service = new NotificationsService(
+      notificationModel as any,
+      {} as any,
+      {} as any,
+      { emitToUser: jest.fn() } as any,
+    );
+
+    const result = await service.getNotifications(adminId, 1, 10, { read: 'read' });
+
+    expect(notificationModel.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        archivedBy: { $ne: expect.any(Types.ObjectId) },
+        readBy: expect.any(Types.ObjectId),
+      }),
+    );
+    expect(result.items[0].isRead).toBe(true);
+  });
+
+  it('queues a bounded broadcast campaign instead of creating one promise per user', async () => {
+    const adminId = new Types.ObjectId().toString();
+    const campaignId = new Types.ObjectId();
+    const campaign = {
+      _id: campaignId,
+      title: 'Bảo trì hệ thống',
+      content: 'DlowPhim sẽ bảo trì trong ít phút.',
+      status: 'queued',
+    };
+    const campaignModel = {
+      countDocuments: jest.fn().mockResolvedValue(0),
+      create: jest.fn().mockResolvedValue(campaign),
+      findOneAndUpdate: jest.fn().mockReturnValue({
+        lean: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(null) }),
+      }),
+    };
+    const userModel = { countDocuments: jest.fn().mockResolvedValue(42) };
+    const userNotificationModel = { insertMany: jest.fn() };
+    const service = new NotificationsService(
+      {} as any,
+      userNotificationModel as any,
+      userModel as any,
+      { emitToUser: jest.fn(), emitToAllUsers: jest.fn() } as any,
+      campaignModel as any,
+    );
+
+    const result = await service.createBroadcast(adminId, {
+      title: 'Bảo trì hệ thống',
+      content: 'DlowPhim sẽ bảo trì trong ít phút.',
+      link: '/user/notifications',
+      expiresInDays: 7,
+    });
+
+    expect(result.message).toContain('42 người dùng');
+    expect(campaignModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({ recipientCount: 42, status: 'queued' }),
+    );
+    expect(userNotificationModel.insertMany).not.toHaveBeenCalled();
+  });
 });

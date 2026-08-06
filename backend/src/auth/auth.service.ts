@@ -78,18 +78,21 @@ export class AuthService {
   }
 
   async validateSession(userId: string, tokenVersion = 0): Promise<boolean> {
+    return Boolean(await this.getValidSessionUser(userId, tokenVersion));
+  }
+
+  async getValidSessionUser(userId: string, tokenVersion = 0) {
     if (!Types.ObjectId.isValid(userId)) return false;
 
     const user = await this.userModel
       .findById(userId)
-      .select('tokenVersion isActive')
+      .select('_id tokenVersion isActive role')
       .lean();
 
-    return Boolean(
-      user &&
-      user.isActive !== false &&
-      (user.tokenVersion || 0) === (tokenVersion || 0),
-    );
+    if (!user || user.isActive === false || (user.tokenVersion || 0) !== (tokenVersion || 0)) {
+      return null;
+    }
+    return user;
   }
 
   private validatePassword(password: string) {

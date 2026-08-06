@@ -179,6 +179,12 @@ export default function AdminDashboardPage() {
     fetchMovieReports();
   }, []);
 
+  useEffect(() => {
+    const refreshAdminNotifications = () => void fetchNotifications();
+    window.addEventListener("dlowphim:notifications-changed", refreshAdminNotifications);
+    return () => window.removeEventListener("dlowphim:notifications-changed", refreshAdminNotifications);
+  }, []);
+
   // Automatically refresh reports list or stats when switching tabs
   useEffect(() => {
     if (activeTab === "comments") {

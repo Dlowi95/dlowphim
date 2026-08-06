@@ -7,12 +7,14 @@ import { UserNotification, UserNotificationSchema } from './schemas/user-notific
 import { User, UserSchema } from '../auth/schemas/user.schema';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationsGateway } from './notifications.gateway';
+import { NotificationCampaign, NotificationCampaignSchema } from './schemas/notification-campaign.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: Notification.name, schema: NotificationSchema },
       { name: UserNotification.name, schema: UserNotificationSchema },
+      { name: NotificationCampaign.name, schema: NotificationCampaignSchema },
       { name: User.name, schema: UserSchema },
     ]),
     AuthModule,

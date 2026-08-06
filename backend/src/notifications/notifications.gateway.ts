@@ -39,14 +39,16 @@ export class NotificationsGateway implements OnGatewayConnection {
       if (!token) throw new Error('Missing token');
 
       const payload = await this.jwtService.verifyAsync(token);
-      const sessionIsValid = await this.authService.validateSession(
+      const sessionUser = await this.authService.getValidSessionUser(
         payload.sub,
         payload.tokenVersion,
       );
-      if (!sessionIsValid) throw new Error('Invalid session');
+      if (!sessionUser) throw new Error('Invalid session');
 
       client.data.userId = String(payload.sub);
       await client.join(this.userRoom(payload.sub));
+      await client.join('notifications:users');
+      if (sessionUser.role === 'admin') await client.join('notifications:admins');
       client.emit('notifications:ready');
     } catch {
       client.emit('notifications:error', {
@@ -58,6 +60,14 @@ export class NotificationsGateway implements OnGatewayConnection {
 
   emitToUser(userId: string, event: string, payload: unknown) {
     this.server?.to(this.userRoom(userId)).emit(event, payload);
+  }
+
+  emitToAdmins(event: string, payload: unknown) {
+    this.server?.to('notifications:admins').emit(event, payload);
+  }
+
+  emitToAllUsers(event: string, payload: unknown) {
+    this.server?.to('notifications:users').emit(event, payload);
   }
 
   isReady() {

@@ -698,6 +698,8 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
       socket.on("notifications:changed", (payload: any) => {
         if (typeof payload?.unreadCount === "number") {
           setUnreadNotificationsCount(Math.max(0, payload.unreadCount));
+        } else {
+          void fetchUnreadNotificationsCount(token);
         }
         notifyUi(payload);
       });

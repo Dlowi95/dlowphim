@@ -26,6 +26,9 @@ export class UserNotification {
   @Prop({ required: true })
   dedupKey: string;
 
+  @Prop({ type: Types.ObjectId, ref: 'NotificationCampaign', index: true })
+  campaignId?: Types.ObjectId;
+
   @Prop({ type: Date, required: true })
   expiresAt: Date;
 }

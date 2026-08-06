@@ -25,6 +25,27 @@ export class Notification {
 
   @Prop({ default: false, index: true })
   isRead: boolean;
+
+  @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
+  readBy: Types.ObjectId[];
+
+  @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
+  archivedBy: Types.ObjectId[];
+
+  @Prop()
+  dedupKey?: string;
+
+  @Prop()
+  expiresAt?: Date;
 }
 
 export const NotificationSchema = SchemaFactory.createForClass(Notification);
+
+NotificationSchema.index({ createdAt: -1 });
+NotificationSchema.index({ type: 1, createdAt: -1 });
+NotificationSchema.index({ archivedBy: 1, createdAt: -1 });
+NotificationSchema.index(
+  { dedupKey: 1 },
+  { unique: true, partialFilterExpression: { dedupKey: { $type: 'string' } } },
+);
+NotificationSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
