@@ -16,10 +16,16 @@ import { AuthGuard } from './guards/auth.guard';
     ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET') || 'dlowphim_secret_key',
-        signOptions: { expiresIn: '36500d' }, // JWT token will expire in 100 years (Permanent login)
-      }),
+      useFactory: async (configService: ConfigService) => {
+        const secret = configService.get<string>('JWT_SECRET');
+        if (!secret || secret.length < 32) {
+          throw new Error('JWT_SECRET phải có ít nhất 32 ký tự');
+        }
+        return {
+          secret,
+          signOptions: { expiresIn: '30d' },
+        };
+      },
       inject: [ConfigService],
     }),
   ],

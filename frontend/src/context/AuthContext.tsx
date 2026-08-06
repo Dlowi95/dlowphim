@@ -14,6 +14,7 @@ interface User {
   watchHistory?: any[];
   playlists?: { id: string; name: string; movies: string[] }[];
   role?: string;
+  authProvider?: "password" | "google" | "hybrid";
 }
 
 interface AuthContextType {
@@ -169,13 +170,16 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const saveTokenAndUser = (token: string, userData: User) => {
-    // Cookie expires in exactly 100 years (Permanent login)
-    const expires = new Date(new Date().getTime() + 365 * 100 * 24 * 60 * 60 * 1000);
-    Cookies.set("token", token, { expires });
+    Cookies.set("token", token, {
+      expires: 30,
+      sameSite: "strict",
+      secure: typeof window !== "undefined" && window.location.protocol === "https:",
+    });
     setUser(userData);
     
     // Trigger background sync
     syncUserData(token);
+    fetchUnreadNotificationsCount(token);
   };
 
   const loginManual = async (email: string, password: string) => {
@@ -210,6 +214,8 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     if (!res.ok) {
       throw new Error(data.message || "Đăng ký thất bại");
     }
+
+    saveTokenAndUser(data.accessToken, data.user);
   };
 
   const loginGoogle = async (token: string, isAccessToken = true) => {

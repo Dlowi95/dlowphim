@@ -1,10 +1,14 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
+import { AuthService } from '../auth.service';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(private jwtService: JwtService) {}
+  constructor(
+    private jwtService: JwtService,
+    private authService: AuthService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
@@ -16,6 +20,13 @@ export class AuthGuard implements CanActivate {
     
     try {
       const payload = await this.jwtService.verifyAsync(token);
+      const sessionIsValid = await this.authService.validateSession(
+        payload.sub,
+        payload.tokenVersion,
+      );
+      if (!sessionIsValid) {
+        throw new UnauthorizedException('Phiên đăng nhập không còn hiệu lực');
+      }
       // Gán payload vào request để controller lấy thông tin
       request['user'] = payload;
     } catch (err) {

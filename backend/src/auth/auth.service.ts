@@ -1,10 +1,11 @@
-import { Injectable, BadRequestException, UnauthorizedException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException, NotFoundException, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { OAuth2Client } from 'google-auth-library';
 import * as bcrypt from 'bcrypt';
+import { createHash, randomBytes } from 'node:crypto';
 import { User, UserDocument } from './schemas/user.schema';
 import { UserNotification, UserNotificationDocument } from '../notifications/schemas/user-notification.schema';
 
@@ -34,6 +35,8 @@ function normalizeEpisodeKey(name = ''): string {
 @Injectable()
 export class AuthService {
   private googleClient: OAuth2Client;
+  private readonly loginAttempts = new Map<string, { count: number; lockedUntil: number }>();
+  private readonly forgotPasswordAttempts = new Map<string, { count: number; resetAt: number }>();
 
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
@@ -47,7 +50,11 @@ export class AuthService {
   }
 
   async signToken(user: any) {
-    const payload = { sub: user._id, email: user.email };
+    const payload = {
+      sub: user._id,
+      email: user.email,
+      tokenVersion: user.tokenVersion || 0,
+    };
     return {
       accessToken: this.jwtService.sign(payload),
       user: {
@@ -55,24 +62,78 @@ export class AuthService {
         email: user.email,
         displayName: user.displayName,
         avatar: user.avatar,
+        gender: user.gender || 'other',
         favorites: user.favorites || [],
         watchHistory: user.watchHistory || [],
+        playlists: user.playlists || [],
         role: user.role || 'member',
+        authProvider: user.password
+          ? user.googleId
+            ? 'hybrid'
+            : 'password'
+          : 'google',
       },
     };
   }
 
+  async validateSession(userId: string, tokenVersion = 0): Promise<boolean> {
+    if (!Types.ObjectId.isValid(userId)) return false;
+
+    const user = await this.userModel
+      .findById(userId)
+      .select('tokenVersion isActive')
+      .lean();
+
+    return Boolean(
+      user &&
+      user.isActive !== false &&
+      (user.tokenVersion || 0) === (tokenVersion || 0),
+    );
+  }
+
+  private validatePassword(password: string) {
+    if (password.length < 8 || password.length > 72) {
+      throw new BadRequestException('Mật khẩu cần từ 8 đến 72 ký tự');
+    }
+    if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+      throw new BadRequestException('Mật khẩu cần có ít nhất một chữ cái và một chữ số');
+    }
+  }
+
+  private async createWelcomeNotification(userId: Types.ObjectId) {
+    try {
+      await this.userNotificationModel.create({
+        userId,
+        type: 'system',
+        title: 'Chào mừng thành viên mới!',
+        content: 'Chào mừng bạn đến với DlowPhim! Hãy cập nhật avatar và tạo danh sách phát đầu tiên để bắt đầu trải nghiệm nhé.',
+        link: '/user/account',
+        isRead: false,
+      });
+    } catch (error) {
+      console.error('Lỗi tạo thông báo chào mừng:', error);
+    }
+  }
+
   async register(registerDto: any) {
-    const { email, password, displayName } = registerDto;
+    const email = String(registerDto?.email || '').trim().toLowerCase();
+    const password = String(registerDto?.password || '');
+    const displayName = String(registerDto?.displayName || '').trim();
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       throw new BadRequestException('Email không đúng định dạng');
     }
+    if (displayName.length < 2 || displayName.length > 40) {
+      throw new BadRequestException('Tên hiển thị cần từ 2 đến 40 ký tự');
+    }
+    this.validatePassword(password);
 
     // Check if user exists
-    const existingUser = await this.userModel.findOne({ email });
+    const existingUser = await this.userModel
+      .findOne({ email })
+      .collation({ locale: 'en', strength: 2 });
     if (existingUser) {
       throw new BadRequestException('Email đã được sử dụng');
     }
@@ -90,26 +151,14 @@ export class AuthService {
 
     await newUser.save();
 
-    // Tự động tạo thông báo chào mừng thành viên mới
-    try {
-      const welcomeNotif = new this.userNotificationModel({
-        userId: newUser._id,
-        type: 'system',
-        title: 'Chào mừng thành viên mới!',
-        content: `Chào mừng bạn đến với DlowPhim! Hãy cập nhật avatar và tạo danh sách phát đầu tiên để bắt đầu trải nghiệm nhé.`,
-        link: '/user/account',
-        isRead: false,
-      });
-      await welcomeNotif.save();
-    } catch (err) {
-      console.error('Lỗi tạo thông báo chào mừng:', err);
-    }
+    await this.createWelcomeNotification(newUser._id);
 
-    return { message: 'Đăng ký thành công' };
+    return this.signToken(newUser);
   }
 
   async login(loginDto: any) {
-    const { email, password } = loginDto;
+    const email = String(loginDto?.email || '').trim().toLowerCase();
+    const password = String(loginDto?.password || '');
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -117,8 +166,20 @@ export class AuthService {
       throw new BadRequestException('Email không đúng định dạng');
     }
 
-    const user = await this.userModel.findOne({ email });
+    const attempt = this.loginAttempts.get(email);
+    if (attempt?.lockedUntil && attempt.lockedUntil > Date.now()) {
+      const remainingMinutes = Math.max(1, Math.ceil((attempt.lockedUntil - Date.now()) / 60_000));
+      throw new UnauthorizedException(`Bạn đã nhập sai quá nhiều lần. Hãy thử lại sau ${remainingMinutes} phút.`);
+    }
+    if (attempt?.lockedUntil && attempt.lockedUntil <= Date.now()) {
+      this.loginAttempts.delete(email);
+    }
+
+    const user = await this.userModel
+      .findOne({ email })
+      .collation({ locale: 'en', strength: 2 });
     if (!user) {
+      this.recordFailedLogin(email);
       throw new UnauthorizedException('Email hoặc mật khẩu không đúng');
     }
 
@@ -134,10 +195,189 @@ export class AuthService {
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
+      this.recordFailedLogin(email);
       throw new UnauthorizedException('Email hoặc mật khẩu không đúng');
     }
 
+    this.loginAttempts.delete(email);
     return this.signToken(user);
+  }
+
+  private recordFailedLogin(email: string) {
+    const previous = this.loginAttempts.get(email);
+    const count = (previous?.count || 0) + 1;
+    this.loginAttempts.set(email, {
+      count,
+      lockedUntil: count >= 5 ? Date.now() + 15 * 60_000 : 0,
+    });
+    if (this.loginAttempts.size > 5_000) {
+      const now = Date.now();
+      for (const [key, value] of this.loginAttempts) {
+        if (!value.lockedUntil || value.lockedUntil <= now) this.loginAttempts.delete(key);
+        if (this.loginAttempts.size <= 4_000) break;
+      }
+    }
+  }
+
+  private assertForgotPasswordAllowed(clientKey: string) {
+    const now = Date.now();
+    const previous = this.forgotPasswordAttempts.get(clientKey);
+    if (!previous || previous.resetAt <= now) {
+      this.forgotPasswordAttempts.set(clientKey, {
+        count: 1,
+        resetAt: now + 15 * 60_000,
+      });
+      return;
+    }
+    if (previous.count >= 5) {
+      const remainingMinutes = Math.max(1, Math.ceil((previous.resetAt - now) / 60_000));
+      throw new HttpException(
+        `Bạn đã yêu cầu quá nhiều lần. Hãy thử lại sau ${remainingMinutes} phút.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    previous.count += 1;
+    this.forgotPasswordAttempts.set(clientKey, previous);
+    if (this.forgotPasswordAttempts.size > 5_000) {
+      for (const [key, value] of this.forgotPasswordAttempts) {
+        if (value.resetAt <= now) this.forgotPasswordAttempts.delete(key);
+        if (this.forgotPasswordAttempts.size <= 4_000) break;
+      }
+    }
+  }
+
+  private escapeHtml(value: string) {
+    return value.replace(/[&<>'"]/g, (character) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      "'": '&#039;',
+      '"': '&quot;',
+    })[character] || character);
+  }
+
+  private async sendPasswordResetEmail(email: string, displayName: string, resetUrl: string, idempotencyKey: string) {
+    const apiKey = this.configService.get<string>('RESEND_API_KEY');
+    const from = this.configService.get<string>('RESEND_FROM_EMAIL');
+    if (!apiKey || !from) {
+      throw new Error('Thiếu RESEND_API_KEY hoặc RESEND_FROM_EMAIL');
+    }
+
+    const safeName = this.escapeHtml(displayName || 'bạn');
+    const safeUrl = this.escapeHtml(resetUrl);
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': idempotencyKey,
+      },
+      body: JSON.stringify({
+        from,
+        to: [email],
+        subject: 'Đặt lại mật khẩu DlowPhim',
+        html: `
+          <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#18181b">
+            <h2 style="color:#ec4899">Đặt lại mật khẩu DlowPhim</h2>
+            <p>Xin chào ${safeName},</p>
+            <p>Bạn vừa yêu cầu đặt lại mật khẩu. Liên kết bên dưới chỉ dùng được một lần và sẽ hết hạn sau 15 phút.</p>
+            <p style="margin:28px 0">
+              <a href="${safeUrl}" style="background:#ec4899;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700">Đặt lại mật khẩu</a>
+            </p>
+            <p>Nếu bạn không thực hiện yêu cầu này, hãy bỏ qua email.</p>
+          </div>
+        `,
+        text: `Đặt lại mật khẩu DlowPhim: ${resetUrl}\nLiên kết chỉ dùng được một lần và hết hạn sau 15 phút.`,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`Resend trả về HTTP ${response.status}`);
+    }
+  }
+
+  async forgotPassword(emailValue: unknown, clientKey: string) {
+    this.assertForgotPasswordAllowed(clientKey || 'unknown');
+    const email = String(emailValue || '').trim().toLowerCase();
+    const genericMessage = 'Nếu email hỗ trợ khôi phục mật khẩu, DlowPhim đã gửi hướng dẫn đến hộp thư của bạn.';
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      throw new BadRequestException('Email không đúng định dạng');
+    }
+
+    const user = await this.userModel
+      .findOne({ email })
+      .select('+passwordResetRequestedAt')
+      .collation({ locale: 'en', strength: 2 });
+
+    // Luôn trả cùng một nội dung cho email không tồn tại và tài khoản Google-only.
+    if (!user?.password) return { message: genericMessage };
+
+    const requestedAt = user.passwordResetRequestedAt?.getTime?.() || 0;
+    if (Date.now() - requestedAt < 60_000) return { message: genericMessage };
+
+    const apiKey = this.configService.get<string>('RESEND_API_KEY');
+    const from = this.configService.get<string>('RESEND_FROM_EMAIL');
+    if (!apiKey || !from) {
+      console.error('[Auth] Resend chưa được cấu hình; không thể gửi email đặt lại mật khẩu.');
+      return { message: genericMessage };
+    }
+
+    const rawToken = randomBytes(32).toString('hex');
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 15 * 60_000);
+    user.passwordResetTokenHash = tokenHash;
+    user.passwordResetExpiresAt = expiresAt;
+    user.passwordResetRequestedAt = new Date();
+    await user.save();
+
+    const frontendUrl = (this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000').replace(/\/$/, '');
+    const resetUrl = `${frontendUrl}/reset-password?token=${rawToken}`;
+    try {
+      await this.sendPasswordResetEmail(email, user.displayName, resetUrl, tokenHash);
+    } catch (error) {
+      await this.userModel.updateOne(
+        { _id: user._id, passwordResetTokenHash: tokenHash },
+        { $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1 } },
+      );
+      console.error('[Auth] Không gửi được email đặt lại mật khẩu:', error instanceof Error ? error.message : error);
+    }
+
+    return { message: genericMessage };
+  }
+
+  async resetPassword(tokenValue: unknown, passwordValue: unknown) {
+    const token = String(tokenValue || '').trim();
+    const password = String(passwordValue || '');
+    if (!/^[a-f0-9]{64}$/i.test(token)) {
+      throw new BadRequestException('Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn');
+    }
+    this.validatePassword(password);
+
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = await this.userModel.findOneAndUpdate(
+      {
+        passwordResetTokenHash: tokenHash,
+        passwordResetExpiresAt: { $gt: new Date() },
+        password: { $exists: true, $ne: null },
+      },
+      {
+        $set: { password: hashedPassword },
+        $unset: {
+          passwordResetTokenHash: 1,
+          passwordResetExpiresAt: 1,
+          passwordResetRequestedAt: 1,
+        },
+        $inc: { tokenVersion: 1 },
+      },
+      { returnDocument: 'after' },
+    );
+    if (!user) {
+      throw new BadRequestException('Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn');
+    }
+
+    this.loginAttempts.delete(user.email.toLowerCase());
+    return { message: 'Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.' };
   }
 
   async googleLogin(googleDto: { idToken?: string; accessToken?: string }) {
@@ -158,7 +398,10 @@ export class AuthService {
           throw new BadRequestException('Access Token Google không hợp lệ');
         }
         const data = await res.json();
-        email = data.email;
+        if (!data.email || data.email_verified !== true) {
+          throw new BadRequestException('Email Google chưa được xác minh');
+        }
+        email = String(data.email).trim().toLowerCase();
         name = data.name || data.given_name || 'Google User';
         picture = data.picture;
         sub = data.sub;
@@ -175,7 +418,10 @@ export class AuthService {
           throw new BadRequestException('ID Token không hợp lệ');
         }
 
-        email = payload.email!;
+        if (!payload.email || payload.email_verified !== true) {
+          throw new BadRequestException('Email Google chưa được xác minh');
+        }
+        email = payload.email.trim().toLowerCase();
         name = payload.name || 'Google User';
         picture = payload.picture;
         sub = payload.sub;
@@ -183,7 +429,9 @@ export class AuthService {
         throw new BadRequestException('Thiếu Token xác thực Google');
       }
 
-      let user = await this.userModel.findOne({ email });
+      let user = await this.userModel
+        .findOne({ email })
+        .collation({ locale: 'en', strength: 2 });
 
       if (user && user.isActive === false) {
         throw new UnauthorizedException('Tài khoản của bạn đã bị khóa bởi quản trị viên');
@@ -198,6 +446,7 @@ export class AuthService {
           googleId: sub,
         });
         await user.save();
+        await this.createWelcomeNotification(user._id);
       } else {
         // If user exists but googleId or avatar not linked/updated
         let hasChanges = false;
@@ -217,6 +466,9 @@ export class AuthService {
       return this.signToken(user);
     } catch (error) {
       console.error('Lỗi xác thực Google Token:', error);
+      if (error instanceof BadRequestException || error instanceof UnauthorizedException) {
+        throw error;
+      }
       throw new UnauthorizedException('Xác thực tài khoản Google thất bại');
     }
   }
@@ -239,6 +491,11 @@ export class AuthService {
       watchHistory: user.watchHistory || [],
       playlists: user.playlists || [],
       role: user.role || 'member',
+      authProvider: user.password
+        ? user.googleId
+          ? 'hybrid'
+          : 'password'
+        : 'google',
     };
   }
 

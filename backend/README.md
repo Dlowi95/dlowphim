@@ -38,6 +38,21 @@ and `UPSTASH_REDIS_REST_TOKEN`. Playback CDN health is then shared with a 30-min
 TTL. Without these variables, the service safely uses bounded in-memory storage.
 `PLAYBACK_HEALTH_REDIS_PREFIX` can optionally isolate environments.
 
+### Password recovery email
+
+The password reset flow uses the Resend HTTP API. Configure these variables in
+the backend environment before enabling email delivery:
+
+```env
+RESEND_API_KEY=re_xxxxxxxxx
+RESEND_FROM_EMAIL=DlowPhim <no-reply@mail.your-domain.com>
+FRONTEND_URL=http://localhost:3000
+```
+
+In production, `RESEND_FROM_EMAIL` must use a domain verified in Resend and
+`FRONTEND_URL` must be the public HTTPS frontend URL. Reset links expire after
+15 minutes and are single-use.
+
 ## Compile and run the project
 
 ```bash

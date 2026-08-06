@@ -32,7 +32,7 @@ export class HistoryItem {
 
 @Schema({ timestamps: true })
 export class User {
-  @Prop({ required: true, unique: true, index: true })
+  @Prop({ required: true, unique: true, index: true, lowercase: true, trim: true })
   email: string;
 
   @Prop()
@@ -43,6 +43,18 @@ export class User {
 
   @Prop()
   googleId?: string;
+
+  @Prop({ default: 0 })
+  tokenVersion: number;
+
+  @Prop({ select: false, index: true })
+  passwordResetTokenHash?: string;
+
+  @Prop({ select: false })
+  passwordResetExpiresAt?: Date;
+
+  @Prop({ select: false })
+  passwordResetRequestedAt?: Date;
 
   @Prop()
   avatar?: string;

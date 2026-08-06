@@ -23,6 +23,17 @@ export class AuthController {
     return this.authService.googleLogin(googleDto);
   }
 
+  @Post('forgot-password')
+  async forgotPassword(@Req() req: express.Request, @Body('email') email: string) {
+    const clientKey = req.ip || req.socket.remoteAddress || 'unknown';
+    return this.authService.forgotPassword(email, clientKey);
+  }
+
+  @Post('reset-password')
+  async resetPassword(@Body() body: { token?: string; password?: string }) {
+    return this.authService.resetPassword(body?.token, body?.password);
+  }
+
   @Get('me')
   @UseGuards(AuthGuard)
   async getMe(@Req() req: express.Request) {
