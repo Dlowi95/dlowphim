@@ -70,6 +70,15 @@ export class NotificationsController {
     return this.notificationsService.clearAllUserNotifs(userId);
   }
 
+  @Delete('user/:id')
+  async deleteUserNotification(
+    @Req() req: express.Request,
+    @Param('id') id: string,
+  ) {
+    const userId = req['user']?.sub;
+    return this.notificationsService.deleteUserNotification(userId, id);
+  }
+
   // Admin route to trigger a manual movie update notification for testing or automatic flows
   @Post('admin/movie-update')
   @UseGuards(RolesGuard)

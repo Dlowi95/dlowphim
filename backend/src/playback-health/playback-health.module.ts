@@ -13,5 +13,6 @@ import { PlaybackHealthRedisStore } from './playback-health-redis.store';
   ],
   controllers: [PlaybackHealthController],
   providers: [PlaybackHealthService, PlaybackHealthRedisStore],
+  exports: [PlaybackHealthService],
 })
 export class PlaybackHealthModule {}

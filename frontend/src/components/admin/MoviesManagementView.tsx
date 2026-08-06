@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Cookies from "js-cookie";
 import {
   Film,
@@ -75,12 +75,17 @@ export default function MoviesManagementView() {
 
   // Loading states
   const [loading, setLoading] = useState(false);
+  const customRequestId = useRef(0);
 
   // Pagination states
   const itemsPerPage = 6;
   const [customPage, setCustomPage] = useState(1);
   const [blockedPage, setBlockedPage] = useState(1);
   const [ratingsPage, setRatingsPage] = useState(1);
+  const [customTotalItems, setCustomTotalItems] = useState(0);
+  const [customTotalPages, setCustomTotalPages] = useState(1);
+  const [blockedTotalItems, setBlockedTotalItems] = useState(0);
+  const [blockedTotalPages, setBlockedTotalPages] = useState(1);
 
   // Blocked movies state
   const [blockedMovies, setBlockedMovies] = useState<BlockedMovie[]>([]);
@@ -91,6 +96,7 @@ export default function MoviesManagementView() {
   // Custom movies state
   const [customMovies, setCustomMovies] = useState<CustomMovie[]>([]);
   const [searchCustom, setSearchCustom] = useState("");
+  const [debouncedSearchCustom, setDebouncedSearchCustom] = useState("");
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [editingMovie, setEditingMovie] = useState<CustomMovie | null>(null);
 
@@ -111,19 +117,31 @@ export default function MoviesManagementView() {
 
   // Auto Import Form state
   const [importSlug, setImportSlug] = useState("");
-  const [importSource, setImportSource] = useState<"phimapi" | "ophim">("phimapi");
+  const [importSource, setImportSource] = useState<"active" | "phimapi" | "ophim">("active");
+  const [activeSourceId, setActiveSourceId] = useState<"phimapi" | "ophim">("phimapi");
   const [importing, setImporting] = useState(false);
 
   // Rating stats state
   const [ratingStats, setRatingStats] = useState<RatingStat[]>([]);
+  const [ratingsTotalItems, setRatingsTotalItems] = useState(0);
+  const [ratingsTotalPages, setRatingsTotalPages] = useState(1);
 
   // ─── FETCH DỮ LIỆU ───
   const fetchBlocked = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/movies/blocked`);
+      const token = Cookies.get("token");
+      const res = await fetch(`${API_URL}/movies/admin/blocked?page=${blockedPage}&limit=${itemsPerPage}`, {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (res.ok) {
-        setBlockedMovies(await res.json());
+        const data = await res.json();
+        setBlockedMovies(data.items || []);
+        setBlockedTotalItems(data.pagination?.totalItems || 0);
+        setBlockedTotalPages(data.pagination?.totalPages || 1);
+      } else {
+        throw new Error("Không thể tải danh sách phim bị ẩn");
       }
     } catch (err) {
       console.error(err);
@@ -134,17 +152,34 @@ export default function MoviesManagementView() {
   };
 
   const fetchCustom = async () => {
+    const requestId = ++customRequestId.current;
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/movies/custom?search=${searchCustom}`);
+      const token = Cookies.get("token");
+      const params = new URLSearchParams({
+        search: debouncedSearchCustom,
+        page: String(customPage),
+        limit: String(itemsPerPage),
+      });
+      const res = await fetch(`${API_URL}/movies/admin/custom?${params}`, {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (res.ok) {
-        setCustomMovies(await res.json());
+        const data = await res.json();
+        if (requestId !== customRequestId.current) return;
+        setCustomMovies(data.items || []);
+        setCustomTotalItems(data.pagination?.totalItems || 0);
+        setCustomTotalPages(data.pagination?.totalPages || 1);
+      } else {
+        throw new Error("Không thể tải danh sách phim tự đăng");
       }
     } catch (err) {
+      if (requestId !== customRequestId.current) return;
       console.error(err);
       showToast("Lỗi tải danh sách phim tự đăng", "error");
     } finally {
-      setLoading(false);
+      if (requestId === customRequestId.current) setLoading(false);
     }
   };
 
@@ -152,11 +187,17 @@ export default function MoviesManagementView() {
     try {
       setLoading(true);
       const token = Cookies.get("token");
-      const res = await fetch(`${API_URL}/ratings/admin/stats`, {
+      const res = await fetch(`${API_URL}/ratings/admin/stats?page=${ratingsPage}&limit=${itemsPerPage}`, {
+        cache: "no-store",
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
-        setRatingStats(await res.json());
+        const data = await res.json();
+        setRatingStats(data.items || []);
+        setRatingsTotalItems(data.pagination?.totalItems || 0);
+        setRatingsTotalPages(data.pagination?.totalPages || 1);
+      } else {
+        throw new Error("Không thể tải thống kê đánh giá");
       }
     } catch (err) {
       console.error(err);
@@ -167,17 +208,28 @@ export default function MoviesManagementView() {
   };
 
   useEffect(() => {
-    if (subTab === "blocked") fetchBlocked();
+    const timer = window.setTimeout(() => setDebouncedSearchCustom(searchCustom.trim()), 350);
+    return () => window.clearTimeout(timer);
+  }, [searchCustom]);
+
+  useEffect(() => {
     if (subTab === "custom") fetchCustom();
+  }, [subTab, customPage, debouncedSearchCustom]);
+
+  useEffect(() => {
+    if (subTab === "blocked") fetchBlocked();
+  }, [subTab, blockedPage]);
+
+  useEffect(() => {
     if (subTab === "ratings") fetchRatings();
-  }, [subTab, searchCustom]);
+  }, [subTab, ratingsPage]);
 
   useEffect(() => {
     fetch(`${API_URL}/system-settings`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.activeMovieSourceId === "ophim" || data?.activeMovieSourceId === "phimapi") {
-          setImportSource(data.activeMovieSourceId);
+          setActiveSourceId(data.activeMovieSourceId);
         }
       })
       .catch(() => undefined);
@@ -188,7 +240,11 @@ export default function MoviesManagementView() {
     setCustomPage(1);
     setBlockedPage(1);
     setRatingsPage(1);
-  }, [subTab, searchCustom]);
+  }, [subTab]);
+
+  useEffect(() => {
+    setCustomPage(1);
+  }, [debouncedSearchCustom]);
 
   // ─── AUTO IMPORT (CRAWL DATA) ───
   const handleAutoImport = async () => {
@@ -213,11 +269,27 @@ export default function MoviesManagementView() {
       if (!movie) throw new Error("Không tìm thấy thông tin phim.");
 
       const episodes = data.episodes || data.data?.item?.episodes || movie.episodes || [];
+      let sharpPosterUrl = getImageUrl(movie.thumb_url);
+      let sharpBackdropUrl = getImageUrl(movie.poster_url);
+      try {
+        const artworkParams = new URLSearchParams({
+          title: movie.name || "",
+          originTitle: movie.origin_name || "",
+        });
+        const artworkRes = await fetch(`${API_URL}/movies/logo/${encodeURIComponent(movie.slug || cleanSlug)}?${artworkParams}`);
+        if (artworkRes.ok) {
+          const artwork = await artworkRes.json();
+          sharpPosterUrl = artwork.posterUrl || sharpPosterUrl;
+          sharpBackdropUrl = artwork.backdropUrl || sharpBackdropUrl || sharpPosterUrl;
+        }
+      } catch {
+        // Ảnh API vẫn được giữ nếu TMDB tạm thời không phản hồi.
+      }
       setFormName(movie.name || "");
       setFormOriginName(movie.origin_name || "");
       setFormSlug(movie.slug || cleanSlug);
-      setFormThumbUrl(getImageUrl(movie.thumb_url));
-      setFormPosterUrl(getImageUrl(movie.poster_url));
+      setFormThumbUrl(sharpPosterUrl);
+      setFormPosterUrl(sharpBackdropUrl);
       setFormYear(movie.year || 2026);
       setFormTime(movie.time || "120 phút");
       setFormQuality(movie.quality || "FHD");
@@ -227,7 +299,7 @@ export default function MoviesManagementView() {
       setFormCountry(movie.country?.[0]?.name || "Âu Mỹ");
       setFormLink(episodes[0]?.server_data?.[0]?.link_m3u8 || "");
       showToast(
-        `Tự động lấy dữ liệu từ ${importSource === "phimapi" ? "PhimAPI" : "OPhim"} thành công!`,
+        `Đã lấy thông tin từ ${(data._sourceId || (importSource === "active" ? activeSourceId : importSource)) === "phimapi" ? "PhimAPI" : "OPhim"} và ưu tiên ảnh TMDB thành công!`,
         "success"
       );
     } catch (err: any) {
@@ -242,6 +314,12 @@ export default function MoviesManagementView() {
   const handleBlockMovie = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBlockSlug) return;
+    const accepted = await confirm({
+      title: "Ẩn phim khỏi hệ thống?",
+      message: `Phim ${newBlockTitle.trim() || newBlockSlug.trim()} sẽ không còn hiển thị với người xem cho đến khi được bỏ ẩn.`,
+      confirmLabel: "Ẩn phim",
+    });
+    if (!accepted) return;
     try {
       const token = Cookies.get("token");
       const res = await fetch(`${API_URL}/movies/blocked`, {
@@ -262,7 +340,8 @@ export default function MoviesManagementView() {
         setNewBlockSlug("");
         setNewBlockTitle("");
         setNewBlockReason("");
-        fetchBlocked();
+        if (blockedPage !== 1) setBlockedPage(1);
+        else fetchBlocked();
       } else {
         const data = await res.json();
         showToast(data.message || "Thao tác thất bại", "error");
@@ -274,16 +353,23 @@ export default function MoviesManagementView() {
   };
 
   const handleUnblockMovie = async (slug: string) => {
+    const accepted = await confirm({
+      title: "Khôi phục hiển thị phim?",
+      message: `Phim ${slug} sẽ có thể xuất hiện trở lại trên giao diện người dùng.`,
+      confirmLabel: "Bỏ ẩn",
+    });
+    if (!accepted) return;
     try {
       const token = Cookies.get("token");
-      const res = await fetch(`${API_URL}/movies/blocked/${slug}`, {
+      const res = await fetch(`${API_URL}/movies/blocked/${encodeURIComponent(slug)}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
 
       if (res.ok) {
         showToast("Đã khôi phục hiển thị phim", "success");
-        fetchBlocked();
+        if (blockedMovies.length === 1 && blockedPage > 1) setBlockedPage((page) => page - 1);
+        else fetchBlocked();
       } else {
         showToast("Thao tác thất bại", "error");
       }
@@ -374,7 +460,8 @@ export default function MoviesManagementView() {
       if (res.ok) {
         showToast(editingMovie ? "Cập nhật phim thành công" : "Thêm phim mới thành công", "success");
         setShowCustomModal(false);
-        fetchCustom();
+        if (!editingMovie && customPage !== 1) setCustomPage(1);
+        else fetchCustom();
       } else {
         const data = await res.json();
         showToast(data.message || "Không thể lưu thông tin phim", "error");
@@ -388,14 +475,15 @@ export default function MoviesManagementView() {
   const handleDeleteCustomMovie = async (id: string) => {
     try {
       const token = Cookies.get("token");
-      const res = await fetch(`${API_URL}/movies/custom/${id}`, {
+      const res = await fetch(`${API_URL}/movies/custom/${encodeURIComponent(id)}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
 
       if (res.ok) {
         showToast("Xóa phim tự đăng thành công", "success");
-        fetchCustom();
+        if (customMovies.length === 1 && customPage > 1) setCustomPage((page) => page - 1);
+        else fetchCustom();
       } else {
         showToast("Thao tác thất bại", "error");
       }
@@ -409,14 +497,15 @@ export default function MoviesManagementView() {
   const handleDeleteRatings = async (slug: string) => {
     try {
       const token = Cookies.get("token");
-      const res = await fetch(`${API_URL}/ratings/admin/movie/${slug}`, {
+      const res = await fetch(`${API_URL}/ratings/admin/movie/${encodeURIComponent(slug)}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
 
       if (res.ok) {
         showToast(`Đã reset điểm đánh giá phim: ${slug}`, "success");
-        fetchRatings();
+        if (ratingStats.length === 1 && ratingsPage > 1) setRatingsPage((page) => page - 1);
+        else fetchRatings();
       } else {
         showToast("Thao tác thất bại", "error");
       }
@@ -439,30 +528,14 @@ export default function MoviesManagementView() {
   };
 
   // ─── PAGINATION COMPUTED ITEMS ───
-  const paginatedCustomMovies = customMovies.slice(
-    (customPage - 1) * itemsPerPage,
-    customPage * itemsPerPage
-  );
-  const totalCustomPages = Math.ceil(customMovies.length / itemsPerPage);
-
-  const paginatedBlockedMovies = blockedMovies.slice(
-    (blockedPage - 1) * itemsPerPage,
-    blockedPage * itemsPerPage
-  );
-  const totalBlockedPages = Math.ceil(blockedMovies.length / itemsPerPage);
+  const paginatedCustomMovies = customMovies;
+  const totalCustomPages = customTotalPages;
+  const paginatedBlockedMovies = blockedMovies;
+  const totalBlockedPages = blockedTotalPages;
 
   // Sorting ratings with highest totalRatings first (then averageScore)
-  const sortedRatings = [...ratingStats].sort((a, b) => {
-    if (b.totalRatings !== a.totalRatings) {
-      return b.totalRatings - a.totalRatings;
-    }
-    return b.averageScore - a.averageScore;
-  });
-  const paginatedRatings = sortedRatings.slice(
-    (ratingsPage - 1) * itemsPerPage,
-    ratingsPage * itemsPerPage
-  );
-  const totalRatingsPages = Math.ceil(sortedRatings.length / itemsPerPage);
+  const paginatedRatings = ratingStats;
+  const totalRatingsPages = ratingsTotalPages;
 
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -488,9 +561,9 @@ export default function MoviesManagementView() {
       {/* Sub-tabs menu selector */}
       <div className="flex gap-2.5 border-b border-zinc-900 pb-px">
         {[
-          { id: "custom", label: "Phim tự đăng", count: customMovies.length },
-          { id: "blocked", label: "Phim bị ẩn", count: blockedMovies.length },
-          { id: "ratings", label: "Quản lý Đánh giá", count: ratingStats.length },
+          { id: "custom", label: "Phim tự đăng", count: customTotalItems },
+          { id: "blocked", label: "Phim bị ẩn", count: blockedTotalItems },
+          { id: "ratings", label: "Quản lý Đánh giá", count: ratingsTotalItems },
           { id: "override", label: "Sửa mô tả", count: null },
         ].map((tab) => {
           const isActive = subTab === tab.id;
@@ -553,6 +626,8 @@ export default function MoviesManagementView() {
                     <img
                       src={getImageUrl(movie.thumb_url || movie.poster_url)}
                       alt={movie.name}
+                      loading="lazy"
+                      decoding="async"
                       className="w-16 h-24 object-cover rounded-xl bg-zinc-900 border border-zinc-800/40 shrink-0"
                       onError={(e) => {
                         (e.target as HTMLImageElement).src = "/images/dlowphim-logo.jpg";
@@ -885,9 +960,9 @@ export default function MoviesManagementView() {
                   <div className="flex items-start gap-2.5">
                     <Info size={16} className="text-pink-400 shrink-0 mt-0.5 animate-pulse" />
                     <div>
-                      <h4 className="text-xs font-black uppercase text-pink-400 tracking-wider">Đăng Tin Tự Động (Auto Crawler)</h4>
+                      <h4 className="text-xs font-black uppercase text-pink-400 tracking-wider">Lấy thông tin phim từ nguồn</h4>
                       <p className="text-[10px] text-zinc-550 font-semibold mt-0.5 leading-normal">
-                        Chỉ cần nhập slug phim và chọn nguồn API, hệ thống sẽ tự động cào tiêu đề, poster, năm, thể loại và link stream m3u8.
+                        Nhập slug để điền nhanh thông tin và một link HLS vào biểu mẫu. Đây là phim tự lưu trữ đơn, không nhập toàn bộ tập phim từ API.
                       </p>
 
                       {/* Lookup helper links */}
@@ -916,6 +991,15 @@ export default function MoviesManagementView() {
 
                   <div className="flex flex-col sm:flex-row gap-2 pt-1.5">
                     <div className="flex rounded-xl bg-zinc-950 border border-zinc-900 p-0.5 overflow-hidden shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setImportSource("active")}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border-none cursor-pointer ${importSource === "active" ? "bg-pink-500 text-white" : "bg-transparent text-zinc-500"
+                          }`}
+                        title={`Nguồn đang cấu hình: ${activeSourceId === "phimapi" ? "PhimAPI" : "OPhim"}`}
+                      >
+                        Mặc định
+                      </button>
                       <button
                         type="button"
                         onClick={() => setImportSource("phimapi")}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Bell, Loader2, MessageSquare, Film, Info, Trash2, CheckSquare } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
@@ -36,12 +36,31 @@ function formatTimeAgo(dateString: string) {
   }
 }
 
+function getNotificationGroup(dateString: string) {
+  const date = new Date(dateString);
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfYesterday = new Date(startOfToday);
+  startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+
+  if (date >= startOfToday) return "Hôm nay";
+  if (date >= startOfYesterday) return "Hôm qua";
+  return "Cũ hơn";
+}
+
+function getSafeNotificationLink(link?: string) {
+  const value = String(link || "").trim();
+  return value.startsWith("/") && !value.startsWith("//") ? value : null;
+}
+
 export default function UserNotificationsPage() {
   const { 
     user, 
     showToast, 
+    unreadNotificationsCount,
     getUserNotifications, 
     readSingleNotification, 
+    deleteSingleNotification,
     readAllNotifications, 
     clearAllNotifications 
   } = useAuth();
@@ -55,9 +74,10 @@ export default function UserNotificationsPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [isMutating, setIsMutating] = useState(false);
+  const realtimeRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchNotifs = async (p = 1) => {
-    setLoadingNotifs(true);
+  const fetchNotifs = async (p = 1, showLoader = true) => {
+    if (showLoader) setLoadingNotifs(true);
     try {
       const data = await getUserNotifications(p, 15);
       if (data) {
@@ -69,7 +89,7 @@ export default function UserNotificationsPage() {
       console.error(e);
       showToast("Lỗi tải thông báo", "error");
     } finally {
-      setLoadingNotifs(false);
+      if (showLoader) setLoadingNotifs(false);
     }
   };
 
@@ -79,8 +99,31 @@ export default function UserNotificationsPage() {
     }
   }, [user, page]);
 
+  useEffect(() => {
+    const refresh = () => {
+      if (realtimeRefreshTimer.current) clearTimeout(realtimeRefreshTimer.current);
+      realtimeRefreshTimer.current = setTimeout(() => {
+        void fetchNotifs(page, false);
+      }, 150);
+    };
+    window.addEventListener("dlowphim:notifications-changed", refresh);
+    return () => {
+      window.removeEventListener("dlowphim:notifications-changed", refresh);
+      if (realtimeRefreshTimer.current) clearTimeout(realtimeRefreshTimer.current);
+    };
+  }, [page, user?.id]);
+
+  const groupedNotifications = useMemo(() => {
+    const groups = new Map<string, any[]>();
+    notifications.forEach((notification) => {
+      const label = getNotificationGroup(notification.createdAt);
+      groups.set(label, [...(groups.get(label) || []), notification]);
+    });
+    return Array.from(groups.entries());
+  }, [notifications]);
+
   const handleReadAll = async () => {
-    if (isMutating || notifications.every((item) => item.isRead)) return;
+    if (isMutating || unreadNotificationsCount === 0) return;
     setIsMutating(true);
     const success = await readAllNotifications();
     if (success) {
@@ -123,9 +166,36 @@ export default function UserNotificationsPage() {
         if (!success) fetchNotifs(page);
       });
     }
-    if (notif.link) {
-      router.push(notif.link);
+    const target = getSafeNotificationLink(notif.link);
+    if (target) {
+      router.push(target);
     }
+  };
+
+  const handleDeleteNotification = async (notif: any) => {
+    const accepted = await confirm({
+      title: "Xóa thông báo này?",
+      message: "Thông báo sẽ được xóa khỏi tài khoản và không thể khôi phục.",
+      confirmLabel: "Xóa thông báo",
+      tone: "danger",
+    });
+    if (!accepted || isMutating) return;
+
+    setIsMutating(true);
+    const success = await deleteSingleNotification(notif._id);
+    if (success) {
+      const remainingOnPage = notifications.length - 1;
+      setTotal((value) => Math.max(0, value - 1));
+      if (remainingOnPage === 0 && page > 1) {
+        setPage((value) => value - 1);
+      } else {
+        setNotifications((items) => items.filter((item) => item._id !== notif._id));
+      }
+      showToast("Đã xóa thông báo", "success");
+    } else {
+      showToast("Không thể xóa thông báo lúc này", "error");
+    }
+    setIsMutating(false);
   };
 
   return (
@@ -149,7 +219,7 @@ export default function UserNotificationsPage() {
               variant="light"
               className="bg-[#1c203e]/40 border border-zinc-800 hover:border-zinc-700 text-zinc-300 font-bold text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 transition-all"
               onPress={handleReadAll}
-              isDisabled={isMutating || notifications.every((item) => item.isRead)}
+              isDisabled={isMutating || unreadNotificationsCount === 0}
             >
               <CheckSquare size={13} className="text-pink-500" />
               <span>Đọc tất cả</span>
@@ -187,58 +257,76 @@ export default function UserNotificationsPage() {
         </div>
       ) : (
         <div className="space-y-3.5 text-left animate-in fade-in duration-200">
-          <div className="bg-[#12131b]/50 border border-zinc-900 rounded-3xl overflow-hidden divide-y divide-zinc-900/60 shadow-lg">
-            {notifications.map((notif) => {
-              let Icon = Info;
-              let iconColor = "text-sky-500 bg-sky-500/10 border-sky-500/10";
-              
-              if (notif.type === "reply") {
-                Icon = MessageSquare;
-                iconColor = "text-pink-500 bg-pink-500/10 border-pink-500/10";
-              } else if (notif.type === "movie_update") {
-                Icon = Film;
-                iconColor = "text-yellow-500 bg-yellow-500/10 border-yellow-500/10";
-              }
+          {groupedNotifications.map(([groupLabel, items]) => (
+            <section key={groupLabel} className="space-y-2.5">
+              <h3 className="px-2 text-[11px] font-black uppercase tracking-[0.18em] text-zinc-500">
+                {groupLabel} <span className="text-zinc-700">· {items.length}</span>
+              </h3>
+              <div className="bg-[#12131b]/50 border border-zinc-900 rounded-3xl overflow-hidden divide-y divide-zinc-900/60 shadow-lg">
+                {items.map((notif) => {
+                  let Icon = Info;
+                  let iconColor = "text-sky-500 bg-sky-500/10 border-sky-500/10";
 
-              return (
-                <div
-                  key={notif._id}
-                  onClick={() => handleNotifClick(notif)}
-                  className={`p-4 md:p-5 flex items-start gap-4 cursor-pointer hover:bg-zinc-800/20 active:bg-zinc-800/30 transition-all relative ${
-                    !notif.isRead 
-                      ? "bg-pink-500/[0.02]" 
-                      : "opacity-75 hover:opacity-100"
-                  }`}
-                >
-                  {/* Chấm tròn tin nhắn mới */}
-                  {!notif.isRead && (
-                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-pink-500 shadow-lg shadow-pink-500/40" />
-                  )}
+                  if (notif.type === "reply") {
+                    Icon = MessageSquare;
+                    iconColor = "text-pink-500 bg-pink-500/10 border-pink-500/10";
+                  } else if (["movie_update", "movie_available", "upcoming_release"].includes(notif.type)) {
+                    Icon = Film;
+                    iconColor = "text-yellow-500 bg-yellow-500/10 border-yellow-500/10";
+                  }
 
-                  {/* Icon loại thông báo */}
-                  <div className={`p-3 rounded-2xl border shrink-0 flex items-center justify-center ${iconColor}`}>
-                    <Icon size={18} />
-                  </div>
+                  return (
+                    <div
+                      key={notif._id}
+                      onClick={() => handleNotifClick(notif)}
+                      className={`group p-4 md:p-5 flex items-start gap-4 cursor-pointer hover:bg-zinc-800/20 active:bg-zinc-800/30 transition-all relative ${
+                        !notif.isRead
+                          ? "bg-pink-500/[0.02]"
+                          : "opacity-75 hover:opacity-100"
+                      }`}
+                    >
+                      {!notif.isRead && (
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-pink-500 shadow-lg shadow-pink-500/40" />
+                      )}
 
-                  {/* Content Detail */}
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <div className="flex items-center justify-between gap-4">
-                      <span className={`text-xs md:text-sm font-extrabold truncate ${!notif.isRead ? "text-white" : "text-zinc-300"}`}>
-                        {notif.title}
-                      </span>
-                      <span className="text-[10px] md:text-xs font-semibold text-zinc-500 shrink-0 uppercase tracking-wide">
-                        {formatTimeAgo(notif.createdAt)}
-                      </span>
+                      <div className={`p-3 rounded-2xl border shrink-0 flex items-center justify-center ${iconColor}`}>
+                        <Icon size={18} />
+                      </div>
+
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <span className={`text-xs md:text-sm font-extrabold ${!notif.isRead ? "text-white" : "text-zinc-300"}`}>
+                            {notif.title}
+                          </span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-[10px] md:text-xs font-semibold text-zinc-500 uppercase tracking-wide">
+                              {formatTimeAgo(notif.createdAt)}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label="Xóa thông báo"
+                              disabled={isMutating}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handleDeleteNotification(notif);
+                              }}
+                              className="p-1.5 rounded-lg text-zinc-600 opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 hover:text-red-400 hover:bg-red-500/10 transition-all disabled:pointer-events-none"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <p className={`text-xs leading-relaxed ${!notif.isRead ? "text-zinc-300 font-medium" : "text-zinc-400 font-normal"}`}>
+                          {notif.content}
+                        </p>
+                      </div>
                     </div>
-                    
-                    <p className={`text-xs leading-relaxed ${!notif.isRead ? "text-zinc-300 font-medium" : "text-zinc-400 font-normal"}`}>
-                      {notif.content}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
 
           {/* Pagination */}
           {totalPages > 1 && (

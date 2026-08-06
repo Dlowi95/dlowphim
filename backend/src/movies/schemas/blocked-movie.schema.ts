@@ -16,3 +16,5 @@ export class BlockedMovie {
 }
 
 export const BlockedMovieSchema = SchemaFactory.createForClass(BlockedMovie);
+
+BlockedMovieSchema.index({ createdAt: -1 });

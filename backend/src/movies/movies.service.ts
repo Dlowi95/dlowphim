@@ -8,7 +8,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { BlockedMovie, BlockedMovieDocument } from './schemas/blocked-movie.schema';
 import { CustomMovie, CustomMovieDocument } from './schemas/custom-movie.schema';
 import { MovieLogo, MovieLogoDocument } from './schemas/movie-logo.schema';
@@ -50,20 +50,32 @@ export class MoviesService implements OnModuleInit, OnModuleDestroy {
 
   // ─── BLOCKED MOVIES ───
   async getBlockedMovies(): Promise<any[]> {
-    return this.blockedModel.find().sort({ createdAt: -1 }).exec();
+    return this.blockedModel.find().sort({ createdAt: -1 }).limit(200).lean().exec();
+  }
+
+  async getAdminBlockedMovies(search = '', page = 1, limit = 6) {
+    const pagination = this.normalizePagination(page, limit);
+    const query = this.buildSearchQuery(search, ['slug', 'title', 'reason']);
+    const [items, totalItems] = await Promise.all([
+      this.blockedModel.find(query).sort({ createdAt: -1 }).skip(pagination.skip).limit(pagination.limit).lean().exec(),
+      this.blockedModel.countDocuments(query).exec(),
+    ]);
+    return this.toPaginatedResult(items, totalItems, pagination.page, pagination.limit);
   }
 
   async isMovieBlocked(slug: string): Promise<boolean> {
-    const found = await this.blockedModel.findOne({ slug }).exec();
+    const found = await this.blockedModel.findOne({ slug: this.normalizeSlug(slug) }).lean().exec();
     return !!found;
   }
 
   async blockMovie(slug: string, title?: string, reason?: string): Promise<any> {
-    const trimmedSlug = slug.trim().toLowerCase();
+    const trimmedSlug = this.normalizeSlug(slug);
     const existing = await this.blockedModel.findOne({ slug: trimmedSlug }).exec();
     if (existing) {
       throw new ConflictException('Phim này đã bị chặn từ trước');
     }
+    title = this.cleanText(title || slug, 200);
+    reason = this.cleanText(reason, 500) || undefined;
     const created = new this.blockedModel({
       slug: trimmedSlug,
       title: title || slug,
@@ -73,7 +85,7 @@ export class MoviesService implements OnModuleInit, OnModuleDestroy {
   }
 
   async unblockMovie(slug: string): Promise<{ success: boolean }> {
-    const trimmedSlug = slug.trim().toLowerCase();
+    const trimmedSlug = this.normalizeSlug(slug);
     const result = await this.blockedModel.deleteOne({ slug: trimmedSlug }).exec();
     if (result.deletedCount === 0) {
       throw new NotFoundException('Không tìm thấy phim này trong danh sách chặn');
@@ -83,19 +95,22 @@ export class MoviesService implements OnModuleInit, OnModuleDestroy {
 
   // ─── CUSTOM MOVIES ───
   async getCustomMovies(search?: string): Promise<any[]> {
-    const filter: any = {};
-    if (search) {
-      filter.$or = [
-        { name: new RegExp(search, 'i') },
-        { origin_name: new RegExp(search, 'i') },
-        { slug: new RegExp(search, 'i') },
-      ];
-    }
-    return this.customModel.find(filter).sort({ createdAt: -1 }).exec();
+    const filter = this.buildSearchQuery(search || '', ['name', 'origin_name', 'slug']);
+    return this.customModel.find(filter).sort({ createdAt: -1 }).limit(100).lean().exec();
+  }
+
+  async getAdminCustomMovies(search = '', page = 1, limit = 6) {
+    const pagination = this.normalizePagination(page, limit);
+    const query = this.buildSearchQuery(search, ['name', 'origin_name', 'slug']);
+    const [items, totalItems] = await Promise.all([
+      this.customModel.find(query).sort({ createdAt: -1 }).skip(pagination.skip).limit(pagination.limit).lean().exec(),
+      this.customModel.countDocuments(query).exec(),
+    ]);
+    return this.toPaginatedResult(items, totalItems, pagination.page, pagination.limit);
   }
 
   async getCustomMovieBySlug(slug: string): Promise<any> {
-    const trimmedSlug = slug.trim().toLowerCase();
+    const trimmedSlug = this.normalizeSlug(slug);
     const found = await this.customModel.findOne({ slug: trimmedSlug }).exec();
     if (!found) {
       throw new NotFoundException('Không tìm thấy phim tự đăng này');
@@ -104,7 +119,9 @@ export class MoviesService implements OnModuleInit, OnModuleDestroy {
   }
 
   async createCustomMovie(dto: any): Promise<any> {
-    const slug = dto.slug ? dto.slug.trim().toLowerCase() : this.generateSlug(dto.name);
+    const payload = this.sanitizeCustomMovieDto(dto, false);
+    const slug = payload.slug || this.generateSlug(payload.name);
+    if (!slug) throw new BadRequestException('Không thể tạo slug hợp lệ cho phim');
     const existing = await this.customModel.findOne({ slug }).exec();
     if (existing) {
       throw new ConflictException('Slug phim này đã tồn tại');
@@ -116,33 +133,47 @@ export class MoviesService implements OnModuleInit, OnModuleDestroy {
       throw new ConflictException('Slug phim này đang nằm trong danh sách chặn');
     }
 
-    const created = new this.customModel({
-      ...dto,
-      slug,
-    });
-    return created.save();
+    try {
+      const created = new this.customModel({ ...payload, slug });
+      return await created.save();
+    } catch (error: any) {
+      if (error?.code === 11000) throw new ConflictException('Slug phim này đã tồn tại');
+      throw error;
+    }
   }
 
   async updateCustomMovie(id: string, dto: any): Promise<any> {
+    if (!Types.ObjectId.isValid(id)) throw new BadRequestException('ID phim không hợp lệ');
     const existing = await this.customModel.findById(id).exec();
     if (!existing) {
       throw new NotFoundException('Không tìm thấy phim cần cập nhật');
     }
 
-    if (dto.slug) {
-      const slug = dto.slug.trim().toLowerCase();
+    const payload = this.sanitizeCustomMovieDto(dto, true);
+    if (payload.slug) {
+      const slug = payload.slug;
       if (slug !== existing.slug) {
-        const duplicate = await this.customModel.findOne({ slug }).exec();
+        const [duplicate, blocked] = await Promise.all([
+          this.customModel.findOne({ slug, _id: { $ne: id } }).lean().exec(),
+          this.blockedModel.exists({ slug }),
+        ]);
         if (duplicate) {
           throw new ConflictException('Slug phim này đã tồn tại ở phim khác');
         }
+        if (blocked) throw new ConflictException('Slug phim này đang nằm trong danh sách chặn');
       }
     }
 
-    return this.customModel.findByIdAndUpdate(id, dto, { new: true }).exec();
+    try {
+      return await this.customModel.findByIdAndUpdate(id, payload, { new: true, runValidators: true }).exec();
+    } catch (error: any) {
+      if (error?.code === 11000) throw new ConflictException('Slug phim này đã tồn tại');
+      throw error;
+    }
   }
 
   async deleteCustomMovie(id: string): Promise<{ success: boolean }> {
+    if (!Types.ObjectId.isValid(id)) throw new BadRequestException('ID phim không hợp lệ');
     const result = await this.customModel.deleteOne({ _id: id }).exec();
     if (result.deletedCount === 0) {
       throw new NotFoundException('Không tìm thấy phim cần xóa');
@@ -160,6 +191,104 @@ export class MoviesService implements OnModuleInit, OnModuleDestroy {
       .replace(/(\s+)/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-+|-+$/g, '');
+  }
+
+  private normalizeSlug(value: unknown): string {
+    const slug = String(value || '').trim().toLowerCase();
+    if (!slug || slug.length > 180 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+      throw new BadRequestException('Slug phim không hợp lệ');
+    }
+    return slug;
+  }
+
+  private cleanText(value: unknown, maxLength: number): string {
+    return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+  }
+
+  private cleanMultilineText(value: unknown, maxLength: number): string {
+    return String(value || '').replace(/\r\n/g, '\n').trim().slice(0, maxLength);
+  }
+
+  private validateMediaUrl(value: unknown, field: string): string {
+    const url = String(value || '').trim();
+    if (!url) throw new BadRequestException(`${field} là bắt buộc`);
+    if (url.length > 2048) throw new BadRequestException(`${field} quá dài`);
+    if (url.startsWith('/')) return url;
+    try {
+      const parsed = new URL(url);
+      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error();
+      return url;
+    } catch {
+      throw new BadRequestException(`${field} không phải URL hợp lệ`);
+    }
+  }
+
+  private sanitizeNamedItems(value: unknown): Array<{ name: string; slug: string }> {
+    if (!Array.isArray(value)) return [];
+    return value.slice(0, 20).map((item) => {
+      const name = this.cleanText(item?.name, 100);
+      const slug = item?.slug ? this.normalizeSlug(item.slug) : this.generateSlug(name);
+      if (!name || !slug) throw new BadRequestException('Thể loại hoặc quốc gia không hợp lệ');
+      return { name, slug };
+    });
+  }
+
+  private sanitizeCustomMovieDto(dto: any, partial: boolean): any {
+    if (!dto || typeof dto !== 'object' || Array.isArray(dto)) {
+      throw new BadRequestException('Dữ liệu phim không hợp lệ');
+    }
+    const payload: any = {};
+    for (const field of ['name', 'origin_name'] as const) {
+      if (!partial || dto[field] !== undefined) {
+        const value = this.cleanText(dto[field], 250);
+        if (!value) throw new BadRequestException(`${field} là bắt buộc`);
+        payload[field] = value;
+      }
+    }
+    if (dto.slug !== undefined && String(dto.slug).trim()) payload.slug = this.normalizeSlug(dto.slug);
+    if (!partial || dto.thumb_url !== undefined) payload.thumb_url = this.validateMediaUrl(dto.thumb_url, 'Ảnh thumbnail');
+    if (!partial || dto.poster_url !== undefined) payload.poster_url = this.validateMediaUrl(dto.poster_url, 'Ảnh poster');
+    if (!partial || dto.link_m3u8 !== undefined) payload.link_m3u8 = this.validateMediaUrl(dto.link_m3u8, 'Link HLS');
+    if (dto.year !== undefined || !partial) {
+      const year = Number(dto.year);
+      const maxYear = new Date().getFullYear() + 5;
+      if (!Number.isInteger(year) || year < 1888 || year > maxYear) {
+        throw new BadRequestException('Năm phát hành không hợp lệ');
+      }
+      payload.year = year;
+    }
+    for (const [field, max] of [['time', 100], ['quality', 50], ['lang', 100]] as const) {
+      if (dto[field] !== undefined) payload[field] = this.cleanText(dto[field], max);
+    }
+    if (dto.content !== undefined) payload.content = this.cleanMultilineText(dto.content, 20_000);
+    if (dto.category !== undefined) payload.category = this.sanitizeNamedItems(dto.category);
+    if (dto.country !== undefined) payload.country = this.sanitizeNamedItems(dto.country);
+    return payload;
+  }
+
+  private buildSearchQuery(search: string, fields: string[]): Record<string, any> {
+    const term = String(search || '').trim().slice(0, 100);
+    if (!term) return {};
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return { $or: fields.map((field) => ({ [field]: { $regex: escaped, $options: 'i' } })) };
+  }
+
+  private normalizePagination(page: number, limit: number) {
+    const safePage = Math.max(1, Math.floor(Number(page) || 1));
+    const safeLimit = Math.min(50, Math.max(1, Math.floor(Number(limit) || 6)));
+    return { page: safePage, limit: safeLimit, skip: (safePage - 1) * safeLimit };
+  }
+
+  private toPaginatedResult(items: any[], totalItems: number, page: number, limit: number) {
+    return {
+      items,
+      pagination: {
+        page,
+        limit,
+        totalItems,
+        totalPages: Math.max(1, Math.ceil(totalItems / limit)),
+      },
+    };
   }
 
   // Helper fetch an toàn có timeout 3 giây tránh bị nghẽn mạng TMDB
@@ -399,6 +528,7 @@ export class MoviesService implements OnModuleInit, OnModuleDestroy {
                 title: `${reminder.movieName} đến ngày công chiếu`,
                 content: 'Phim bạn đặt nhắc đã đến lịch phát hành. DlowPhim đang kiểm tra nguồn xem.',
                 link: `/movie/${reminder.slug}`,
+                dedupKey: `upcoming-release:${reminder.tmdbId}`,
               });
             }
           }
@@ -449,6 +579,7 @@ export class MoviesService implements OnModuleInit, OnModuleDestroy {
               title: `${reminder.movieName} đã có bản xem`,
               content: 'Phim bạn đặt nhắc hiện đã có nguồn phát trên DlowPhim.',
               link: `/movie/${detail._resolvedSlug}`,
+              dedupKey: `movie-available:${reminder.tmdbId}`,
             });
           }
         }
@@ -1188,24 +1319,25 @@ export class MoviesService implements OnModuleInit, OnModuleDestroy {
 
   // ─── MOVIE OVERRIDES (ADMIN CONTROLS) ───
   async getOverrideBySlug(slug: string): Promise<any> {
-    const trimmedSlug = slug.trim().toLowerCase();
-    return this.overrideModel.findOne({ slug: trimmedSlug }).exec();
+    const trimmedSlug = this.normalizeSlug(slug);
+    return this.overrideModel.findOne({ slug: trimmedSlug }).lean().exec();
   }
 
   async createOrUpdateOverride(slug: string, data: { customContent?: string; customName?: string }): Promise<any> {
-    const trimmedSlug = slug.trim().toLowerCase();
-    let found = await this.overrideModel.findOne({ slug: trimmedSlug }).exec();
-    if (found) {
-      if (data.customContent !== undefined) found.customContent = data.customContent;
-      if (data.customName !== undefined) found.customName = data.customName;
-      return found.save();
-    } else {
-      const created = new this.overrideModel({
-        slug: trimmedSlug,
-        customContent: data.customContent || '',
-        customName: data.customName || '',
-      });
-      return created.save();
+    const trimmedSlug = this.normalizeSlug(slug);
+    const update: Record<string, string> = {};
+    if (data.customContent !== undefined) update.customContent = this.cleanMultilineText(data.customContent, 20_000);
+    if (data.customName !== undefined) update.customName = this.cleanText(data.customName, 250);
+    if (!Object.keys(update).length) throw new BadRequestException('Không có nội dung chỉnh sửa');
+    try {
+      return await this.overrideModel.findOneAndUpdate(
+        { slug: trimmedSlug },
+        { $set: update, $setOnInsert: { slug: trimmedSlug } },
+        { upsert: true, returnDocument: 'after', runValidators: true },
+      ).exec();
+    } catch (error: any) {
+      if (error?.code === 11000) throw new ConflictException('Dữ liệu chỉnh sửa vừa được cập nhật, vui lòng thử lại');
+      throw error;
     }
   }
 }

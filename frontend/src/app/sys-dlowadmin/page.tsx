@@ -5,7 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import AdminHeader from "@/components/admin/AdminHeader";
-import DashboardView from "@/components/admin/DashboardView";
+import DashboardView, { DashboardStats } from "@/components/admin/DashboardView";
 import CommentReportsView from "@/components/admin/CommentReportsView";
 import PlaceholderView from "@/components/admin/PlaceholderView";
 import MoviesManagementView from "@/components/admin/MoviesManagementView";
@@ -58,13 +58,7 @@ export default function AdminDashboardPage() {
   const [loadingAllComments, setLoadingAllComments] = useState(false);
 
   // Real statistics states
-  const [stats, setStats] = useState<{
-    totalUsers: number;
-    totalComments: number;
-    activeReports: number;
-    totalViews: number;
-    chartData: Array<{ month: string; LuotXem: number; BinhLuan: number }>;
-  } | null>(null);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
 
   // Fetch stats from backend
@@ -72,7 +66,8 @@ export default function AdminDashboardPage() {
     setLoadingStats(true);
     try {
       const token = Cookies.get("token");
-      const res = await fetch(`${API_URL}/comments/admin/stats`, {
+      const res = await fetch(`${API_URL}/admin/dashboard`, {
+        cache: "no-store",
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -184,9 +179,7 @@ export default function AdminDashboardPage() {
   // Run on mount to populate sidebar badge
   useEffect(() => {
     fetchReports();
-    fetchStats();
     fetchMovieReports();
-    fetchNotifications();
   }, []);
 
   // Automatically refresh reports list or stats when switching tabs
@@ -290,7 +283,12 @@ export default function AdminDashboardPage() {
         {/* ─── CONTENT TAB PANEL ─── */}
         <div className="flex-grow p-5">
           {activeTab === "dashboard" && (
-            <DashboardView stats={stats} loading={loadingStats} setActiveTab={setActiveTab} />
+            <DashboardView
+              stats={stats}
+              loading={loadingStats}
+              setActiveTab={setActiveTab}
+              onRefresh={fetchStats}
+            />
           )}
 
           {activeTab === "comments" && (

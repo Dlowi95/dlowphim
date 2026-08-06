@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import Cookies from "js-cookie";
+import { io } from "socket.io-client";
 
 interface User {
   id: string;
@@ -41,6 +42,7 @@ interface AuthContextType {
   getUserNotifications: (page?: number, limit?: number) => Promise<any>;
   readAllNotifications: () => Promise<boolean>;
   readSingleNotification: (id: string) => Promise<boolean>;
+  deleteSingleNotification: (id: string) => Promise<boolean>;
   clearAllNotifications: () => Promise<boolean>;
 }
 
@@ -541,6 +543,7 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     if (!token) return;
     try {
       const res = await fetch(`${API_URL}/notifications/user?limit=1`, {
+        cache: "no-store",
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -559,6 +562,7 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     if (!token) return { items: [], total: 0, unreadCount: 0 };
     try {
       const res = await fetch(`${API_URL}/notifications/user?page=${page}&limit=${limit}`, {
+        cache: "no-store",
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -605,11 +609,37 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
         },
       });
       if (res.ok) {
-        setUnreadNotificationsCount((prev) => Math.max(0, prev - 1));
+        const data = await res.json();
+        if (typeof data.unreadCount === "number") {
+          setUnreadNotificationsCount(Math.max(0, data.unreadCount));
+        }
         return true;
       }
     } catch (e) {
       console.error("Lỗi đọc thông báo:", e);
+    }
+    return false;
+  };
+
+  const deleteSingleNotification = async (id: string): Promise<boolean> => {
+    const token = Cookies.get("token");
+    if (!token) return false;
+    try {
+      const res = await fetch(`${API_URL}/notifications/user/${id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (typeof data.unreadCount === "number") {
+          setUnreadNotificationsCount(data.unreadCount);
+        }
+        return true;
+      }
+    } catch (e) {
+      console.error("Lỗi xóa thông báo:", e);
     }
     return false;
   };
@@ -638,12 +668,43 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     const token = Cookies.get("token");
     if (token && user) {
       fetchUnreadNotificationsCount(token);
-      
-      // Auto-refresh every 2 minutes
-      const interval = setInterval(() => {
-        fetchUnreadNotificationsCount();
-      }, 120000);
-      return () => clearInterval(interval);
+
+      let socketHost = API_URL;
+      try {
+        socketHost = new URL(API_URL).origin;
+      } catch {
+        // Giữ nguyên cấu hình nếu URL đã là địa chỉ socket hợp lệ.
+      }
+
+      const socket = io(`${socketHost}/notifications`, {
+        auth: { token },
+        transports: ["websocket", "polling"],
+        reconnection: true,
+      });
+
+      const notifyUi = (detail?: unknown) => {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("dlowphim:notifications-changed", { detail }),
+          );
+        }
+      };
+
+      socket.on("notifications:ready", () => {
+        void fetchUnreadNotificationsCount(token);
+        notifyUi({ action: "connected" });
+      });
+      socket.on("notifications:changed", (payload: any) => {
+        if (typeof payload?.unreadCount === "number") {
+          setUnreadNotificationsCount(Math.max(0, payload.unreadCount));
+        }
+        notifyUi(payload);
+      });
+
+      return () => {
+        socket.removeAllListeners();
+        socket.disconnect();
+      };
     }
   }, [user?.id]);
 
@@ -680,6 +741,7 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
         getUserNotifications,
         readAllNotifications,
         readSingleNotification,
+        deleteSingleNotification,
         clearAllNotifications,
       }}
     >

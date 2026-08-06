@@ -109,6 +109,8 @@ export class AuthService {
         content: 'Chào mừng bạn đến với DlowPhim! Hãy cập nhật avatar và tạo danh sách phát đầu tiên để bắt đầu trải nghiệm nhé.',
         link: '/user/account',
         isRead: false,
+        dedupKey: 'welcome',
+        expiresAt: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000),
       });
     } catch (error) {
       console.error('Lỗi tạo thông báo chào mừng:', error);

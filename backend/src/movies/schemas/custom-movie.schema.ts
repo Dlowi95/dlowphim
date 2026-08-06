@@ -49,3 +49,5 @@ export class CustomMovie {
 }
 
 export const CustomMovieSchema = SchemaFactory.createForClass(CustomMovie);
+
+CustomMovieSchema.index({ createdAt: -1 });

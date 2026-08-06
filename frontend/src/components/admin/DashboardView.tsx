@@ -1,399 +1,394 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
-  Film, Users, MessageSquare, AlertTriangle, TrendingUp, TrendingDown,
-  Loader2, Activity, Eye, ArrowRight, Zap, ShieldAlert, UserPlus,
-  Clock, BarChart3, CheckCircle2, Circle,
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  Clock3,
+  Database,
+  Eye,
+  Film,
+  Gauge,
+  MessageSquare,
+  Radio,
+  RefreshCw,
+  ShieldAlert,
+  TrendingDown,
+  TrendingUp,
+  Users,
+  WifiOff,
 } from "lucide-react";
 import {
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
 } from "recharts";
-import Cookies from "js-cookie";
 
-type TabId = "dashboard" | "comments" | "movies" | "users" | "banners" | "reports" | "notifications" | "settings";
+type TabId =
+  | "dashboard"
+  | "comments"
+  | "movies"
+  | "users"
+  | "banners"
+  | "reports"
+  | "playback"
+  | "notifications"
+  | "settings";
 
-interface DashboardViewProps {
-  stats: {
-    totalUsers: number;
-    totalComments: number;
+type SourceStatus = "healthy" | "degraded" | "offline";
+type PlaybackStatus = "healthy" | "degraded" | "blocked";
+
+export interface DashboardStats {
+  generatedAt: string;
+  totals: {
+    users: number;
+    views: number;
+    comments: number;
     activeReports: number;
-    totalViews: number;
-    chartData: Array<{ month: string; LuotXem: number; BinhLuan: number }>;
-  } | null;
-  loading: boolean;
-  setActiveTab?: (tab: TabId) => void;
+  };
+  trends: Record<"users" | "views" | "comments", {
+    percent: number;
+    current: number;
+    previous: number;
+  }>;
+  chartData: Array<{ month: string; LuotXem: number; BinhLuan: number }>;
+  moderationQueue: {
+    total: number;
+    commentReports: number;
+    movieReports: number;
+    latestMovieReports: Array<{
+      _id: string;
+      movieName?: string;
+      movieSlug?: string;
+      episodeName?: string;
+      errorType?: string;
+      createdAt?: string;
+    }>;
+  };
+  movieSources: Array<{
+    id: string;
+    name: string;
+    domain: string;
+    active: boolean;
+    status: SourceStatus;
+    latencyMs: number | null;
+    statusCode: number | null;
+    checkedAt: string;
+  }>;
+  playbackHealth: {
+    summary: {
+      activeOrigins: number;
+      healthyOrigins: number;
+      degradedOrigins: number;
+      blockedOrigins: number;
+      totalStarts: number;
+      totalFailures: number;
+      totalBuffers: number;
+    };
+    problems: Array<{
+      origin: string;
+      status: PlaybackStatus;
+      failureRate: number;
+      failures: number;
+      buffers: number;
+      averageStartupMs: number;
+      averageBufferMs: number;
+      uniqueFailureReporters: number;
+      lastSeenAt: number;
+    }>;
+  };
+  systemStatus: {
+    api: boolean;
+    database: boolean;
+    socket: boolean;
+    socketClients: number;
+  };
 }
 
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-[#0e0f16]/95 backdrop-blur-xl border border-white/[0.07] rounded-xl px-3 py-2.5 shadow-2xl">
-        <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1.5">{label}</p>
-        {payload.map((p: any, i: number) => (
-          <div key={i} className="flex items-center gap-2 text-[11px] font-bold">
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
-            <span className="text-zinc-400">{p.name}:</span>
-            <span className="text-white">{p.value?.toLocaleString("vi-VN")}</span>
-          </div>
-        ))}
-      </div>
-    );
-  }
-  return null;
+interface DashboardViewProps {
+  stats: DashboardStats | null;
+  loading: boolean;
+  setActiveTab?: (tab: TabId) => void;
+  onRefresh?: () => void;
+}
+
+const sourceMeta: Record<SourceStatus, { label: string; color: string; dot: string }> = {
+  healthy: { label: "Ổn định", color: "text-emerald-400", dot: "bg-emerald-400" },
+  degraded: { label: "Phản hồi chậm", color: "text-amber-400", dot: "bg-amber-400" },
+  offline: { label: "Mất kết nối", color: "text-red-400", dot: "bg-red-400" },
 };
 
-export default function DashboardView({ stats, loading, setActiveTab }: DashboardViewProps) {
+const playbackMeta: Record<PlaybackStatus, { label: string; className: string }> = {
+  healthy: { label: "Ổn định", className: "bg-emerald-500/10 text-emerald-400" },
+  degraded: { label: "Suy giảm", className: "bg-amber-500/10 text-amber-400" },
+  blocked: { label: "Tạm chặn", className: "bg-red-500/10 text-red-400" },
+};
+
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl border border-white/[0.07] bg-[#0e0f16]/95 px-3 py-2.5 shadow-2xl backdrop-blur-xl">
+      <p className="mb-1.5 text-[10px] font-black uppercase tracking-widest text-zinc-400">{label}</p>
+      {payload.map((item: any) => (
+        <div key={item.name} className="flex items-center gap-2 text-[11px] font-bold">
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
+          <span className="text-zinc-400">{item.name}:</span>
+          <span className="text-white">{item.value?.toLocaleString("vi-VN")}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+export default function DashboardView({ stats, loading, setActiveTab, onRefresh }: DashboardViewProps) {
   const [mounted, setMounted] = useState(false);
-  const [recentUsers, setRecentUsers] = useState<any[]>([]);
-  const [recentReports, setRecentReports] = useState<any[]>([]);
-  const [loadingExtra, setLoadingExtra] = useState(false);
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+  useEffect(() => setMounted(true), []);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    const fetchExtra = async () => {
-      setLoadingExtra(true);
-      try {
-        const token = Cookies.get("token");
-        const headers = { Authorization: `Bearer ${token}` };
-
-        const [usersRes, reportsRes] = await Promise.allSettled([
-          fetch(`${API_URL}/users/admin/list?limit=5`, { headers }),
-          fetch(`${API_URL}/movie-reports/admin?limit=5`, { headers }),
-        ]);
-
-        if (usersRes.status === "fulfilled" && usersRes.value.ok) {
-          const data = await usersRes.value.json();
-          setRecentUsers((data.items || data || []).slice(0, 5));
-        }
-        if (reportsRes.status === "fulfilled" && reportsRes.value.ok) {
-          const data = await reportsRes.value.json();
-          setRecentReports((data || []).slice(0, 5));
-        }
-      } catch (e) {
-        console.error("Lỗi fetch dashboard extra:", e);
-      } finally {
-        setLoadingExtra(false);
-      }
-    };
-    fetchExtra();
-  }, []);
-
-  if (loading || !stats) {
+  if (loading) {
     return (
-      <div className="space-y-5 animate-pulse">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-[100px] rounded-2xl bg-white/[0.03]" />
+      <div className="animate-pulse space-y-5">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="h-[108px] rounded-2xl bg-white/[0.03]" />
           ))}
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 rounded-2xl bg-white/[0.03] h-72" />
-          <div className="rounded-2xl bg-white/[0.03] h-72" />
+        <div className="grid gap-5 lg:grid-cols-3">
+          <div className="h-72 rounded-2xl bg-white/[0.03] lg:col-span-2" />
+          <div className="h-72 rounded-2xl bg-white/[0.03]" />
         </div>
       </div>
     );
   }
 
-  const statItems: { title: string; value: any; change: string; positive: boolean; icon: any; accent: string; glow: string; tab: TabId }[] = [
+  if (!stats) {
+    return (
+      <div className="flex min-h-[360px] flex-col items-center justify-center gap-3 rounded-2xl border border-red-500/10 bg-red-500/[0.025] px-6 text-center">
+        <AlertTriangle size={30} className="text-red-400" />
+        <div>
+          <h3 className="text-sm font-black text-zinc-200">Không tải được dữ liệu tổng quan</h3>
+          <p className="mt-1 text-xs font-medium text-zinc-500">Kiểm tra kết nối backend rồi thử tải lại.</p>
+        </div>
+        <button type="button" onClick={onRefresh} className="mt-1 h-9 rounded-xl border border-pink-500/20 bg-pink-500/10 px-4 text-xs font-black text-pink-400 transition-colors hover:bg-pink-500/15">
+          Thử lại
+        </button>
+      </div>
+    );
+  }
+
+  const trendInfo = (key: "users" | "views" | "comments") => {
+    const trend = stats.trends[key];
+    return {
+      label: `${trend.percent > 0 ? "+" : ""}${trend.percent.toLocaleString("vi-VN")}% so với 30 ngày trước`,
+      positive: trend.percent >= 0,
+    };
+  };
+
+  const cards = [
+    { title: "Người dùng", value: stats.totals.users, icon: Users, accent: "#3b82f6", trend: trendInfo("users"), tab: "users" as TabId },
+    { title: "Phim đang xem dở", value: stats.totals.views, icon: Eye, accent: "#ec4899", trend: trendInfo("views"), tab: "movies" as TabId },
+    { title: "Bình luận", value: stats.totals.comments, icon: MessageSquare, accent: "#8b5cf6", trend: trendInfo("comments"), tab: "comments" as TabId },
     {
-      title: "Người dùng",
-      value: stats.totalUsers.toLocaleString("vi-VN"),
-      change: "+4.1%",
-      positive: true,
-      icon: Users,
-      accent: "#3b82f6",
-      glow: "rgba(59,130,246,0.12)",
-      tab: "users",
-    },
-    {
-      title: "Lượt xem",
-      value: stats.totalViews.toLocaleString("vi-VN"),
-      change: "+22.4%",
-      positive: true,
-      icon: Eye,
-      accent: "#ec4899",
-      glow: "rgba(236,72,153,0.12)",
-      tab: "movies",
-    },
-    {
-      title: "Bình luận",
-      value: stats.totalComments.toLocaleString("vi-VN"),
-      change: "+15.6%",
-      positive: true,
-      icon: MessageSquare,
-      accent: "#8b5cf6",
-      glow: "rgba(139,92,246,0.12)",
-      tab: "comments",
-    },
-    {
-      title: "Báo cáo",
-      value: stats.activeReports,
-      change: stats.activeReports > 0 ? `${stats.activeReports} chờ xử lý` : "Không có",
-      positive: stats.activeReports === 0,
-      icon: AlertTriangle,
+      title: "Việc chờ xử lý",
+      value: stats.moderationQueue.total,
+      icon: ShieldAlert,
       accent: "#f59e0b",
-      glow: "rgba(245,158,11,0.12)",
-      tab: "reports",
+      trend: { label: stats.moderationQueue.total ? "Cần quản trị viên kiểm tra" : "Không còn việc tồn đọng", positive: stats.moderationQueue.total === 0 },
+      tab: "reports" as TabId,
     },
   ];
 
-  const quickActions: { label: string; icon: any; color: string; tab: TabId }[] = [
-    { label: "Thêm phim mới", icon: Film, color: "#ec4899", tab: "movies" },
-    { label: "Duyệt báo cáo", icon: ShieldAlert, color: "#f59e0b", tab: "reports" },
-    { label: "Quản lý user", icon: UserPlus, color: "#3b82f6", tab: "users" },
-    { label: "Xem bình luận", icon: MessageSquare, color: "#8b5cf6", tab: "comments" },
+  const systemItems = [
+    { label: "Database", ok: stats.systemStatus.database, icon: Database },
+    { label: `Socket · ${stats.systemStatus.socketClients}`, ok: stats.systemStatus.socket, icon: Radio },
   ];
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
-      {/* ── Stat Cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {statItems.map((stat, idx) => {
-          const Icon = stat.icon;
-          const Trend = stat.positive ? TrendingUp : TrendingDown;
+      <div className="flex items-center justify-end gap-2 text-[10px] font-bold text-zinc-600">
+        <Clock3 size={11} />
+        <span>Cập nhật lúc {new Date(stats.generatedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}</span>
+        <button type="button" onClick={onRefresh} aria-label="Làm mới tổng quan" className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.05] bg-white/[0.025] transition-colors hover:bg-white/[0.06] hover:text-zinc-300">
+          <RefreshCw size={12} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {cards.map((card) => {
+          const Icon = card.icon;
+          const TrendIcon = card.trend.positive ? TrendingUp : TrendingDown;
           return (
-            <button
-              key={idx}
-              onClick={() => stat.tab && setActiveTab?.(stat.tab)}
-              className="relative group p-4 rounded-2xl bg-white/[0.025] border border-white/[0.05] hover:border-white/[0.09] transition-all duration-300 overflow-hidden text-left cursor-pointer"
-              style={{ boxShadow: `0 0 0 1px ${stat.glow}` }}
-            >
-              <div
-                className="absolute top-3 right-3 w-8 h-8 rounded-xl flex items-center justify-center"
-                style={{ backgroundColor: `${stat.accent}18`, color: stat.accent }}
-              >
+            <button key={card.title} type="button" onClick={() => setActiveTab?.(card.tab)} className="group relative overflow-hidden rounded-2xl border border-white/[0.05] bg-white/[0.025] p-4 text-left transition-all hover:border-white/[0.1]">
+              <div className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-xl" style={{ backgroundColor: `${card.accent}18`, color: card.accent }}>
                 <Icon size={15} />
               </div>
-              <div
-                className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
-                style={{ background: `radial-gradient(ellipse at 80% 0%, ${stat.glow} 0%, transparent 60%)` }}
-              />
-              <div className="space-y-2 relative">
-                <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{stat.title}</p>
-                <p className="text-2xl font-black tracking-tight text-zinc-100">{stat.value}</p>
-                <div className="flex items-center gap-1.5">
-                  <Trend size={10} style={{ color: stat.positive ? "#10b981" : "#f87171" }} />
-                  <span className="text-[10px] font-bold" style={{ color: stat.positive ? "#10b981" : "#f87171" }}>
-                    {stat.change}
-                  </span>
-                </div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">{card.title}</p>
+              <p className="mt-2 text-2xl font-black tracking-tight text-zinc-100">{card.value.toLocaleString("vi-VN")}</p>
+              <div className="mt-2 flex items-center gap-1.5">
+                <TrendIcon size={10} className={card.trend.positive ? "text-emerald-500" : "text-red-400"} />
+                <span className={`text-[10px] font-bold ${card.trend.positive ? "text-emerald-500" : "text-red-400"}`}>{card.trend.label}</span>
               </div>
             </button>
           );
         })}
       </div>
 
-      {/* ── Row 2: Chart + Quick Actions ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Chart (2 cols) */}
+      <div className="grid gap-5 lg:grid-cols-3">
         {mounted && (
-          <div className="lg:col-span-2 p-5 rounded-2xl bg-white/[0.025] border border-white/[0.05] space-y-4">
+          <section className="space-y-4 rounded-2xl border border-white/[0.05] bg-white/[0.025] p-5 lg:col-span-2">
             <div className="flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2">
                   <Activity size={13} className="text-pink-500" />
-                  <h4 className="text-[11px] font-black text-zinc-300 uppercase tracking-wider">
-                    Tương tác & Lượt xem
-                  </h4>
+                  <h2 className="text-[11px] font-black uppercase tracking-wider text-zinc-300">Hoạt động người xem</h2>
                 </div>
-                <p className="text-[10px] text-zinc-600 mt-0.5 ml-5">6 tháng gần nhất</p>
+                <p className="ml-5 mt-0.5 text-[10px] text-zinc-600">Lịch sử xem dở và bình luận trong 6 tháng</p>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-pink-500" />
-                  <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Lượt xem</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-violet-500" />
-                  <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Bình luận</span>
-                </div>
+              <div className="flex gap-3 text-[9px] font-bold uppercase tracking-widest text-zinc-500">
+                <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-pink-500" />Xem dở</span>
+                <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-violet-500" />Bình luận</span>
               </div>
             </div>
             <div className="h-52 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={stats.chartData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
                   <defs>
-                    <linearGradient id="glv" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#ec4899" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#ec4899" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="gbl" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
-                    </linearGradient>
+                    <linearGradient id="dashboardViews" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ec4899" stopOpacity={0.22} /><stop offset="95%" stopColor="#ec4899" stopOpacity={0} /></linearGradient>
+                    <linearGradient id="dashboardComments" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.2} /><stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} /></linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                  <XAxis dataKey="month" stroke="#374151" fontSize={9} tickLine={false} axisLine={false} tick={{ fill: "#4b5563", fontWeight: "700" }} />
-                  <YAxis stroke="#374151" fontSize={9} tickLine={false} axisLine={false} tick={{ fill: "#4b5563", fontWeight: "700" }} />
-                  <Tooltip content={<CustomTooltip />} cursor={{ stroke: "rgba(255,255,255,0.06)", strokeWidth: 1 }} />
-                  <Area type="monotone" dataKey="LuotXem" stroke="#ec4899" strokeWidth={2} fillOpacity={1} fill="url(#glv)" name="Lượt xem" dot={false} activeDot={{ r: 4, fill: "#ec4899", strokeWidth: 0 }} />
-                  <Area type="monotone" dataKey="BinhLuan" stroke="#8b5cf6" strokeWidth={2} fillOpacity={1} fill="url(#gbl)" name="Bình luận" dot={false} activeDot={{ r: 4, fill: "#8b5cf6", strokeWidth: 0 }} />
+                  <XAxis dataKey="month" fontSize={9} tickLine={false} axisLine={false} tick={{ fill: "#4b5563", fontWeight: 700 }} />
+                  <YAxis fontSize={9} tickLine={false} axisLine={false} tick={{ fill: "#4b5563", fontWeight: 700 }} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Area type="monotone" dataKey="LuotXem" stroke="#ec4899" strokeWidth={2} fill="url(#dashboardViews)" name="Xem dở" dot={false} />
+                  <Area type="monotone" dataKey="BinhLuan" stroke="#8b5cf6" strokeWidth={2} fill="url(#dashboardComments)" name="Bình luận" dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-          </div>
+          </section>
         )}
 
-        {/* Quick Actions */}
-        <div className="p-5 rounded-2xl bg-white/[0.025] border border-white/[0.05] space-y-3">
-          <div className="flex items-center gap-2 mb-1">
-            <Zap size={13} className="text-yellow-400" />
-            <h4 className="text-[11px] font-black text-zinc-300 uppercase tracking-wider">Truy cập nhanh</h4>
+        <section className="rounded-2xl border border-white/[0.05] bg-white/[0.025] p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Gauge size={14} className="text-cyan-400" />
+              <h2 className="text-[11px] font-black uppercase tracking-wider text-zinc-300">Nguồn dữ liệu phim</h2>
+            </div>
+            <button type="button" onClick={() => setActiveTab?.("settings")} className="text-[9px] font-black uppercase tracking-widest text-zinc-600 transition-colors hover:text-pink-400">Cấu hình</button>
           </div>
-          <div className="space-y-2">
-            {quickActions.map((action) => {
-              const Icon = action.icon;
+          <div className="space-y-2.5">
+            {stats.movieSources.map((source) => {
+              const meta = sourceMeta[source.status];
               return (
-                <button
-                  key={action.tab}
-                  onClick={() => setActiveTab?.(action.tab)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.04] hover:border-white/[0.08] transition-all cursor-pointer group text-left"
-                >
-                  <div
-                    className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: `${action.color}18`, color: action.color }}
-                  >
-                    <Icon size={13} />
+                <div key={source.id} className="rounded-xl border border-white/[0.05] bg-white/[0.025] p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
+                        <p className="truncate text-[11px] font-black text-zinc-200">
+                          {source.id === "phimapi" ? "PhimAPI" : source.id === "ophim" ? "OPhim" : source.name}
+                        </p>
+                        {source.active && <span className="rounded-full bg-pink-500/10 px-1.5 py-0.5 text-[7px] font-black uppercase text-pink-400">Mặc định</span>}
+                      </div>
+                      <p className="mt-1 truncate pl-4 text-[9px] text-zinc-600">{source.domain}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className={`text-[9px] font-black ${meta.color}`}>{meta.label}</p>
+                      <p className="mt-1 text-[9px] font-bold text-zinc-600">{source.latencyMs === null ? "Timeout" : `${source.latencyMs} ms`}</p>
+                    </div>
                   </div>
-                  <span className="text-[12px] font-bold text-zinc-400 group-hover:text-zinc-200 transition-colors flex-1">
-                    {action.label}
-                  </span>
-                  <ArrowRight size={11} className="text-zinc-700 group-hover:text-zinc-400 transition-colors" />
-                </button>
+                </div>
               );
             })}
+            {!stats.movieSources.length && <p className="py-6 text-center text-[10px] font-bold text-zinc-600">Chưa cấu hình nguồn phim</p>}
           </div>
-
-          {/* System Status */}
-          <div className="mt-3 pt-3 border-t border-white/[0.04] space-y-2">
-            <div className="flex items-center gap-1.5 mb-2">
-              <BarChart3 size={11} className="text-zinc-500" />
-              <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">Trạng thái hệ thống</span>
-            </div>
-            {[
-              { label: "API Server", ok: true },
-              { label: "Database", ok: true },
-              { label: "Socket.io", ok: true },
-            ].map((s) => (
-              <div key={s.label} className="flex items-center justify-between">
-                <span className="text-[10px] text-zinc-500 font-bold">{s.label}</span>
-                <div className="flex items-center gap-1">
-                  {s.ok ? (
-                    <CheckCircle2 size={11} className="text-emerald-500" />
-                  ) : (
-                    <Circle size={11} className="text-red-500" />
-                  )}
-                  <span className={`text-[9px] font-black ${s.ok ? "text-emerald-500" : "text-red-500"}`}>
-                    {s.ok ? "Online" : "Offline"}
-                  </span>
-                </div>
-              </div>
-            ))}
+          <div className="mt-4 flex flex-wrap gap-2 border-t border-white/[0.05] pt-3">
+            {systemItems.map((item) => {
+              const Icon = item.icon;
+              return <span key={item.label} className={`flex items-center gap-1.5 rounded-lg px-2 py-1 text-[8px] font-black ${item.ok ? "bg-emerald-500/[0.07] text-emerald-500" : "bg-red-500/[0.08] text-red-400"}`}><Icon size={9} />{item.label}</span>;
+            })}
           </div>
-        </div>
+        </section>
       </div>
 
-      {/* ── Row 3: Recent Users + Recent Reports ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Recent users */}
-        <div className="p-5 rounded-2xl bg-white/[0.025] border border-white/[0.05] space-y-3">
-          <div className="flex items-center justify-between">
+      <div className="grid gap-5 lg:grid-cols-2">
+        <section className="rounded-2xl border border-white/[0.05] bg-white/[0.025] p-5">
+          <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <UserPlus size={13} className="text-blue-400" />
-              <h4 className="text-[11px] font-black text-zinc-300 uppercase tracking-wider">Người dùng mới</h4>
+              <ShieldAlert size={14} className="text-amber-400" />
+              <div>
+                <h2 className="text-[11px] font-black uppercase tracking-wider text-zinc-300">Hàng chờ quản trị</h2>
+                <p className="mt-0.5 text-[9px] text-zinc-600">Chỉ hiển thị những việc chưa xử lý</p>
+              </div>
             </div>
-            <button
-              onClick={() => setActiveTab?.("users")}
-              className="text-[9px] font-black text-zinc-500 hover:text-pink-400 uppercase tracking-widest flex items-center gap-1 border-none bg-transparent cursor-pointer transition-colors"
-            >
-              Xem tất cả <ArrowRight size={9} />
+            <span className="rounded-full bg-amber-500/10 px-2 py-1 text-[9px] font-black text-amber-400">{stats.moderationQueue.total} việc</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <button type="button" onClick={() => setActiveTab?.("comments")} className="rounded-xl border border-white/[0.05] bg-white/[0.025] p-3 text-left transition-colors hover:bg-white/[0.05]">
+              <MessageSquare size={14} className="text-violet-400" />
+              <p className="mt-3 text-xl font-black text-zinc-100">{stats.moderationQueue.commentReports}</p>
+              <p className="mt-0.5 text-[9px] font-bold text-zinc-500">Bình luận bị báo xấu</p>
+            </button>
+            <button type="button" onClick={() => setActiveTab?.("reports")} className="rounded-xl border border-white/[0.05] bg-white/[0.025] p-3 text-left transition-colors hover:bg-white/[0.05]">
+              <Film size={14} className="text-amber-400" />
+              <p className="mt-3 text-xl font-black text-zinc-100">{stats.moderationQueue.movieReports}</p>
+              <p className="mt-0.5 text-[9px] font-bold text-zinc-500">Báo lỗi phim</p>
             </button>
           </div>
-          <div className="space-y-2">
-            {loadingExtra ? (
-              Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-9 rounded-xl bg-white/[0.03] animate-pulse" />
-              ))
-            ) : recentUsers.length > 0 ? (
-              recentUsers.map((u, i) => (
-                <div key={u._id || i} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors">
-                  {u.avatar ? (
-                    <img src={u.avatar} alt={u.displayName} className="w-7 h-7 rounded-full object-cover shrink-0" />
-                  ) : (
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-[10px] font-black text-white shrink-0">
-                      {(u.displayName || u.email || "U")[0].toUpperCase()}
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-bold text-zinc-300 truncate">{u.displayName || "—"}</p>
-                    <p className="text-[9px] text-zinc-600 truncate">{u.email}</p>
-                  </div>
-                  <span className="text-[9px] font-bold text-zinc-700 shrink-0">
-                    {u.createdAt ? new Date(u.createdAt).toLocaleDateString("vi-VN", { day: "numeric", month: "numeric" }) : ""}
-                  </span>
-                </div>
-              ))
-            ) : (
-              <div className="py-6 text-center text-[10px] text-zinc-600 font-bold">Chưa có dữ liệu</div>
-            )}
-          </div>
-        </div>
+          {stats.moderationQueue.latestMovieReports.length > 0 && (
+            <div className="mt-3 space-y-1.5 border-t border-white/[0.05] pt-3">
+              {stats.moderationQueue.latestMovieReports.slice(0, 3).map((report) => (
+                <button key={report._id} type="button" onClick={() => setActiveTab?.("reports")} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/[0.035]">
+                  <AlertTriangle size={11} className="shrink-0 text-amber-500" />
+                  <span className="min-w-0 flex-1 truncate text-[10px] font-bold text-zinc-400">{report.movieName || report.movieSlug} · {report.episodeName}</span>
+                  <ArrowRight size={10} className="text-zinc-700" />
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
 
-        {/* Recent reports */}
-        <div className="p-5 rounded-2xl bg-white/[0.025] border border-white/[0.05] space-y-3">
-          <div className="flex items-center justify-between">
+        <section className="rounded-2xl border border-white/[0.05] bg-white/[0.025] p-5">
+          <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <AlertTriangle size={13} className="text-amber-400" />
-              <h4 className="text-[11px] font-black text-zinc-300 uppercase tracking-wider">Báo cáo lỗi phim</h4>
+              <WifiOff size={14} className="text-red-400" />
+              <div>
+                <h2 className="text-[11px] font-black uppercase tracking-wider text-zinc-300">Lỗi nguồn phát gần đây</h2>
+                <p className="mt-0.5 text-[9px] text-zinc-600">Tổng hợp từ HLS và buffering của người xem</p>
+              </div>
             </div>
-            <button
-              onClick={() => setActiveTab?.("reports")}
-              className="text-[9px] font-black text-zinc-500 hover:text-pink-400 uppercase tracking-widest flex items-center gap-1 border-none bg-transparent cursor-pointer transition-colors"
-            >
-              Xem tất cả <ArrowRight size={9} />
-            </button>
+            <button type="button" onClick={() => setActiveTab?.("playback")} className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-zinc-600 transition-colors hover:text-pink-400">Chi tiết <ArrowRight size={9} /></button>
+          </div>
+          <div className="mb-3 grid grid-cols-3 gap-2">
+            <div className="rounded-lg bg-white/[0.025] p-2 text-center"><p className="text-sm font-black text-zinc-200">{stats.playbackHealth.summary.activeOrigins}</p><p className="text-[8px] font-bold text-zinc-600">Nguồn hoạt động</p></div>
+            <div className="rounded-lg bg-amber-500/[0.05] p-2 text-center"><p className="text-sm font-black text-amber-400">{stats.playbackHealth.summary.degradedOrigins}</p><p className="text-[8px] font-bold text-zinc-600">Suy giảm</p></div>
+            <div className="rounded-lg bg-red-500/[0.05] p-2 text-center"><p className="text-sm font-black text-red-400">{stats.playbackHealth.summary.blockedOrigins}</p><p className="text-[8px] font-bold text-zinc-600">Tạm chặn</p></div>
           </div>
           <div className="space-y-2">
-            {loadingExtra ? (
-              Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-9 rounded-xl bg-white/[0.03] animate-pulse" />
-              ))
-            ) : recentReports.length > 0 ? (
-              recentReports.map((r, i) => (
-                <div key={r._id || i} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors">
-                  <div className="w-7 h-7 rounded-xl bg-amber-500/10 flex items-center justify-center shrink-0">
-                    <Film size={12} className="text-amber-400" />
+            {stats.playbackHealth.problems.length ? stats.playbackHealth.problems.map((problem) => {
+              const meta = playbackMeta[problem.status];
+              return (
+                <div key={problem.origin} className="flex items-center gap-3 rounded-xl border border-white/[0.04] bg-white/[0.02] px-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[10px] font-black text-zinc-300">{problem.origin}</p>
+                    <p className="mt-1 text-[9px] font-medium text-zinc-600">Lỗi {problem.failureRate}% · {problem.buffers} lần buffering · {problem.uniqueFailureReporters} người báo</p>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-bold text-zinc-300 truncate">{r.movieName || r.movieSlug || "—"}</p>
-                    <p className="text-[9px] text-zinc-600 truncate capitalize">{r.errorType?.replace("_", " ") || r.episodeName || ""}</p>
-                  </div>
-                  <span
-                    className={`text-[8px] font-black px-1.5 py-0.5 rounded-full shrink-0 ${
-                      r.status === "pending"
-                        ? "bg-amber-500/10 text-amber-400"
-                        : r.status === "resolved"
-                        ? "bg-emerald-500/10 text-emerald-400"
-                        : "bg-zinc-700/40 text-zinc-500"
-                    }`}
-                  >
-                    {r.status === "pending" ? "Chờ" : r.status === "resolved" ? "Xong" : r.status || ""}
-                  </span>
+                  <span className={`shrink-0 rounded-full px-2 py-1 text-[8px] font-black ${meta.className}`}>{meta.label}</span>
                 </div>
-              ))
-            ) : (
-              <div className="py-6 text-center text-[10px] text-zinc-600 font-bold flex flex-col items-center gap-2">
+              );
+            }) : (
+              <div className="flex flex-col items-center gap-2 py-5 text-[10px] font-bold text-zinc-600">
                 <CheckCircle2 size={20} className="text-emerald-600" />
-                Không có báo cáo chờ xử lý
+                Chưa ghi nhận nguồn phát bất ổn
               </div>
             )}
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );

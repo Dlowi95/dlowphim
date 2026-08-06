@@ -15,7 +15,7 @@ export default function MoviesOverrideView({ showToast }: MoviesOverrideViewProp
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Dữ liệu phim lấy về từ OPhim
+  // Dữ liệu phim lấy từ nguồn đang được admin cấu hình
   const [originalMovie, setOriginalMovie] = useState<any>(null);
 
   // Dữ liệu đè của admin
@@ -43,12 +43,12 @@ export default function MoviesOverrideView({ showToast }: MoviesOverrideViewProp
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
-      const movieRes = await fetch(`${API_URL}/movies/ophim-proxy?path=${encodeURIComponent(`/v1/api/phim/${cleanSlug}`)}`);
-      if (!movieRes.ok) throw new Error("Không tìm thấy phim trên hệ thống OPhim");
+      const movieRes = await fetch(`${API_URL}/movies/ophim-proxy?path=${encodeURIComponent(`/v1/api/phim/${cleanSlug}`)}&source=active`, { headers });
+      if (!movieRes.ok) throw new Error("Không tìm thấy phim trên nguồn đang cấu hình");
 
       const movieData = await movieRes.json();
       const movieItem = movieData.data?.item || movieData.movie;
-      if (!movieItem) throw new Error("Không thể phân tích dữ liệu phim từ OPhim");
+      if (!movieItem) throw new Error("Không thể phân tích dữ liệu phim từ nguồn đang cấu hình");
 
       setOriginalMovie(movieItem);
 
@@ -108,10 +108,10 @@ export default function MoviesOverrideView({ showToast }: MoviesOverrideViewProp
       <div className="border-b border-zinc-900 pb-3">
         <h2 className="text-xl font-black text-zinc-100 flex items-center gap-2.5">
           <Sparkles className="text-pink-500 fill-pink-500/10" size={20} />
-          <span>Sửa đè thông tin phim OPhim</span>
+          <span>Chỉnh sửa thông tin hiển thị</span>
         </h2>
         <p className="text-xs text-zinc-500 font-medium mt-1 leading-relaxed">
-          Tìm kiếm phim của OPhim theo slug để ghi đè tên dịch tiếng Việt hoặc viết lại phần tóm tắt nội dung mô tả phim.
+          Tìm phim theo slug từ nguồn đang cấu hình để ghi đè tên tiếng Việt hoặc viết lại phần tóm tắt nội dung.
         </p>
       </div>
 
@@ -124,7 +124,7 @@ export default function MoviesOverrideView({ showToast }: MoviesOverrideViewProp
             required
             value={slug}
             onChange={(e) => setSlug(e.target.value)}
-            placeholder="Nhập slug phim OPhim (ví dụ: khoa-chat-cua-nao-suzume, nguoi-tren-van-nguoi)..."
+            placeholder="Nhập slug phim (ví dụ: khoa-chat-cua-nao-suzume)..."
             className="w-full h-11 bg-zinc-900/40 border border-zinc-800 focus:border-pink-500 rounded-xl pl-11 pr-4 text-sm text-zinc-200 outline-none transition-all font-semibold"
           />
         </div>
@@ -150,7 +150,7 @@ export default function MoviesOverrideView({ showToast }: MoviesOverrideViewProp
           <div className="space-y-4">
             <h3 className="text-xs font-black text-zinc-400 uppercase tracking-widest flex items-center gap-2 border-b border-zinc-900 pb-2">
               <FileText size={12} className="text-zinc-500" />
-              <span>Dữ liệu gốc từ OPhim</span>
+              <span>Dữ liệu từ nguồn đang cấu hình</span>
             </h3>
 
             {/* Poster / Thumb preview */}
@@ -160,6 +160,8 @@ export default function MoviesOverrideView({ showToast }: MoviesOverrideViewProp
                   <img
                     src={getImageUrl(originalMovie.thumb_url || originalMovie.poster_url)}
                     alt={originalMovie.name}
+                    loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-cover"
                   />
                 </div>

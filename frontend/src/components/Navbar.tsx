@@ -42,6 +42,7 @@ export default function NavbarComponent() {
   // State lưu thông báo xem nhanh ở Navbar
   const [recentNotifications, setRecentNotifications] = useState<any[]>([]);
   const [isLoadingNotifs, setIsLoadingNotifs] = useState(false);
+  const [isNotifPopoverOpen, setIsNotifPopoverOpen] = useState(false);
 
   const loadRecentNotifs = async () => {
     if (!user) return;
@@ -57,6 +58,13 @@ export default function NavbarComponent() {
       setIsLoadingNotifs(false);
     }
   };
+
+  useEffect(() => {
+    if (!isNotifPopoverOpen) return;
+    const refresh = () => void loadRecentNotifs();
+    window.addEventListener("dlowphim:notifications-changed", refresh);
+    return () => window.removeEventListener("dlowphim:notifications-changed", refresh);
+  }, [isNotifPopoverOpen, user?.id]);
 
   // 1. Lắng nghe cuộn chuột để bật/tắt trạng thái trong suốt
   useEffect(() => {
@@ -457,7 +465,10 @@ export default function NavbarComponent() {
                   placement="bottom-end"
                   offset={12}
                   showArrow
-                  onOpenChange={(isOpen) => isOpen && loadRecentNotifs()}
+                  onOpenChange={(isOpen) => {
+                    setIsNotifPopoverOpen(isOpen);
+                    if (isOpen) void loadRecentNotifs();
+                  }}
                 >
                     <PopoverTrigger>
                       <button
@@ -489,9 +500,14 @@ export default function NavbarComponent() {
                       <span className="font-extrabold text-sm text-white uppercase tracking-wider">Thông báo</span>
                       {unreadNotificationsCount > 0 && (
                         <button
-                          onClick={(e) => {
+                          onClick={async (e) => {
                             e.stopPropagation();
-                            readAllNotifications();
+                            const success = await readAllNotifications();
+                            if (success) {
+                              setRecentNotifications((items) =>
+                                items.map((item) => ({ ...item, isRead: true })),
+                              );
+                            }
                           }}
                           className="text-[10px] font-black text-pink-500 hover:text-pink-400 uppercase tracking-wider transition-colors cursor-pointer border-none bg-transparent"
                         >
@@ -519,7 +535,7 @@ export default function NavbarComponent() {
                           if (notif.type === "reply") {
                             Icon = MessageSquare;
                             iconColor = "text-pink-500 bg-pink-500/10";
-                          } else if (notif.type === "movie_update") {
+                          } else if (["movie_update", "movie_available", "upcoming_release"].includes(notif.type)) {
                             Icon = Film;
                             iconColor = "text-yellow-500 bg-yellow-500/10";
                           }
@@ -527,9 +543,10 @@ export default function NavbarComponent() {
                             <div
                               key={notif._id}
                               onClick={() => {
-                                readSingleNotification(notif._id);
-                                if (notif.link) {
-                                  router.push(notif.link);
+                                if (!notif.isRead) void readSingleNotification(notif._id);
+                                const target = String(notif.link || "").trim();
+                                if (target.startsWith("/") && !target.startsWith("//")) {
+                                  router.push(target);
                                 }
                               }}
                               className={`flex items-start gap-3 w-full hover:bg-zinc-800/40 p-2.5 rounded-2xl transition-all cursor-pointer ${
@@ -637,6 +654,28 @@ export default function NavbarComponent() {
                       <div className="flex items-center gap-3">
                         <History size={16} className="text-zinc-400" />
                         <span className="text-sm font-semibold text-zinc-300">Xem tiếp</span>
+                      </div>
+                    </DropdownItem>
+
+                    <DropdownItem
+                      key="notifications"
+                      className="hover:bg-zinc-800/40 py-2.5 rounded-xl"
+                      textValue="notifications"
+                      onPress={() => router.push("/user/notifications")}
+                    >
+                      <div className="flex items-center justify-between gap-3 w-full">
+                        <div className="flex items-center gap-3">
+                          <Bell
+                            size={16}
+                            className={unreadNotificationsCount > 0 ? "text-pink-500" : "text-zinc-400"}
+                          />
+                          <span className="text-sm font-semibold text-zinc-300">Thông báo</span>
+                        </div>
+                        {unreadNotificationsCount > 0 && (
+                          <span className="h-5 min-w-5 px-1.5 rounded-full bg-pink-500 text-white text-[10px] font-black flex items-center justify-center">
+                            {unreadNotificationsCount > 99 ? "99+" : unreadNotificationsCount}
+                          </span>
+                        )}
                       </div>
                     </DropdownItem>
 

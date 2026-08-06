@@ -183,6 +183,7 @@ export class CommentsService {
             title: 'Phản hồi bình luận mới',
             content: `${user.displayName} đã trả lời bình luận của bạn.`,
             link: `/movie/${normalizedMovieSlug}#movie-comments`,
+            dedupKey: `comment-reply:${saved._id}`,
           });
         }
       } catch (err) {

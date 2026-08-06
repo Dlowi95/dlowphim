@@ -6,6 +6,7 @@ import { Notification, NotificationSchema } from './schemas/notification.schema'
 import { UserNotification, UserNotificationSchema } from './schemas/user-notification.schema';
 import { User, UserSchema } from '../auth/schemas/user.schema';
 import { AuthModule } from '../auth/auth.module';
+import { NotificationsGateway } from './notifications.gateway';
 
 @Module({
   imports: [
@@ -17,7 +18,7 @@ import { AuthModule } from '../auth/auth.module';
     AuthModule,
   ],
   controllers: [NotificationsController],
-  providers: [NotificationsService],
-  exports: [NotificationsService],
+  providers: [NotificationsService, NotificationsGateway],
+  exports: [NotificationsService, NotificationsGateway],
 })
 export class NotificationsModule {}

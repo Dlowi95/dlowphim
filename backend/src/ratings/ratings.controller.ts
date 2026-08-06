@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, UseGuards, Req, Headers } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, UseGuards, Req, Headers, Query } from '@nestjs/common';
 import { RatingsService } from './ratings.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -13,8 +13,12 @@ export class RatingsController {
 
   @Get('admin/stats')
   @UseGuards(AuthGuard, RolesGuard)
-  async getAdminStats() {
-    return this.ratingsService.getAdminRatingsStats();
+  async getAdminStats(
+    @Query('search') search = '',
+    @Query('page') page = '1',
+    @Query('limit') limit = '6',
+  ) {
+    return this.ratingsService.getAdminRatingsStats(search, Number(page), Number(limit));
   }
 
   @Delete('admin/movie/:movieSlug')

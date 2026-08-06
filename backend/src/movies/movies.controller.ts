@@ -10,6 +10,7 @@ export class MoviesController {
 
   // ─── PUBLIC ENDPOINTS ───
   @Get('blocked')
+  @UseGuards(AuthGuard, RolesGuard)
   async getBlockedMovies() {
     return this.moviesService.getBlockedMovies();
   }
@@ -23,6 +24,26 @@ export class MoviesController {
   @Get('custom')
   async getCustomMovies(@Query('search') search?: string) {
     return this.moviesService.getCustomMovies(search);
+  }
+
+  @Get('admin/custom')
+  @UseGuards(AuthGuard, RolesGuard)
+  async getAdminCustomMovies(
+    @Query('search') search = '',
+    @Query('page') page = '1',
+    @Query('limit') limit = '6',
+  ) {
+    return this.moviesService.getAdminCustomMovies(search, Number(page), Number(limit));
+  }
+
+  @Get('admin/blocked')
+  @UseGuards(AuthGuard, RolesGuard)
+  async getAdminBlockedMovies(
+    @Query('search') search = '',
+    @Query('page') page = '1',
+    @Query('limit') limit = '6',
+  ) {
+    return this.moviesService.getAdminBlockedMovies(search, Number(page), Number(limit));
   }
 
   @Get('custom/:slug')

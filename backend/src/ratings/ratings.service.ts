@@ -10,32 +10,28 @@ export class RatingsService {
   ) {}
 
   async getMovieRating(movieSlug: string, currentUserId?: string) {
-    const ratings = await this.ratingModel.find({ movieSlug }).exec();
-    const count = ratings.length;
-    
-    let average = 0;
-    if (count > 0) {
-      const sum = ratings.reduce((acc, r) => acc + r.score, 0);
-      average = parseFloat((sum / count).toFixed(1));
-    }
-
-    let userRating: number | null = null;
-    if (currentUserId) {
-      const found = ratings.find((r) => r.userId.toString() === currentUserId);
-      if (found) {
-        userRating = found.score;
-      }
-    }
+    const slug = this.normalizeSlug(movieSlug);
+    const [summary, userRatingDocument] = await Promise.all([
+      this.ratingModel.aggregate([
+        { $match: { movieSlug: slug } },
+        { $group: { _id: null, average: { $avg: '$score' }, count: { $sum: 1 } } },
+      ]).exec(),
+      currentUserId && Types.ObjectId.isValid(currentUserId)
+        ? this.ratingModel.findOne({ movieSlug: slug, userId: new Types.ObjectId(currentUserId) }, 'score').lean().exec()
+        : Promise.resolve(null),
+    ]);
 
     return {
-      average,
-      count,
-      userRating,
+      average: summary[0]?.average ? Number(summary[0].average.toFixed(1)) : 0,
+      count: summary[0]?.count || 0,
+      userRating: userRatingDocument?.score ?? null,
     };
   }
 
   async rateMovie(movieSlug: string, userId: string, score: number) {
-    if (score < 1 || score > 10) {
+    const normalizedScore = Number(score);
+    const slug = this.normalizeSlug(movieSlug);
+    if (!Number.isInteger(normalizedScore) || normalizedScore < 1 || normalizedScore > 10) {
       throw new BadRequestException('Điểm số phải nằm trong khoảng từ 1 đến 10');
     }
 
@@ -43,17 +39,21 @@ export class RatingsService {
 
     // Upsert rating (update existing, or create new if not exists)
     await this.ratingModel.findOneAndUpdate(
-      { movieSlug, userId: userIdObj },
-      { score },
+      { movieSlug: slug, userId: userIdObj },
+      { score: normalizedScore },
       { upsert: true, returnDocument: 'after' },
     );
 
-    return this.getMovieRating(movieSlug, userId);
+    return this.getMovieRating(slug, userId);
   }
 
   // ─── ADMIN ENDPOINTS ───
-  async getAdminRatingsStats() {
-    return this.ratingModel.aggregate([
+  async getAdminRatingsStats(search = '', page = 1, limit = 6) {
+    const safePage = Math.max(1, Math.floor(Number(page) || 1));
+    const safeLimit = Math.min(50, Math.max(1, Math.floor(Number(limit) || 6)));
+    const term = String(search || '').trim().slice(0, 100);
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pipeline: any[] = [
       {
         $group: {
           _id: '$movieSlug',
@@ -69,14 +69,38 @@ export class RatingsService {
           totalRatings: 1,
         },
       },
-      {
-        $sort: { totalRatings: -1, averageScore: -1 },
+    ];
+    if (term) pipeline.push({ $match: { movieSlug: { $regex: escaped, $options: 'i' } } });
+    pipeline.push({ $sort: { totalRatings: -1, averageScore: -1 } });
+    pipeline.push({
+      $facet: {
+        items: [{ $skip: (safePage - 1) * safeLimit }, { $limit: safeLimit }],
+        metadata: [{ $count: 'totalItems' }],
       },
-    ]).exec();
+    });
+    const [result] = await this.ratingModel.aggregate(pipeline).exec();
+    const totalItems = result?.metadata?.[0]?.totalItems || 0;
+    return {
+      items: result?.items || [],
+      pagination: {
+        page: safePage,
+        limit: safeLimit,
+        totalItems,
+        totalPages: Math.max(1, Math.ceil(totalItems / safeLimit)),
+      },
+    };
   }
 
   async deleteMovieRatings(movieSlug: string) {
-    const result = await this.ratingModel.deleteMany({ movieSlug }).exec();
+    const result = await this.ratingModel.deleteMany({ movieSlug: this.normalizeSlug(movieSlug) }).exec();
     return { success: true, deletedCount: result.deletedCount };
+  }
+
+  private normalizeSlug(value: unknown) {
+    const slug = String(value || '').trim().toLowerCase();
+    if (!slug || slug.length > 180 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+      throw new BadRequestException('Slug phim không hợp lệ');
+    }
+    return slug;
   }
 }

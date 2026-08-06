@@ -5,8 +5,8 @@ export type UserNotificationDocument = UserNotification & Document;
 
 @Schema({ timestamps: true })
 export class UserNotification {
-  @Prop({ type: Types.ObjectId, required: false, index: true })
-  userId: Types.ObjectId; // null nếu là thông báo hệ thống chung gửi tất cả mọi người
+  @Prop({ type: Types.ObjectId, required: true, index: true })
+  userId: Types.ObjectId;
 
   @Prop({ required: true, index: true })
   type: string; // 'reply' | 'movie_update' | 'system'
@@ -22,6 +22,23 @@ export class UserNotification {
 
   @Prop({ default: false, index: true })
   isRead: boolean;
+
+  @Prop({ required: true })
+  dedupKey: string;
+
+  @Prop({ type: Date, required: true })
+  expiresAt: Date;
 }
 
 export const UserNotificationSchema = SchemaFactory.createForClass(UserNotification);
+
+UserNotificationSchema.index({ userId: 1, createdAt: -1 });
+UserNotificationSchema.index({ userId: 1, isRead: 1, createdAt: -1 });
+UserNotificationSchema.index(
+  { userId: 1, dedupKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { dedupKey: { $type: 'string' } },
+  },
+);
+UserNotificationSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
