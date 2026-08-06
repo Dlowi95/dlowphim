@@ -26,6 +26,7 @@ import { getImageUrl } from "@/utils/movieUtils";
 import { getProxyUrl } from "@/utils/api";
 import Pagination from "./Pagination";
 import MoviesOverrideView from "./MoviesOverrideView";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 
 interface BlockedMovie {
   slug: string;
@@ -59,6 +60,7 @@ interface RatingStat {
 
 export default function MoviesManagementView() {
   const { showToast } = useAuth();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
   // Portal mounted state
@@ -587,10 +589,13 @@ export default function MoviesManagementView() {
                             <Edit size={12} />
                           </button>
                           <button
-                            onClick={() => {
-                              if (window.confirm("Bạn có chắc chắn muốn xóa phim tự đăng này không?")) {
-                                handleDeleteCustomMovie(movie._id!);
-                              }
+                            onClick={async () => {
+                              const accepted = await confirm({
+                                title: "Xóa phim tự đăng?",
+                                message: "Phim và dữ liệu phát do hệ thống tự đăng sẽ bị xóa vĩnh viễn.",
+                                confirmLabel: "Xóa phim",
+                              });
+                              if (accepted) await handleDeleteCustomMovie(movie._id!);
                             }}
                             className="w-7 h-7 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-lg flex items-center justify-center transition-all cursor-pointer border-none"
                             title="Xóa phim"
@@ -798,10 +803,13 @@ export default function MoviesManagementView() {
                         <td className="px-4 py-3.5 text-right">
                           <div className="flex justify-end gap-2.5">
                             <button
-                              onClick={() => {
-                                if (window.confirm(`Xóa toàn bộ điểm đánh giá của phim ${stat.movieSlug}?`)) {
-                                  handleDeleteRatings(stat.movieSlug);
-                                }
+                              onClick={async () => {
+                                const accepted = await confirm({
+                                  title: "Đặt lại điểm đánh giá?",
+                                  message: `Toàn bộ điểm người dùng đã chấm cho phim ${stat.movieSlug} sẽ bị xóa vĩnh viễn.`,
+                                  confirmLabel: "Đặt lại điểm",
+                                });
+                                if (accepted) await handleDeleteRatings(stat.movieSlug);
                               }}
                               className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 text-[10px] font-black rounded-lg transition-colors cursor-pointer border-none uppercase tracking-wider"
                             >
@@ -848,6 +856,7 @@ export default function MoviesManagementView() {
       )}
 
       {/* ─── MODAL: ĐĂNG / SỬA PHIM TỰ ĐĂNG ─── */}
+      {confirmDialog}
       {showCustomModal && mounted && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md px-4">
           <div

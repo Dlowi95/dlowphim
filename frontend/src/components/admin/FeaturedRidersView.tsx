@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import Cookies from "js-cookie";
 import { Plus, Trash2, Edit2, GripVertical, Image as ImageIcon, Upload, X, Check, Eye, EyeOff } from "lucide-react";
 import { getImageUrl } from "@/utils/movieUtils";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 
 interface GalleryItem {
   name: string;
@@ -58,6 +59,7 @@ const COLOR_PRESETS = [
 ];
 
 export default function FeaturedRidersView() {
+  const { confirm, confirmDialog } = useConfirmDialog();
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
   const [riders, setRiders] = useState<FeaturedRider[]>([]);
   const [loading, setLoading] = useState(true);
@@ -154,7 +156,12 @@ export default function FeaturedRidersView() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Xóa Rider này?")) return;
+    const accepted = await confirm({
+      title: "Xóa Rider nổi bật?",
+      message: "Rider này sẽ bị xóa khỏi danh sách nổi bật và không thể khôi phục.",
+      confirmLabel: "Xóa Rider",
+    });
+    if (!accepted) return;
     try {
       const res = await fetch(`${API_URL}/featured-riders/${id}`, {
         method: "DELETE",
@@ -790,6 +797,7 @@ export default function FeaturedRidersView() {
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

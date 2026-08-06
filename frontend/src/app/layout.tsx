@@ -12,6 +12,12 @@ const marker = Permanent_Marker({ weight: "400", subsets: ["latin"], variable: "
 const pacifico = Pacifico({ weight: "400", subsets: ["latin"], variable: "--font-pacifico" });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL
+      || (process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : "http://localhost:3000"),
+  ),
   title: "DlowPhim - Trải Nghiệm Điện Ảnh Premium",
   description: "Website xem phim tốc độ cao, giao diện cinema chuẩn đồ án.",
 };

@@ -1,10 +1,28 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Comment, CommentDocument } from './schemas/comment.schema';
 import { User, UserDocument } from '../auth/schemas/user.schema';
 import { Report, ReportDocument } from './schemas/report.schema';
 import { NotificationsService } from '../notifications/notifications.service';
+import { createHash } from 'node:crypto';
+
+const COMMENT_COOLDOWN_MS = 8_000;
+const COMMENT_BURST_WINDOW_MS = 60_000;
+const COMMENT_BURST_LIMIT = 5;
+const COMMENT_HOURLY_LIMIT = 30;
+const COMMENT_DUPLICATE_WINDOW_MS = 10 * 60_000;
+const MAX_PUBLIC_THREADS = 100;
+const MAX_PUBLIC_REPLIES = 1_000;
+const MAX_ADMIN_COMMENTS = 2_000;
+const MAX_ADMIN_REPORTS = 500;
 
 function getFormattedDate(date: Date): string {
   const d = new Date(date);
@@ -26,11 +44,22 @@ export class CommentsService {
   ) {}
 
   async getComments(movieSlug: string, currentUserId?: string) {
-    const comments = await this.commentModel
-      .find({ movieSlug })
+    const roots = await this.commentModel
+      .find({ movieSlug, parentId: null })
       .populate('userId', 'displayName avatar role')
       .sort({ createdAt: -1 })
+      .limit(MAX_PUBLIC_THREADS)
       .exec();
+    const rootIds = roots.map((comment) => comment._id);
+    const replies = rootIds.length > 0
+      ? await this.commentModel
+        .find({ movieSlug, parentId: { $in: rootIds } })
+        .populate('userId', 'displayName avatar role')
+        .sort({ createdAt: 1 })
+        .limit(MAX_PUBLIC_REPLIES)
+        .exec()
+      : [];
+    const comments = [...roots, ...replies];
 
     return comments.map((c) => {
       const userObj = c.userId as any;
@@ -73,42 +102,88 @@ export class CommentsService {
     movieSlug: string,
     createDto: { content: string; isSpoiler?: boolean; episodeLabel?: string; parentId?: string; replyToUserId?: string },
   ) {
-    const user = await this.userModel.findById(userId).exec();
+    const normalizedMovieSlug = String(movieSlug || '').trim().toLowerCase();
+    if (!/^[a-z0-9-]{1,180}$/.test(normalizedMovieSlug)) {
+      throw new BadRequestException('Đường dẫn phim không hợp lệ');
+    }
+
+    const content = this.normalizeContent(createDto.content);
+    this.validateContent(content);
+
+    const userObjectId = new Types.ObjectId(userId);
+    const user = await this.userModel
+      .findById(userObjectId)
+      .select('displayName avatar role')
+      .exec();
     if (!user) {
       throw new NotFoundException('Không tìm thấy tài khoản người dùng');
     }
 
+    let parentComment: CommentDocument | null = null;
+    let threadRootId: Types.ObjectId | null = null;
+    if (createDto.parentId) {
+      if (!Types.ObjectId.isValid(createDto.parentId)) {
+        throw new BadRequestException('Bình luận gốc không hợp lệ');
+      }
+      parentComment = await this.commentModel.findOne({
+        _id: new Types.ObjectId(createDto.parentId),
+        movieSlug: normalizedMovieSlug,
+      }).exec();
+      if (!parentComment) {
+        throw new BadRequestException('Bình luận gốc không tồn tại trong phim này');
+      }
+      threadRootId = parentComment.parentId || parentComment._id;
+    }
+
+    const contentFingerprint = this.getContentFingerprint(content);
+    await this.assertNotSpamming(userObjectId, contentFingerprint);
+
     const newComment = new this.commentModel({
-      movieSlug,
-      userId: new Types.ObjectId(userId),
+      movieSlug: normalizedMovieSlug,
+      userId: userObjectId,
       displayName: user.displayName,
       avatar: user.avatar,
-      role: 'member', // Default to member role
-      content: createDto.content,
+      role: user.role || 'member',
+      content,
+      contentFingerprint,
+      rateLimitBucket: Math.floor(Date.now() / COMMENT_COOLDOWN_MS),
       isSpoiler: !!createDto.isSpoiler,
-      episodeLabel: createDto.episodeLabel,
-      parentId: createDto.parentId ? new Types.ObjectId(createDto.parentId) : null,
+      episodeLabel: this.normalizeEpisodeLabel(createDto.episodeLabel),
+      parentId: threadRootId,
     });
 
-    const saved = await newComment.save();
+    let saved: CommentDocument;
+    try {
+      saved = await newComment.save();
+    } catch (error: any) {
+      if (error?.code === 11000) {
+        this.throwRateLimit('Bạn gửi bình luận quá nhanh. Vui lòng chờ 8 giây.', 8);
+      }
+      throw error;
+    }
 
     // Tự động tạo thông báo cho người viết bình luận cha hoặc người được reply khi có người reply
-    if (createDto.parentId) {
+    if (parentComment && threadRootId) {
       try {
-        const parentComment = await this.commentModel.findById(createDto.parentId).exec();
-        if (parentComment) {
-          // Ưu tiên targetUserId gửi từ Frontend, nếu không có thì fallback về chủ bình luận cha
-          const targetUserIdStr = createDto.replyToUserId || parentComment.userId?.toString();
+        let targetUserId = parentComment.userId;
+        if (createDto.replyToUserId && Types.ObjectId.isValid(createDto.replyToUserId)) {
+          const requestedTargetId = new Types.ObjectId(createDto.replyToUserId);
+          const targetParticipatedInThread = await this.commentModel.exists({
+            movieSlug: normalizedMovieSlug,
+            userId: requestedTargetId,
+            $or: [{ _id: threadRootId }, { parentId: threadRootId }],
+          });
+          if (targetParticipatedInThread) targetUserId = requestedTargetId;
+        }
 
-          if (targetUserIdStr && targetUserIdStr !== userId) {
-            await this.notificationsService.createUserNotification({
-              userId: new Types.ObjectId(targetUserIdStr),
-              type: 'reply',
-              title: 'Phản hồi bình luận mới',
-              content: `${user.displayName} đã trả lời bình luận của bạn.`,
-              link: `/movie/${movieSlug}#movie-comments`,
-            });
-          }
+        if (targetUserId.toString() !== userId) {
+          await this.notificationsService.createUserNotification({
+            userId: targetUserId,
+            type: 'reply',
+            title: 'Phản hồi bình luận mới',
+            content: `${user.displayName} đã trả lời bình luận của bạn.`,
+            link: `/movie/${normalizedMovieSlug}#movie-comments`,
+          });
         }
       } catch (err) {
         console.error('Lỗi tạo thông báo khi reply comment:', err);
@@ -175,6 +250,7 @@ export class CommentsService {
     return {
       reactionsSummary,
       userReaction,
+      movieSlug: comment.movieSlug,
     };
   }
 
@@ -219,7 +295,11 @@ export class CommentsService {
 
     // Thực hiện xóa chính bình luận
     await this.commentModel.findByIdAndDelete(commentId).exec();
-    return { success: true, message: 'Xóa bình luận thành công' };
+    return {
+      success: true,
+      message: 'Xóa bình luận thành công',
+      movieSlug: comment.movieSlug,
+    };
   }
 
   async reportComment(commentId: string, reporterId: string, reason?: string) {
@@ -244,7 +324,15 @@ export class CommentsService {
       reason: reason || 'Nội dung không phù hợp / Spam',
     });
 
-    const savedReport = await report.save();
+    let savedReport: ReportDocument;
+    try {
+      savedReport = await report.save();
+    } catch (error: any) {
+      if (error?.code === 11000) {
+        return { success: true, message: 'Bạn đã báo cáo bình luận này trước đó' };
+      }
+      throw error;
+    }
 
     const reporter = await this.userModel.findById(reporterId).select('displayName').exec();
 
@@ -264,9 +352,13 @@ export class CommentsService {
   async getReportedComments() {
     const reports = await this.reportModel
       .find()
-      .populate('commentId')
+      .populate({
+        path: 'commentId',
+        populate: { path: 'userId', select: 'displayName email avatar' },
+      })
       .populate('reporterId', 'displayName email avatar')
       .sort({ createdAt: -1 })
+      .limit(MAX_ADMIN_REPORTS)
       .exec();
 
     const results: any[] = [];
@@ -274,7 +366,7 @@ export class CommentsService {
       if (!r.commentId) continue;
       
       const c = r.commentId as any;
-      const author = await this.userModel.findById(c.userId).select('displayName email avatar').exec();
+      const author = c.userId as any;
 
       results.push({
         id: r._id.toString(),
@@ -286,7 +378,7 @@ export class CommentsService {
           movieSlug: c.movieSlug,
           time: getFormattedDate(c.createdAt || new Date()),
           author: {
-            id: c.userId.toString(),
+            id: author?._id?.toString() || c.userId?.toString() || '',
             name: author?.displayName || 'Thành viên',
             email: author?.email || '',
             avatar: author?.avatar || '',
@@ -316,8 +408,10 @@ export class CommentsService {
   async getAllComments() {
     const comments = await this.commentModel
       .find()
-      .populate('userId', 'displayName email avatar')
+      .select('-reactions -contentFingerprint -rateLimitBucket')
+      .populate('userId', 'displayName email avatar role')
       .sort({ createdAt: -1 })
+      .limit(MAX_ADMIN_COMMENTS)
       .exec();
 
     return comments.map((c: any) => {
@@ -326,7 +420,7 @@ export class CommentsService {
         userId: c.userId?._id?.toString() || c.userId?.toString() || '',
         name: c.userId?.displayName || c.displayName || 'Thành viên',
         avatar: c.userId?.avatar || c.avatar || '',
-        role: c.role || 'member',
+        role: c.userId?.role || c.role || 'member',
         content: c.content,
         time: getFormattedDate((c as any).createdAt || new Date()),
         isSpoiler: c.isSpoiler,
@@ -412,5 +506,93 @@ export class CommentsService {
         BinhLuan: d.BinhLuan,
       })),
     };
+  }
+
+  private normalizeContent(value?: string) {
+    return String(value || '')
+      .normalize('NFKC')
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .replace(/\r\n?/g, '\n')
+      .replace(/[^\S\n]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  private normalizeEpisodeLabel(value?: string) {
+    const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+    return normalized ? normalized.slice(0, 80) : undefined;
+  }
+
+  private validateContent(content: string) {
+    if (content.length < 2) {
+      throw new BadRequestException('Bình luận cần có ít nhất 2 ký tự');
+    }
+    if (content.length > 1_000) {
+      throw new BadRequestException('Bình luận không được vượt quá 1000 ký tự');
+    }
+    const links = content.match(/(?:https?:\/\/|www\.)/gi) || [];
+    if (links.length > 2) {
+      throw new BadRequestException('Bình luận chứa quá nhiều liên kết');
+    }
+    if (/(.)\1{14,}/iu.test(content.replace(/\s/g, ''))) {
+      throw new BadRequestException('Bình luận có quá nhiều ký tự lặp lại');
+    }
+  }
+
+  private getContentFingerprint(content: string) {
+    return createHash('sha256')
+      .update(content.toLocaleLowerCase('vi-VN'))
+      .digest('hex');
+  }
+
+  private async assertNotSpamming(userId: Types.ObjectId, contentFingerprint: string) {
+    const now = Date.now();
+    const recentComments = await this.commentModel
+      .find({
+        userId,
+        createdAt: { $gte: new Date(now - 60 * 60_000) },
+      })
+      .select('content contentFingerprint createdAt')
+      .sort({ createdAt: -1 })
+      .limit(COMMENT_HOURLY_LIMIT + 1)
+      .lean()
+      .exec();
+
+    const latestCreatedAt = recentComments[0]
+      ? new Date((recentComments[0] as any).createdAt).getTime()
+      : 0;
+    const elapsedSinceLatest = now - latestCreatedAt;
+    if (latestCreatedAt && elapsedSinceLatest < COMMENT_COOLDOWN_MS) {
+      const retryAfter = Math.ceil((COMMENT_COOLDOWN_MS - elapsedSinceLatest) / 1_000);
+      this.throwRateLimit(`Bạn gửi bình luận quá nhanh. Vui lòng chờ ${retryAfter} giây.`, retryAfter);
+    }
+
+    const burstCount = recentComments.filter((comment: any) => (
+      now - new Date(comment.createdAt).getTime() < COMMENT_BURST_WINDOW_MS
+    )).length;
+    if (burstCount >= COMMENT_BURST_LIMIT) {
+      this.throwRateLimit('Bạn đã gửi quá nhiều bình luận trong một phút. Vui lòng thử lại sau.', 60);
+    }
+    if (recentComments.length >= COMMENT_HOURLY_LIMIT) {
+      this.throwRateLimit('Bạn đã đạt giới hạn bình luận trong một giờ. Vui lòng quay lại sau.', 300);
+    }
+
+    const hasDuplicate = recentComments.some((comment: any) => {
+      const createdAt = new Date(comment.createdAt).getTime();
+      if (now - createdAt > COMMENT_DUPLICATE_WINDOW_MS) return false;
+      const fingerprint = comment.contentFingerprint
+        || this.getContentFingerprint(this.normalizeContent(comment.content));
+      return fingerprint === contentFingerprint;
+    });
+    if (hasDuplicate) {
+      throw new BadRequestException('Bạn đã gửi nội dung giống hệt trong 10 phút gần đây');
+    }
+  }
+
+  private throwRateLimit(message: string, retryAfter: number): never {
+    throw new HttpException(
+      { statusCode: HttpStatus.TOO_MANY_REQUESTS, message, retryAfter },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
   }
 }

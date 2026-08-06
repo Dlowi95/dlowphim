@@ -14,6 +14,7 @@ import {
   Info
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 
 interface MovieReport {
   _id: string;
@@ -33,6 +34,7 @@ interface MovieReport {
 
 export default function MovieReportsView() {
   const { showToast } = useAuth();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
   const [reports, setReports] = useState<MovieReport[]>([]);
@@ -319,10 +321,13 @@ export default function MovieReportsView() {
                           </button>
                         )}
                         <button
-                          onClick={() => {
-                            if (window.confirm("Bạn có chắc chắn muốn xóa vĩnh viễn báo cáo lỗi này?")) {
-                              handleDeleteReport(report._id);
-                            }
+                          onClick={async () => {
+                            const accepted = await confirm({
+                              title: "Xóa báo cáo lỗi?",
+                              message: "Báo cáo này sẽ bị xóa vĩnh viễn và không thể khôi phục.",
+                              confirmLabel: "Xóa báo cáo",
+                            });
+                            if (accepted) await handleDeleteReport(report._id);
                           }}
                           className="w-7 h-7 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-lg flex items-center justify-center transition-all cursor-pointer border-none"
                           title="Xóa báo cáo"
@@ -338,6 +343,7 @@ export default function MovieReportsView() {
           </div>
         )}
       </div>
+      {confirmDialog}
     </div>
   );
 }

@@ -22,6 +22,7 @@ import { useAuth } from "@/context/AuthContext";
 import { getImageUrl } from "@/utils/movieUtils";
 import { getProxyUrl } from "@/utils/api";
 import { useResolvedHeroBanners } from "@/hooks/useResolvedHeroBanners";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 
 interface Banner {
   _id?: string;
@@ -37,6 +38,7 @@ interface Banner {
 
 export default function BannersManagementView() {
   const { showToast } = useAuth();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
   const {
     slots: resolvedHeroSlots,
@@ -465,10 +467,13 @@ export default function BannersManagementView() {
                     </button>
                     {!banner.isFallback && (
                       <button
-                        onClick={() => {
-                          if (window.confirm("Bạn có chắc chắn muốn xóa banner tùy biến này và quay về mặc định hệ thống?")) {
-                            handleDeleteBanner(banner._id!);
-                          }
+                        onClick={async () => {
+                          const accepted = await confirm({
+                            title: "Xóa banner tùy biến?",
+                            message: "Banner này sẽ bị xóa và vị trí tương ứng quay về banner mặc định của hệ thống.",
+                            confirmLabel: "Xóa banner",
+                          });
+                          if (accepted) await handleDeleteBanner(banner._id!);
                         }}
                         className="w-7 h-7 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-lg flex items-center justify-center transition-all cursor-pointer border-none"
                         title="Xóa banner tùy biến"
@@ -494,6 +499,7 @@ export default function BannersManagementView() {
       </div>
 
       {/* ─── MODAL: THÊM / SỬA BANNER ─── */}
+      {confirmDialog}
       {showModal && mounted && createPortal(
         <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-md px-4">
           <div

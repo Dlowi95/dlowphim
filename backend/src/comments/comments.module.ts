@@ -7,6 +7,7 @@ import { User, UserSchema } from '../auth/schemas/user.schema';
 import { Report, ReportSchema } from './schemas/report.schema';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { CommentsGateway } from './comments.gateway';
 
 @Module({
   imports: [
@@ -19,7 +20,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     NotificationsModule,
   ],
   controllers: [CommentsController],
-  providers: [CommentsService],
+  providers: [CommentsService, CommentsGateway],
   exports: [CommentsService],
 })
 export class CommentsModule {}

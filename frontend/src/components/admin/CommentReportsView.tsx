@@ -47,7 +47,7 @@ interface CommentReportsViewProps {
   setSearchTerm: (term: string) => void;
   onRefresh: () => void;
   onDismiss: (reportId: string) => void;
-  onDelete: (commentId: string) => void;
+  onDelete: (commentId: string) => Promise<boolean>;
 }
 
 export default function CommentReportsView({
@@ -63,6 +63,8 @@ export default function CommentReportsView({
 }: CommentReportsViewProps) {
   const [activeSubTab, setActiveSubTab] = useState<"reports" | "all">("reports");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [pendingDeleteCommentId, setPendingDeleteCommentId] = useState<string | null>(null);
+  const [deletingComment, setDeletingComment] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -124,6 +126,17 @@ export default function CommentReportsView({
 
   const activeUser = usersWithComments.find((u) => u.userId === selectedUserId);
   const isLoading = activeSubTab === "reports" ? loadingReports : loadingAllComments;
+
+  const confirmDeleteComment = async () => {
+    if (!pendingDeleteCommentId || deletingComment) return;
+    setDeletingComment(true);
+    try {
+      const deleted = await onDelete(pendingDeleteCommentId);
+      if (deleted) setPendingDeleteCommentId(null);
+    } finally {
+      setDeletingComment(false);
+    }
+  };
 
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -299,7 +312,7 @@ export default function CommentReportsView({
                               Bỏ qua
                             </button>
                             <button
-                              onClick={() => onDelete(report.comment.id)}
+                              onClick={() => setPendingDeleteCommentId(report.comment.id)}
                               className="px-2.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 font-extrabold text-[10px] rounded-lg transition-colors cursor-pointer border-none flex items-center gap-1"
                             >
                               <Trash2 size={11} /> Xóa
@@ -360,7 +373,7 @@ export default function CommentReportsView({
                           Bỏ qua
                         </button>
                         <button
-                          onClick={() => onDelete(report.comment.id)}
+                          onClick={() => setPendingDeleteCommentId(report.comment.id)}
                           className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 font-extrabold text-[10px] rounded-lg transition-colors cursor-pointer border-none flex items-center gap-1"
                         >
                           <Trash2 size={11} /> Xóa
@@ -491,6 +504,57 @@ export default function CommentReportsView({
         )}
       </div>
 
+      {/* ─── CONFIRM DELETE MODAL ─── */}
+      {pendingDeleteCommentId && mounted && createPortal(
+        <div
+          onClick={() => !deletingComment && setPendingDeleteCommentId(null)}
+          className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/80 backdrop-blur-md px-4 animate-fadeIn"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-comment-title"
+            onClick={(event) => event.stopPropagation()}
+            className="w-full max-w-md rounded-2xl border border-red-500/20 bg-[#0c0d12] p-6 text-left shadow-2xl animate-scaleUp"
+          >
+            <div className="flex items-start gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-400">
+                <ShieldAlert size={21} />
+              </div>
+              <div className="space-y-2">
+                <h4 id="delete-comment-title" className="text-base font-black text-white">
+                  Xóa bình luận này?
+                </h4>
+                <p className="text-xs font-medium leading-5 text-zinc-400">
+                  Nếu đây là bình luận gốc, toàn bộ phản hồi bên dưới cũng sẽ bị xóa và không thể khôi phục.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingDeleteCommentId(null)}
+                disabled={deletingComment}
+                className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-xs font-black text-zinc-300 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteComment}
+                disabled={deletingComment}
+                className="flex items-center gap-2 rounded-xl bg-red-500 px-4 py-2.5 text-xs font-black text-white shadow-lg shadow-red-500/20 transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Trash2 size={13} />
+                {deletingComment ? "Đang xóa..." : "Xóa bình luận"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
       {/* ─── OVERLAY MODAL: COMMENTS OF SELECTED USER ─── */}
       {activeUser && mounted && createPortal(
         <div
@@ -567,7 +631,7 @@ export default function CommentReportsView({
                       </div>
 
                       <button
-                        onClick={() => onDelete(c.id)}
+                        onClick={() => setPendingDeleteCommentId(c.id)}
                         className="px-2.5 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-500 font-extrabold text-[9px] rounded-md transition-colors cursor-pointer border-none flex items-center gap-1"
                       >
                         <Trash2 size={10} /> Xóa

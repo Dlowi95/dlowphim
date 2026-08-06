@@ -239,13 +239,16 @@ export default function AdminDashboardPage() {
         setReports((prev) => prev.filter((r) => r.comment.id !== commentId));
         setAllComments((prev) => prev.filter((c) => c.id !== commentId && c.parentId !== commentId));
         showToast("Xóa bình luận vi phạm thành công", "success");
+        return true;
       } else {
         const data = await res.json();
         showToast(data.message || "Thao tác thất bại", "error");
+        return false;
       }
     } catch (err) {
       console.error(err);
       showToast("Lỗi kết nối máy chủ", "error");
+      return false;
     }
   };
 

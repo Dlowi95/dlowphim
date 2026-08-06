@@ -345,6 +345,9 @@ export class MoviesService implements OnModuleInit, OnModuleDestroy {
       await user.save();
       return { active: false };
     }
+    if (user.upcomingReminders.length >= 50) {
+      throw new BadRequestException('Bạn chỉ có thể đặt tối đa 50 lời nhắc phim');
+    }
 
     const movieName = String(input.movieName || '').trim();
     if (!movieName) throw new BadRequestException('Tên phim không hợp lệ');

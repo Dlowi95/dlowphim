@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
+import { io } from "socket.io-client";
 import { ReactionsSummary, ReactTriggerButton } from "./comment/CommentReactions";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -55,6 +56,8 @@ interface CommentRatingSectionProps {
   /** Show rating tab switcher buttons */
   showTabs?: boolean;
   isTrailerOnly?: boolean;
+  /** Đồng bộ điểm trung bình cho khu vực hiển thị bên ngoài component. */
+  onRatingChange?: (average: number) => void;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -65,6 +68,7 @@ export default function CommentRatingSection({
   title = "Bình luận",
   showTabs = true,
   isTrailerOnly = false,
+  onRatingChange,
 }: CommentRatingSectionProps) {
   const { user, showToast } = useAuth();
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -74,6 +78,9 @@ export default function CommentRatingSection({
   const [commentText, setCommentText] = useState("");
   const [isSpoiler, setIsSpoiler] = useState(false);
   const [revealedSpoilers, setRevealedSpoilers] = useState<Record<string, boolean>>({});
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const [submittingReply, setSubmittingReply] = useState(false);
+  const [commentCooldown, setCommentCooldown] = useState(0);
 
   // Rating states
   const [ratingData, setRatingData] = useState<RatingData>({ average: 0, count: 0, userRating: null });
@@ -115,39 +122,120 @@ export default function CommentRatingSection({
   useEffect(() => {
     if (!slug) return;
 
-    async function fetchComments() {
+    let disposed = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let fallbackInterval: ReturnType<typeof setInterval> | null = null;
+    let requestController: AbortController | null = null;
+    let hasConnected = false;
+
+    const fetchComments = async () => {
+      requestController?.abort();
+      requestController = new AbortController();
       try {
         const token = Cookies.get("token");
         const headers: HeadersInit = {};
         if (token) headers["Authorization"] = `Bearer ${token}`;
-        const res = await fetch(`${API_URL}/comments/${slug}`, { headers });
-        if (res.ok) setComments(await res.json());
-      } catch (err) {
-        console.error("Lỗi lấy bình luận:", err);
+        const res = await fetch(`${API_URL}/comments/${slug}`, {
+          headers,
+          signal: requestController.signal,
+        });
+        if (res.ok && !disposed) setComments(await res.json());
+      } catch (err: any) {
+        if (err?.name !== "AbortError") console.error("Lỗi lấy bình luận:", err);
       }
-    }
+    };
+
+    const socketHost = (() => {
+      try {
+        return new URL(API_URL).origin;
+      } catch {
+        return API_URL;
+      }
+    })();
+    const socket = io(socketHost, {
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 500,
+      reconnectionDelayMax: 5000,
+      timeout: 10000,
+    });
+
+    const clearFallback = () => {
+      if (fallbackInterval) clearInterval(fallbackInterval);
+      fallbackInterval = null;
+    };
+    const ensureFallback = () => {
+      if (fallbackInterval || document.hidden) return;
+      fallbackInterval = setInterval(() => {
+        if (!socket.connected && !document.hidden) fetchComments();
+      }, 30000);
+    };
+    const scheduleRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(fetchComments, 150);
+    };
+
+    setComments([]);
+    fetchComments();
+    socket.on("connect", () => {
+      clearFallback();
+      socket.emit("watch_comments", { movieSlug: slug });
+      if (hasConnected) scheduleRefresh();
+      hasConnected = true;
+    });
+    socket.on("comments_changed", (payload: { movieSlug?: string }) => {
+      if (payload?.movieSlug === slug) scheduleRefresh();
+    });
+    socket.on("disconnect", ensureFallback);
+    socket.on("connect_error", ensureFallback);
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        clearFallback();
+        return;
+      }
+      scheduleRefresh();
+      if (!socket.connected) ensureFallback();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      disposed = true;
+      requestController?.abort();
+      if (refreshTimer) clearTimeout(refreshTimer);
+      clearFallback();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      socket.disconnect();
+    };
+  }, [slug, API_URL]);
+
+  useEffect(() => {
+    if (!slug || !showTabs || isTrailerOnly) return;
+    const controller = new AbortController();
 
     async function fetchRating() {
       try {
         const token = Cookies.get("token");
         const headers: HeadersInit = {};
         if (token) headers["Authorization"] = `Bearer ${token}`;
-        const res = await fetch(`${API_URL}/ratings/${slug}`, { headers });
-        if (res.ok) setRatingData(await res.json());
-      } catch (err) {
-        console.error("Lỗi lấy đánh giá:", err);
+        const res = await fetch(`${API_URL}/ratings/${slug}`, {
+          headers,
+          signal: controller.signal,
+        });
+        if (res.ok) {
+          const data: RatingData = await res.json();
+          setRatingData(data);
+          onRatingChange?.(data.average);
+        }
+      } catch (err: any) {
+        if (err?.name !== "AbortError") console.error("Lỗi lấy đánh giá:", err);
       }
     }
 
-    fetchComments();
-    if (showTabs && !isTrailerOnly) {
-      fetchRating();
-    }
-
-    // Polling comments every 6 seconds
-    const interval = setInterval(fetchComments, 6000);
-    return () => clearInterval(interval);
-  }, [slug, API_URL, showTabs]);
+    setRatingData({ average: 0, count: 0, userRating: null });
+    fetchRating();
+    return () => controller.abort();
+  }, [slug, API_URL, showTabs, isTrailerOnly, onRatingChange]);
 
   // Tự động cuộn xuống khu vực bình luận nếu URL chứa hash #movie-comments
   useEffect(() => {
@@ -184,6 +272,14 @@ export default function CommentRatingSection({
     }
   }, [isTrailerOnly, activeTab]);
 
+  useEffect(() => {
+    if (commentCooldown <= 0) return;
+    const timer = window.setTimeout(() => {
+      setCommentCooldown((current) => Math.max(0, current - 1));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [commentCooldown]);
+
   // Lắng nghe sự kiện click từ nút rating trên banner để tự chuyển tab
   useEffect(() => {
     const handleSwitchTab = () => {
@@ -199,7 +295,8 @@ export default function CommentRatingSection({
 
   const handleSubmitComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!commentText.trim() || !user) return;
+    if (!commentText.trim() || !user || submittingComment || commentCooldown > 0) return;
+    setSubmittingComment(true);
     try {
       const token = Cookies.get("token");
       const res = await fetch(`${API_URL}/comments/${slug}`, {
@@ -219,15 +316,24 @@ export default function CommentRatingSection({
         setComments((prev: Comment[]) => [newComment, ...prev]);
         setCommentText("");
         setIsSpoiler(false);
+        setCommentCooldown(8);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        if (typeof data.retryAfter === "number") setCommentCooldown(data.retryAfter);
+        showToast(data.message || "Không thể gửi bình luận", "error");
       }
     } catch (err) {
       console.error("Lỗi gửi bình luận:", err);
+      showToast("Không thể kết nối máy chủ bình luận", "error");
+    } finally {
+      setSubmittingComment(false);
     }
   };
 
   const handleSubmitReply = async (e: React.FormEvent, parentId: string) => {
     e.preventDefault();
-    if (!replyText.trim() || !user) return;
+    if (!replyText.trim() || !user || submittingReply || commentCooldown > 0) return;
+    setSubmittingReply(true);
     try {
       const token = Cookies.get("token");
       const res = await fetch(`${API_URL}/comments/${slug}`, {
@@ -252,9 +358,17 @@ export default function CommentRatingSection({
         setActiveReplyTargetId(null);
         setReplyToUserId(null);
         setReplyIsSpoiler(false);
+        setCommentCooldown(8);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        if (typeof data.retryAfter === "number") setCommentCooldown(data.retryAfter);
+        showToast(data.message || "Không thể gửi phản hồi", "error");
       }
     } catch (err) {
       console.error("Lỗi gửi câu trả lời:", err);
+      showToast("Không thể kết nối máy chủ bình luận", "error");
+    } finally {
+      setSubmittingReply(false);
     }
   };
 
@@ -406,7 +520,11 @@ export default function CommentRatingSection({
         },
         body: JSON.stringify({ score }),
       });
-      if (res.ok) setRatingData(await res.json());
+      if (res.ok) {
+        const data: RatingData = await res.json();
+        setRatingData(data);
+        onRatingChange?.(data.average);
+      }
     } catch (err) {
       console.error("Lỗi gửi đánh giá:", err);
     } finally {
@@ -543,10 +661,10 @@ export default function CommentRatingSection({
                   {/* Submit button */}
                   <button
                     type="submit"
-                    disabled={!commentText.trim()}
+                    disabled={!commentText.trim() || submittingComment || commentCooldown > 0}
                     className="flex items-center gap-1.5 bg-transparent border-none text-zinc-100 hover:text-pink-400 font-extrabold text-xs cursor-pointer select-none transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    <span>Gửi</span>
+                    <span>{submittingComment ? "Đang gửi..." : commentCooldown > 0 ? `Chờ ${commentCooldown}s` : "Gửi"}</span>
                     <Send size={13} className="text-pink-500 fill-pink-500/10 rotate-45 -translate-y-0.5" />
                   </button>
                 </div>
@@ -1029,10 +1147,10 @@ export default function CommentRatingSection({
                                   </button>
                                   <button
                                     type="submit"
-                                    disabled={!replyText.trim()}
+                                    disabled={!replyText.trim() || submittingReply || commentCooldown > 0}
                                     className="flex items-center gap-1.5 bg-transparent border-none text-pink-500 hover:text-pink-400 font-extrabold text-[10px] cursor-pointer disabled:opacity-40"
                                   >
-                                    <span>Gửi</span>
+                                    <span>{submittingReply ? "Đang gửi..." : commentCooldown > 0 ? `Chờ ${commentCooldown}s` : "Gửi"}</span>
                                     <Send size={11} className="text-pink-500 fill-pink-500/10 rotate-45 -translate-y-0.5" />
                                   </button>
                                 </div>

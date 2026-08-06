@@ -15,6 +15,7 @@ import {
   ShieldAlert
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 
 interface NotificationItem {
   _id: string;
@@ -38,6 +39,7 @@ export default function NotificationsManagementView({
   onRefreshStats,
 }: NotificationsManagementViewProps) {
   const { showToast } = useAuth();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -140,9 +142,12 @@ export default function NotificationsManagementView({
   };
 
   const handleClearAll = async () => {
-    if (!window.confirm("Bạn có chắc chắn muốn xóa toàn bộ lịch sử thông báo?")) {
-      return;
-    }
+    const accepted = await confirm({
+      title: "Xóa toàn bộ thông báo?",
+      message: "Toàn bộ lịch sử thông báo quản trị sẽ bị xóa vĩnh viễn.",
+      confirmLabel: "Xóa tất cả",
+    });
+    if (!accepted) return;
     try {
       const token = Cookies.get("token");
       const res = await fetch(`${API_URL}/notifications/clear`, {
@@ -348,6 +353,7 @@ export default function NotificationsManagementView({
           </div>
         )}
       </div>
+      {confirmDialog}
     </div>
   );
 }

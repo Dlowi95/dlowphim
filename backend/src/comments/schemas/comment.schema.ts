@@ -23,6 +23,12 @@ export class Comment {
   @Prop({ required: true })
   content: string;
 
+  @Prop({ index: true })
+  contentFingerprint?: string;
+
+  @Prop()
+  rateLimitBucket?: number;
+
   @Prop({ default: false })
   isSpoiler: boolean;
 
@@ -43,3 +49,14 @@ export class Comment {
 }
 
 export const CommentSchema = SchemaFactory.createForClass(Comment);
+
+CommentSchema.index({ movieSlug: 1, parentId: 1, createdAt: -1 });
+CommentSchema.index({ userId: 1, createdAt: -1 });
+CommentSchema.index({ userId: 1, contentFingerprint: 1, createdAt: -1 });
+CommentSchema.index(
+  { userId: 1, rateLimitBucket: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { rateLimitBucket: { $type: 'number' } },
+  },
+);

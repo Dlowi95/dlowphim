@@ -121,6 +121,7 @@ function WatchContent({ slug }: { slug: string }) {
   const prefetchedManifestKeyRef = React.useRef("");
   const pendingFailoverTimeRef = React.useRef(0);
   const manualPlayerSelectionKeyRef = React.useRef("");
+  const audioPreferenceAppliedRef = React.useRef("");
   const lastHistorySavedTime = React.useRef<number>(0);
   const [kkServers, setKkServers] = useState<Server[]>([]);
   const [fallbackSourceId, setFallbackSourceId] = useState<string>("");
@@ -602,6 +603,7 @@ function WatchContent({ slug }: { slug: string }) {
   };
 
   const chooseAudioTrack = (audioTrack: string) => {
+    localStorage.setItem("dlowphim_audio_track_preference", audioTrack);
     const matchingIndexes = servers
       .map((server, serverIndex) => ({ server, serverIndex }))
       .filter(({ server }) => getServerAudioTrack(server.server_name) === audioTrack)
@@ -613,6 +615,50 @@ function WatchContent({ slug }: { slug: string }) {
     )[0];
     if (bestIndex !== undefined) chooseServer(bestIndex, "auto");
   };
+
+  const serverPreferenceSignature = servers
+    .map((server) => `${server.server_name}:${server.server_data?.length || 0}`)
+    .join("|");
+
+  useEffect(() => {
+    if (!servers.length) return;
+    const preferredTrack = localStorage.getItem("dlowphim_audio_track_preference");
+    if (
+      preferredTrack !== "vietsub" &&
+      preferredTrack !== "long-tieng" &&
+      preferredTrack !== "thuyet-minh"
+    ) return;
+    if (!availableAudioTracks.includes(preferredTrack)) return;
+    const preferenceKey = `${slug}:${preferredTrack}:${serverPreferenceSignature}`;
+    if (audioPreferenceAppliedRef.current === preferenceKey) return;
+
+    const matchingIndexes = servers
+      .map((server, serverIndex) => ({ server, serverIndex }))
+      .filter(({ server }) => getServerAudioTrack(server.server_name) === preferredTrack)
+      .map(({ serverIndex }) => serverIndex);
+    const bestIndex = [...matchingIndexes].sort(
+      (left, right) =>
+        (serverScores[left] ?? Number.MAX_SAFE_INTEGER) -
+        (serverScores[right] ?? Number.MAX_SAFE_INTEGER),
+    )[0];
+    if (bestIndex === undefined) return;
+
+    audioPreferenceAppliedRef.current = preferenceKey;
+    if (bestIndex === activeServerIndex) return;
+    const episode = getMatchingEpisode(bestIndex);
+    if (!episode) return;
+    setSourceSelectionMode("auto");
+    selectAutomaticServer(bestIndex, episode.link_m3u8 ? "hls" : "embed");
+  }, [
+    activeServerIndex,
+    availableAudioTracks,
+    getMatchingEpisode,
+    selectAutomaticServer,
+    serverPreferenceSignature,
+    serverScores,
+    servers,
+    slug,
+  ]);
 
   const retryCurrentStream = () => {
     setStreamStatus("loading");
@@ -1908,6 +1954,9 @@ function WatchContent({ slug }: { slug: string }) {
                   <div className="space-y-2.5">
                     <span className="block text-xs font-black text-zinc-455 uppercase tracking-wider">
                       Chọn bản dịch:
+                      <span className="ml-2 normal-case text-[10px] font-semibold text-zinc-600">
+                        Tự động ghi nhớ lựa chọn
+                      </span>
                     </span>
                     <div className="flex flex-wrap gap-2.5">
                       {availableAudioTracks.map((audioTrack) => (
