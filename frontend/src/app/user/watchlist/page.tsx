@@ -1,21 +1,15 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Plus, ListPlus, Folder, Edit3, Trash2, X, ChevronLeft, Loader2, Play, Save } from "lucide-react";
+import { Plus, ListPlus, Folder, Edit3, Trash2, X, ChevronLeft, Loader2, Play, Save, RefreshCw } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
-import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import Link from "next/link";
 import Pagination from "@/components/Pagination";
+import { getUserMovieSummaries, UserMovieSummary } from "@/utils/userMovieSummaries";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 
-interface MovieDetails {
-  slug: string;
-  name: string;
-  origin_name: string;
-  thumb_url: string;
-  quality: string;
-  lang: string;
-}
+type MovieDetails = UserMovieSummary;
 
 interface Playlist {
   id: string;
@@ -25,11 +19,14 @@ interface Playlist {
 
 export default function UserWatchlistPage() {
   const { user, createPlaylist, deletePlaylist, updatePlaylistName, toggleMovieInPlaylist, showToast } = useAuth();
+  const { confirm, confirmDialog } = useConfirmDialog();
   
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
   
   const [playlistMovies, setPlaylistMovies] = useState<MovieDetails[]>([]);
   const [loadingMovies, setLoadingMovies] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [retryNonce, setRetryNonce] = useState(0);
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -45,7 +42,6 @@ export default function UserWatchlistPage() {
   
   const [editingPlaylist, setEditingPlaylist] = useState<Playlist | null>(null);
   const [editName, setEditName] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const playlists: Playlist[] = user?.playlists || [];
 
@@ -79,45 +75,26 @@ export default function UserWatchlistPage() {
       return;
     }
 
+    const controller = new AbortController();
     const fetchPlaylistMovieDetail = async () => {
       setLoadingMovies(true);
+      setLoadError("");
       try {
-        const promises = selectedPlaylist.movies.map(async (slug) => {
-          try {
-            const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${slug}`));
-            if (!res.ok) return null;
-            const data = await res.json();
-            if (data.status === true || data.status === "success") {
-              const movie = data.movie || data.data?.item;
-              if (movie) {
-                return {
-                  slug: movie.slug,
-                  name: movie.name,
-                  origin_name: movie.origin_name,
-                  thumb_url: movie.thumb_url,
-                  quality: movie.quality || "HD",
-                  lang: movie.lang || "Vietsub"
-                } as MovieDetails;
-              }
-            }
-          } catch (e) {
-            console.error(`Error loading detail for ${slug}:`, e);
-          }
-          return null;
-        });
-
-        const results = await Promise.all(promises);
-        const validMovies = results.filter((m): m is MovieDetails => m !== null);
-        setPlaylistMovies(validMovies);
+        setPlaylistMovies(
+          await getUserMovieSummaries(selectedPlaylist.movies, controller.signal),
+        );
       } catch (err) {
+        if (controller.signal.aborted) return;
         console.error("Error fetching playlist movies:", err);
+        setLoadError("Chưa thể tải phim trong danh sách này.");
       } finally {
-        setLoadingMovies(false);
+        if (!controller.signal.aborted) setLoadingMovies(false);
       }
     };
 
     fetchPlaylistMovieDetail();
-  }, [selectedPlaylist?.movies?.join(",")]);
+    return () => controller.abort();
+  }, [selectedPlaylist?.movies?.join(","), retryNonce]);
 
   const handleCreatePlaylist = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -163,15 +140,29 @@ export default function UserWatchlistPage() {
     }
   };
 
-  const handleDeletePlaylistClick = (e: React.MouseEvent, id: string) => {
+  const handleDeletePlaylistClick = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    setDeleteTarget(id);
+    const accepted = await confirm({
+      title: "Xóa danh sách phát?",
+      message: "Danh sách này sẽ bị xóa khỏi tài khoản. Các phim vẫn có thể được thêm lại sau.",
+      confirmLabel: "Xóa danh sách",
+      tone: "danger",
+    });
+    if (!accepted) return;
+    const success = await deletePlaylist(id);
+    if (success) showToast("Đã xóa danh sách phát thành công", "success");
   };
 
   const handleRemoveMovie = async (e: React.MouseEvent, movieSlug: string) => {
     e.stopPropagation();
     if (selectedPlaylist) {
-      await toggleMovieInPlaylist(selectedPlaylist.id, movieSlug);
+      const accepted = await confirm({
+        title: "Xóa phim khỏi danh sách?",
+        message: `Phim sẽ được gỡ khỏi “${selectedPlaylist.name}”.`,
+        confirmLabel: "Gỡ phim",
+        tone: "danger",
+      });
+      if (accepted) await toggleMovieInPlaylist(selectedPlaylist.id, movieSlug);
     }
   };
 
@@ -288,7 +279,18 @@ export default function UserWatchlistPage() {
           </div>
 
           {/* HIỂN THỊ PHIM TRONG PLAYLIST */}
-          {loadingMovies ? (
+          {loadError ? (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-3xl border border-red-500/15 bg-red-500/[0.03] px-8 py-20 text-center">
+              <p className="text-sm font-bold text-zinc-300">{loadError}</p>
+              <button
+                type="button"
+                onClick={() => setRetryNonce((value) => value + 1)}
+                className="flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2 text-xs font-extrabold text-white hover:bg-zinc-800"
+              >
+                <RefreshCw size={13} /> Thử lại
+              </button>
+            </div>
+          ) : loadingMovies ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 py-10">
               {Array.from({ length: 4 }).map((_, idx) => (
                 <div key={idx} className="flex flex-col gap-3.5 animate-pulse">
@@ -312,15 +314,7 @@ export default function UserWatchlistPage() {
                 {displayedMovies.map((movie) => (
                   <div key={movie.slug} className="group relative flex flex-col gap-2 bg-[#12131b]/30 border border-zinc-900/50 p-2.5 rounded-2xl hover:border-zinc-850 hover:bg-[#151621] transition-all">
                     <Link href={`/movie/${movie.slug}`} className="block relative aspect-[2/3] w-full rounded-xl overflow-hidden bg-zinc-900">
-                      <img 
-                        src={getImageUrl(movie.thumb_url)} 
-                        alt={movie.name}
-                        className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-300"
-                      />
-                      <div className="absolute top-2 left-2 bg-pink-500 text-white text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md shadow-md">
-                        {movie.quality}
-                      </div>
-
+                      <PlaylistMoviePoster movie={movie} />
                       {/* Lớp phủ hover chơi phim */}
                       <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all duration-300">
                         <div className="w-10 h-10 rounded-full bg-pink-500 flex items-center justify-center shadow-lg transform translate-y-3 group-hover:translate-y-0 transition-all duration-300">
@@ -455,45 +449,29 @@ export default function UserWatchlistPage() {
         </div>
       )}
 
-      {/* POPUP CONFIRMATION MODAL: XÁC NHẬN XÓA DANH SÁCH */}
-      {deleteTarget && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
-          <div className="w-full max-w-xs bg-[#12131b] border border-zinc-800 rounded-3xl p-5 shadow-2xl relative text-center animate-in fade-in zoom-in-95 duration-200">
-            <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center mx-auto mb-3">
-              <Trash2 size={20} className="stroke-[2.5]" />
-            </div>
-
-            <h3 className="text-sm font-black text-zinc-200 uppercase tracking-wider mb-1.5">Xóa danh sách?</h3>
-            <p className="text-[11px] text-zinc-450 leading-relaxed mb-5">
-              Bạn có chắc chắn muốn xóa danh sách phát này? Phim bên trong sẽ không thể khôi phục.
-            </p>
-
-            <div className="flex gap-3 justify-center">
-              <button
-                type="button"
-                onClick={() => setDeleteTarget(null)}
-                className="h-9 px-4 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all cursor-pointer min-w-[85px] border-none"
-              >
-                Hủy
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  if (deleteTarget) {
-                    await deletePlaylist(deleteTarget);
-                    setDeleteTarget(null);
-                    showToast("Đã xóa danh sách phát thành công", "success");
-                  }
-                }}
-                className="h-9 px-4 bg-red-500 hover:bg-red-650 active:scale-98 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-red-500/10 cursor-pointer min-w-[85px] border-none"
-              >
-                Xóa
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {confirmDialog}
     </div>
+  );
+}
+
+function PlaylistMoviePoster({ movie }: { movie: MovieDetails }) {
+  const fallbackSrc = getImageUrl(movie.thumb_url);
+  const [src, setSrc] = useState(getImageUrl(movie.poster_url || movie.thumb_url));
+
+  useEffect(() => {
+    setSrc(getImageUrl(movie.poster_url || movie.thumb_url));
+  }, [movie.slug, movie.poster_url, movie.thumb_url]);
+
+  return (
+    <img
+      src={src}
+      alt={movie.name}
+      onError={() => {
+        if (src !== fallbackSrc) setSrc(fallbackSrc);
+      }}
+      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+      loading="lazy"
+      referrerPolicy="no-referrer"
+    />
   );
 }

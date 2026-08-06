@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Bell, Loader2, MessageSquare, Film, Info, Trash2, CheckSquare, X } from "lucide-react";
+import { Bell, Loader2, MessageSquare, Film, Info, Trash2, CheckSquare } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { Button } from "@heroui/react";
 import Pagination from "@/components/Pagination";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 
 function formatTimeAgo(dateString: string) {
   try {
@@ -46,13 +47,14 @@ export default function UserNotificationsPage() {
   } = useAuth();
   
   const router = useRouter();
+  const { confirm, confirmDialog } = useConfirmDialog();
 
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loadingNotifs, setLoadingNotifs] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isMutating, setIsMutating] = useState(false);
 
   const fetchNotifs = async (p = 1) => {
     setLoadingNotifs(true);
@@ -78,6 +80,8 @@ export default function UserNotificationsPage() {
   }, [user, page]);
 
   const handleReadAll = async () => {
+    if (isMutating || notifications.every((item) => item.isRead)) return;
+    setIsMutating(true);
     const success = await readAllNotifications();
     if (success) {
       // Cập nhật client state
@@ -86,28 +90,38 @@ export default function UserNotificationsPage() {
     } else {
       showToast("Không thể cập nhật trạng thái", "error");
     }
+    setIsMutating(false);
   };
 
   const handleClearAll = async () => {
+    const accepted = await confirm({
+      title: "Xóa toàn bộ thông báo?",
+      message: "Danh sách thông báo sẽ bị xóa khỏi tài khoản và không thể khôi phục.",
+      confirmLabel: "Xóa hết",
+      tone: "danger",
+    });
+    if (!accepted || isMutating) return;
+    setIsMutating(true);
     const success = await clearAllNotifications();
     if (success) {
       setNotifications([]);
       setTotal(0);
       setTotalPages(1);
-      setShowClearConfirm(false);
       showToast("Đã xóa toàn bộ thông báo thành công", "success");
     } else {
       showToast("Lỗi xóa thông báo", "error");
     }
+    setIsMutating(false);
   };
 
   const handleNotifClick = async (notif: any) => {
     if (!notif.isRead) {
-      await readSingleNotification(notif._id);
-      // Cập nhật state cục bộ
       setNotifications(prev => 
         prev.map(n => n._id === notif._id ? { ...n, isRead: true } : n)
       );
+      void readSingleNotification(notif._id).then((success) => {
+        if (!success) fetchNotifs(page);
+      });
     }
     if (notif.link) {
       router.push(notif.link);
@@ -135,6 +149,7 @@ export default function UserNotificationsPage() {
               variant="light"
               className="bg-[#1c203e]/40 border border-zinc-800 hover:border-zinc-700 text-zinc-300 font-bold text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 transition-all"
               onPress={handleReadAll}
+              isDisabled={isMutating || notifications.every((item) => item.isRead)}
             >
               <CheckSquare size={13} className="text-pink-500" />
               <span>Đọc tất cả</span>
@@ -144,7 +159,8 @@ export default function UserNotificationsPage() {
               size="sm"
               variant="light"
               className="bg-red-500/5 border border-red-500/10 hover:border-red-500/25 hover:bg-red-500/10 text-red-400 font-bold text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 transition-all"
-              onPress={() => setShowClearConfirm(true)}
+              onPress={handleClearAll}
+              isDisabled={isMutating}
             >
               <Trash2 size={13} className="text-red-400" />
               <span>Xóa hết</span>
@@ -237,39 +253,7 @@ export default function UserNotificationsPage() {
         </div>
       )}
 
-      {/* POPUP CONFIRMATION MODAL: XÓA TOÀN BỘ THÔNG BÁO */}
-      {showClearConfirm && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
-          <div className="w-full max-w-xs bg-[#12131b] border border-zinc-800 rounded-3xl p-5 shadow-2xl relative text-center animate-in fade-in zoom-in-95 duration-200">
-            <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center mx-auto mb-3">
-              <Trash2 size={20} className="stroke-[2.5]" />
-            </div>
-
-            <h3 className="text-sm font-black text-zinc-200 uppercase tracking-wider mb-1.5">Xóa tất cả?</h3>
-            <p className="text-[11px] text-zinc-450 leading-relaxed mb-5">
-              Bạn có chắc chắn muốn xóa toàn bộ thông báo không? Hành động này không thể khôi phục.
-            </p>
-
-            <div className="flex gap-3 justify-center">
-              <button
-                type="button"
-                onClick={() => setShowClearConfirm(false)}
-                className="h-9 px-4 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all cursor-pointer min-w-[85px] border-none"
-              >
-                Hủy
-              </button>
-              <button
-                type="button"
-                onClick={handleClearAll}
-                className="h-9 px-4 bg-red-500 hover:bg-red-655 active:scale-98 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-red-500/10 cursor-pointer min-w-[85px] border-none"
-              >
-                Xóa
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {confirmDialog}
     </div>
   );
 }

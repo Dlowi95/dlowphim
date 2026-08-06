@@ -20,18 +20,26 @@ export default function UserAccountPage() {
   const [showAvatarModal, setShowAvatarModal] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const initialProfileRef = useRef({ displayName: "", gender: "other", avatar: "" });
 
   useEffect(() => {
     if (user) {
-      setDisplayName(user.displayName || "");
-      setGender(user.gender || "other");
-      setAvatar(user.avatar || "/images/avatars/default.png");
+      const nextProfile = {
+        displayName: user.displayName || "",
+        gender: user.gender || "other",
+        avatar: user.avatar || "/images/avatars/default.png",
+      };
+      initialProfileRef.current = nextProfile;
+      setDisplayName(nextProfile.displayName);
+      setGender(nextProfile.gender);
+      setAvatar(nextProfile.avatar);
     }
   }, [user]);
 
-  useEffect(() => {
-    refreshUser();
-  }, []);
+  const hasChanges =
+    displayName.trim() !== initialProfileRef.current.displayName ||
+    gender !== initialProfileRef.current.gender ||
+    avatar !== initialProfileRef.current.avatar;
 
   // Xử lý chọn ảnh từ thiết bị
   // Xử lý chọn ảnh từ thiết bị, tự động crop vuông chính giữa và resize về 350x350px siêu nét
@@ -40,6 +48,17 @@ export default function UserAccountPage() {
     if (!files || files.length === 0) return;
 
     const file = files[0];
+
+    if (!file.type.startsWith("image/")) {
+      showToast("Vui lòng chọn đúng định dạng ảnh", "error");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showToast("Ảnh đại diện không được lớn hơn 5 MB", "error");
+      e.target.value = "";
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -70,14 +89,16 @@ export default function UserAccountPage() {
             size
           );
 
-          const base64 = canvas.toDataURL("image/jpeg", 0.95);
+          const base64 = canvas.toDataURL("image/jpeg", 0.88);
           setAvatar(base64);
-          showToast("Đã tải ảnh lên và tối ưu thành công", "success");
+          showToast("Đã cắt và tối ưu ảnh đại diện", "success");
         }
       };
+      img.onerror = () => showToast("Không đọc được tệp ảnh này", "error");
       img.src = event.target?.result as string;
     };
     reader.readAsDataURL(file);
+    e.target.value = "";
   };
 
   // Kích hoạt input file ẩn
@@ -87,10 +108,11 @@ export default function UserAccountPage() {
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!displayName.trim()) {
-      showToast("Vui lòng điền tên hiển thị", "error");
+    if (displayName.trim().length < 2 || displayName.trim().length > 40) {
+      showToast("Tên hiển thị cần từ 2 đến 40 ký tự", "error");
       return;
     }
+    if (!hasChanges) return;
 
     setIsSaving(true);
     try {
@@ -161,6 +183,8 @@ export default function UserAccountPage() {
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
+                minLength={2}
+                maxLength={40}
                 placeholder="Nhập tên hiển thị mới..."
                 className="w-full h-11 bg-zinc-900/60 border border-zinc-800 focus:border-pink-500 rounded-xl px-4 text-sm text-zinc-200 outline-none transition-colors font-medium"
               />
@@ -274,8 +298,8 @@ export default function UserAccountPage() {
         <div className="flex justify-end pt-4">
           <button
             type="submit"
-            disabled={isSaving}
-            className="h-11 px-8 bg-pink-500 hover:bg-pink-600 disabled:bg-zinc-800 text-white font-extrabold text-sm rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-pink-500/10 active:scale-98 transition-all cursor-pointer"
+            disabled={isSaving || !hasChanges}
+            className="h-11 px-8 bg-pink-500 hover:bg-pink-600 disabled:bg-zinc-800 disabled:text-zinc-500 disabled:cursor-not-allowed text-white font-extrabold text-sm rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-pink-500/10 active:scale-98 transition-all cursor-pointer"
           >
             {isSaving ? (
               <Loader2 size={16} className="animate-spin" />

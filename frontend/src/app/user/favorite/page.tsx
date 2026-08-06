@@ -1,28 +1,24 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Heart, X, Loader2, Play } from "lucide-react";
+import { Heart, X, Play, RefreshCw } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
-import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import Link from "next/link";
 import Pagination from "@/components/Pagination";
+import { getUserMovieSummaries, UserMovieSummary } from "@/utils/userMovieSummaries";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 
-interface MovieDetails {
-  slug: string;
-  name: string;
-  origin_name: string;
-  thumb_url: string;
-  quality: string;
-  lang: string;
-}
+type MovieDetails = UserMovieSummary;
 
 export default function UserFavoritePage() {
-  const { user, toggleFavorite } = useAuth();
+  const { user, toggleFavorite, showToast } = useAuth();
+  const { confirm, confirmDialog } = useConfirmDialog();
   
   const [favoriteDetails, setFavoriteDetails] = useState<MovieDetails[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
-  const [activeTab, setActiveTab] = useState<"movies" | "actors">("movies");
+  const [loadError, setLoadError] = useState("");
+  const [retryNonce, setRetryNonce] = useState(0);
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -35,54 +31,44 @@ export default function UserFavoritePage() {
       return;
     }
 
+    const controller = new AbortController();
     const fetchAllFavoriteDetails = async () => {
       setLoadingDetails(true);
+      setLoadError("");
       try {
-        const promises = favorites.map(async (slug) => {
-          try {
-            const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${slug}`));
-            if (!res.ok) return null;
-            const data = await res.json();
-            if (data.status === true || data.status === "success") {
-              const movie = data.movie || data.data?.item;
-              if (movie) {
-                return {
-                  slug: movie.slug,
-                  name: movie.name,
-                  origin_name: movie.origin_name,
-                  thumb_url: movie.thumb_url,
-                  quality: movie.quality || "HD",
-                  lang: movie.lang || "Vietsub"
-                } as MovieDetails;
-              }
-            }
-          } catch (e) {
-            console.error(`Error loading detail for ${slug}:`, e);
-          }
-          return null;
-        });
-
-        const results = await Promise.all(promises);
-        const validMovies = results.filter((m): m is MovieDetails => m !== null);
-        setFavoriteDetails(validMovies);
+        setFavoriteDetails(await getUserMovieSummaries(favorites, controller.signal));
       } catch (err) {
+        if (controller.signal.aborted) return;
         console.error("Error fetching all favorite details:", err);
+        setLoadError("Chưa thể tải danh sách yêu thích. Vui lòng thử lại.");
       } finally {
-        setLoadingDetails(false);
+        if (!controller.signal.aborted) setLoadingDetails(false);
       }
     };
 
     fetchAllFavoriteDetails();
-  }, [user?.favorites?.join(",")]);
+    return () => controller.abort();
+  }, [user?.favorites?.join(","), retryNonce]);
 
   const handleRemoveFavorite = async (e: React.MouseEvent, slug: string) => {
     e.stopPropagation();
-    await toggleFavorite(slug);
-    setFavoriteDetails((prev) => prev.filter((m) => m.slug !== slug));
+    const accepted = await confirm({
+      title: "Bỏ phim yêu thích?",
+      message: "Phim sẽ được gỡ khỏi danh sách yêu thích của bạn.",
+      confirmLabel: "Bỏ yêu thích",
+      tone: "danger",
+    });
+    if (!accepted) return;
+    const success = await toggleFavorite(slug);
+    if (success) {
+      setFavoriteDetails((prev) => prev.filter((m) => m.slug !== slug));
+      showToast("Đã xóa phim khỏi danh sách yêu thích", "success");
+    }
   };
 
   // Pagination calculation
-  const totalItems = activeTab === "movies" ? favoriteDetails.length : 0;
+  const favoriteCount = user?.favorites?.length || 0;
+  const totalItems = favoriteDetails.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedMovies = favoriteDetails.slice(startIndex, startIndex + itemsPerPage);
@@ -103,36 +89,24 @@ export default function UserFavoritePage() {
           <span>Yêu thích</span>
         </h2>
         
-        {/* Tabs: Phim / Diễn viên */}
-        <div className="inline-flex p-1 bg-[#12131b] border border-zinc-800/40 rounded-xl max-w-fit select-none">
-          <button
-            onClick={() => setActiveTab("movies")}
-            className={`py-1.5 px-4 rounded-lg font-bold text-xs transition-all ${
-              activeTab === "movies"
-                ? "bg-zinc-800 text-white shadow-md"
-                : "text-zinc-400 hover:text-zinc-200"
-            }`}
-          >
-            Phim
-          </button>
-          <button
-            onClick={() => {
-              setActiveTab("actors");
-              setCurrentPage(1);
-            }}
-            className={`py-1.5 px-4 rounded-lg font-bold text-xs transition-all ${
-              activeTab === "actors"
-                ? "bg-zinc-800 text-white shadow-md"
-                : "text-zinc-400 hover:text-zinc-200"
-            }`}
-          >
-            Diễn viên
-          </button>
-        </div>
+        <span className="rounded-full border border-pink-500/20 bg-pink-500/10 px-3 py-1.5 text-xs font-extrabold text-pink-400">
+          {favoriteCount} phim
+        </span>
       </div>
 
       {/* FAVORITE GRID */}
-      {activeTab === "movies" ? (
+      {loadError ? (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-3xl border border-red-500/15 bg-red-500/[0.03] px-8 py-20 text-center">
+          <p className="text-sm font-bold text-zinc-300">{loadError}</p>
+          <button
+            type="button"
+            onClick={() => setRetryNonce((value) => value + 1)}
+            className="flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2 text-xs font-extrabold text-white hover:bg-zinc-800"
+          >
+            <RefreshCw size={13} /> Thử lại
+          </button>
+        </div>
+      ) : (
         loadingDetails ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 py-10">
             {Array.from({ length: 6 }).map((_, idx) => (
@@ -171,16 +145,8 @@ export default function UserFavoritePage() {
             )}
           </div>
         )
-      ) : (
-        /* ACTORS TAB PLACEHOLDER */
-        <div className="bg-[#12131b]/30 border border-zinc-900 rounded-3xl py-20 px-8 flex flex-col items-center justify-center gap-3 select-none text-center">
-          <Heart size={44} className="text-zinc-700" />
-          <h4 className="text-base font-bold text-zinc-400">Danh sách diễn viên yêu thích trống</h4>
-          <p className="text-xs text-zinc-500 max-w-xs">
-            Bạn chưa yêu thích diễn viên nào. Khi theo dõi diễn viên phim, danh sách sẽ hiển thị tại đây.
-          </p>
-        </div>
       )}
+      {confirmDialog}
     </div>
   );
 }
@@ -192,19 +158,19 @@ function FavoriteMovieCard({
   movie: any;
   onRemove: (e: React.MouseEvent, slug: string) => void;
 }) {
-  const initialUrl = getImageUrl(movie.thumb_url || movie.poster_url);
+  const initialUrl = getImageUrl(movie.poster_url || movie.thumb_url);
   const [imgSrc, setImgSrc] = useState<string>(initialUrl);
   const [attemptCount, setAttemptCount] = useState(0);
 
   useEffect(() => {
-    setImgSrc(getImageUrl(movie.thumb_url || movie.poster_url));
+    setImgSrc(getImageUrl(movie.poster_url || movie.thumb_url));
     setAttemptCount(0);
   }, [movie.slug, movie.thumb_url, movie.poster_url]);
 
   const handleImgError = () => {
-    if (attemptCount === 0 && movie.poster_url && movie.thumb_url && movie.poster_url !== movie.thumb_url) {
+    if (attemptCount === 0 && movie.thumb_url && movie.poster_url && movie.poster_url !== movie.thumb_url) {
       setAttemptCount(1);
-      setImgSrc(getImageUrl(movie.poster_url));
+      setImgSrc(getImageUrl(movie.thumb_url));
       return;
     }
 
@@ -255,15 +221,6 @@ function FavoriteMovieCard({
           </button>
         </div>
 
-        {/* Episode/Quality Tag */}
-        <div className="absolute top-2.5 left-2.5 flex flex-col gap-1 select-none">
-          <span className="bg-pink-500 px-1.5 py-0.5 rounded text-[9px] font-black text-white uppercase shadow-sm">
-            {movie.quality}
-          </span>
-          <span className="bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded text-[9px] font-black text-white border border-zinc-800">
-            {movie.lang === "Vietsub" ? "P.Đề" : movie.lang}
-          </span>
-        </div>
       </div>
 
       {/* Title & Origin Title */}

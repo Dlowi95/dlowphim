@@ -134,6 +134,12 @@ export class MoviesController {
     );
   }
 
+  @Post('resolved-summaries')
+  @UseGuards(AuthGuard)
+  async getResolvedMovieSummaries(@Body('slugs') slugs: string[]) {
+    return this.moviesService.getResolvedMovieSummaries(slugs || []);
+  }
+
   @Get('override/:slug')
   async getOverrideBySlug(@Param('slug') slug: string) {
     const override = await this.moviesService.getOverrideBySlug(slug);

@@ -7,7 +7,7 @@ import Link from "next/link";
 import { Heart, Plus, History, Bell, User, LogOut, Loader2, AlertCircle } from "lucide-react";
 
 export default function UserLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading, logout, refreshUser } = useAuth();
+  const { user, loading, logout } = useAuth();
   const pathname = usePathname();
 
   useEffect(() => {
@@ -17,10 +17,6 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
       }
     }
   }, [user, loading]);
-
-  useEffect(() => {
-    refreshUser();
-  }, []);
 
   if (loading) {
     return (
@@ -103,13 +99,14 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
                 Quản lý tài khoản
               </h3>
               
-              <div className="flex flex-col gap-1">
+              <nav aria-label="Quản lý tài khoản" className="flex flex-row overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0 gap-1">
                 {menuItems.map((item) => {
                   const isActive = pathname === item.href;
                   return (
                     <Link
                       key={item.href}
                       href={item.href}
+                      aria-current={isActive ? "page" : undefined}
                       className={`flex items-center gap-3.5 py-3 px-4 rounded-xl font-bold text-sm transition-all ${
                         isActive
                           ? "bg-pink-500/10 border border-pink-500/20 text-pink-500 shadow-[0_0_12px_rgba(236,72,153,0.15)]"
@@ -117,11 +114,11 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
                       }`}
                     >
                       {item.icon(isActive)}
-                      <span>{item.label}</span>
+                      <span className="whitespace-nowrap">{item.label}</span>
                     </Link>
                   );
                 })}
-              </div>
+              </nav>
             </div>
 
             {/* Profile Avatar and Information */}

@@ -27,7 +27,7 @@ interface AuthContextType {
   showToast: (message: string, type: "success" | "error" | "warning") => void;
   toggleFavorite: (slug: string) => Promise<boolean>;
   refreshUser: () => Promise<void>;
-  createPlaylist: (name: string) => Promise<boolean>;
+  createPlaylist: (name: string, options?: { silent?: boolean }) => Promise<string | null>;
   deletePlaylist: (playlistId: string) => Promise<boolean>;
   updatePlaylistName: (playlistId: string, name: string) => Promise<boolean>;
   toggleMovieInPlaylist: (playlistId: string, movieSlug: string) => Promise<boolean>;
@@ -299,12 +299,16 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     return false;
   };
 
-  const createPlaylist = async (name: string): Promise<boolean> => {
+  const createPlaylist = async (
+    name: string,
+    options?: { silent?: boolean },
+  ): Promise<string | null> => {
     if (!user) {
       showAuthToast();
-      return false;
+      return null;
     }
     try {
+      const existingIds = new Set((user.playlists || []).map((playlist) => playlist.id));
       const token = Cookies.get("token");
       const res = await fetch(`${API_URL}/auth/playlists`, {
         method: "POST",
@@ -321,13 +325,16 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
           if (!prev) return null;
           return { ...prev, playlists };
         });
-        showToast("Tạo danh sách phát thành công", "success");
-        return true;
+        if (!options?.silent) showToast("Tạo danh sách phát thành công", "success");
+        return playlists.find((playlist: any) => !existingIds.has(playlist.id))?.id || null;
       }
+      const error = await res.json().catch(() => null);
+      showToast(error?.message || "Không thể tạo danh sách phát", "error");
     } catch (e) {
       console.error("Lỗi tạo danh sách phát:", e);
+      showToast("Không thể kết nối máy chủ", "error");
     }
-    return false;
+    return null;
   };
 
   const deletePlaylist = async (playlistId: string): Promise<boolean> => {
@@ -455,7 +462,6 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     try {
       const localHist = JSON.parse(localStorage.getItem("dlowphim_history") || "[]");
       const filtered = localHist.filter((item: any) => item.movieSlug !== movieSlug);
-      localStorage.setItem("dlowphim_history", JSON.stringify(filtered));
 
       if (user) {
         const token = Cookies.get("token");
@@ -468,13 +474,16 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
 
         if (res.ok) {
           const data = await res.json();
+          localStorage.setItem("dlowphim_history", JSON.stringify(filtered));
           setUser((prev) => {
             if (!prev) return null;
             return { ...prev, watchHistory: data.watchHistory || [] };
           });
           return true;
         }
+        showToast("Không thể xóa lịch sử lúc này", "error");
       } else {
+        localStorage.setItem("dlowphim_history", JSON.stringify(filtered));
         setUser((prev) => {
           if (!prev) return null;
           return { ...prev, watchHistory: filtered };
@@ -489,8 +498,6 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
 
   const clearAllHistory = async (): Promise<boolean> => {
     try {
-      localStorage.removeItem("dlowphim_history");
-
       if (user) {
         const token = Cookies.get("token");
         const res = await fetch(`${API_URL}/auth/history/clear-all`, {
@@ -501,13 +508,16 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
         });
 
         if (res.ok) {
+          localStorage.removeItem("dlowphim_history");
           setUser((prev) => {
             if (!prev) return null;
             return { ...prev, watchHistory: [] };
           });
           return true;
         }
+        showToast("Không thể xóa lịch sử lúc này", "error");
       } else {
+        localStorage.removeItem("dlowphim_history");
         setUser((prev) => {
           if (!prev) return null;
           return { ...prev, watchHistory: [] };

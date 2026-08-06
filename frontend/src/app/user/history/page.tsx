@@ -2,14 +2,14 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { History, Trash2, Play, X } from "lucide-react";
+import { History, Trash2, Play, RefreshCw } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import Cookies from "js-cookie";
 import Link from "next/link";
 import Pagination from "@/components/Pagination";
 import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
-import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import ProgressiveImage from "@/components/ProgressiveImage";
+import { getUserMovieSummaries, UserMovieSummary } from "@/utils/userMovieSummaries";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 
 interface HistoryItem {
   movieSlug: string;
@@ -22,27 +22,22 @@ interface HistoryItem {
   updatedAt: string;
 }
 
-interface MovieDetails {
-  slug: string;
-  thumb_url: string;
-  quality: string;
-  lang: string;
-}
+type MovieDetails = UserMovieSummary;
 
 export default function UserHistoryPage() {
   const router = useRouter();
   const { user, showToast, deleteHistoryItem, clearAllHistory: clearAllHistoryCtx } = useAuth();
+  const { confirm, confirmDialog } = useConfirmDialog();
   
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [movieDetails, setMovieDetails] = useState<Record<string, MovieDetails>>({});
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [retryNonce, setRetryNonce] = useState(0);
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
-
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
   // Load history items
   useEffect(() => {
@@ -80,135 +75,67 @@ export default function UserHistoryPage() {
     loadHistory();
   }, [user]);
 
-  // Fetch movie details for history items with multi-source fallback
+  // Load all movie summaries in one backend batch instead of one request per item.
   useEffect(() => {
-    if (historyItems.length === 0) return;
+    if (historyItems.length === 0) {
+      setMovieDetails({});
+      setLoadError("");
+      return;
+    }
+
+    const controller = new AbortController();
 
     const fetchMovieDetails = async () => {
       setLoadingDetails(true);
+      setLoadError("");
       try {
-        const uniqueMovies = Array.from(
-          new Map(historyItems.map((item) => [item.movieSlug, item])).values(),
+        const summaries = await getUserMovieSummaries(
+          historyItems.map((item) => item.movieSlug),
+          controller.signal,
         );
-        const promises = uniqueMovies.map(async (item) => {
-          if (movieDetails[item.movieSlug]) return null;
-          try {
-            let movie: any = null;
-            // 1. Try the source currently selected by admin.
-            let res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${item.movieSlug}`));
-            if (res.ok) {
-              const data = await res.json();
-              if (data.status === true || data.status === "success") {
-                movie = data.movie || data.data?.item;
-              }
-            }
-            // 2. Thử v1/api/phim
-            if (!movie) {
-              res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${item.movieSlug}`));
-              if (res.ok) {
-                const data = await res.json();
-                if (data.status === true || data.status === "success") {
-                  movie = data.movie || data.data?.item;
-                }
-              }
-            }
-            // 3. Try the provider opposite to the active source.
-            if (!movie) {
-              res = await fetch(getProxyUrl(`/phim/${item.movieSlug}`, "fallback"));
-              if (res.ok) {
-                const data = await res.json();
-                if (data.status === true || data.status === "success") {
-                  movie = data.movie;
-                }
-              }
-            }
-
-            if (movie) {
-              return {
-                slug: movie.slug,
-                thumb_url: movie.thumb_url || movie.poster_url,
-                quality: movie.quality || "HD",
-                lang: movie.lang || "Vietsub"
-              } as MovieDetails;
-            }
-          } catch (e) {
-            console.error(`Error loading detail for history ${item.movieSlug}:`, e);
-          }
-          return null;
-        });
-
-        const results = await Promise.all(promises);
-        const newDetails: Record<string, MovieDetails> = { ...movieDetails };
-        results.forEach((detail) => {
-          if (detail) {
-            newDetails[detail.slug] = detail;
-          }
-        });
-        setMovieDetails(newDetails);
-      } catch (err) {
-        console.error(err);
+        setMovieDetails(Object.fromEntries(summaries.map((item) => [item.slug, item])));
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error("Unable to load history movie summaries:", error);
+          setLoadError("Chưa tải được ảnh và thông tin phim trong lịch sử.");
+        }
       } finally {
-        setLoadingDetails(false);
+        if (!controller.signal.aborted) setLoadingDetails(false);
       }
     };
 
     fetchMovieDetails();
-  }, [historyItems]);
+    return () => controller.abort();
+  }, [historyItems.map((item) => item.movieSlug).join(","), retryNonce]);
 
   const handleRemoveItem = async (e: React.MouseEvent, movieSlug: string) => {
     e.stopPropagation();
-    
-    // 1. Clear from localStorage
-    try {
-      const localHist = JSON.parse(localStorage.getItem("dlowphim_history") || "[]");
-      const updatedLocal = localHist.filter((item: any) => item.movieSlug !== movieSlug);
-      localStorage.setItem("dlowphim_history", JSON.stringify(updatedLocal));
-    } catch (err) {
-      console.error("Lỗi xóa local history:", err);
-    }
+    const accepted = await confirm({
+      title: "Xóa lịch sử phim này?",
+      message: "Tiến trình xem gần nhất của phim sẽ bị xóa khỏi tài khoản của bạn.",
+      confirmLabel: "Xóa lịch sử",
+      tone: "danger",
+    });
+    if (!accepted) return;
 
-    // 2. Clear from UI State
+    const removed = await deleteHistoryItem(movieSlug);
+    if (!removed) return;
     setHistoryItems((prev) => prev.filter((item) => item.movieSlug !== movieSlug));
-
-    // 3. Clear from Server & Context State
-    if (deleteHistoryItem) {
-      await deleteHistoryItem(movieSlug);
-    } else {
-      const token = Cookies.get("token");
-      if (token) {
-        await fetch(`${API_URL}/users/me/history/${movieSlug}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-      }
-    }
     showToast("Đã xóa khỏi lịch sử xem", "success");
   };
 
   const handleClearAllHistory = async () => {
-    // 1. Clear from localStorage
-    try {
-      localStorage.removeItem("dlowphim_history");
-    } catch (err) {
-      console.error("Lỗi xóa local history:", err);
-    }
+    const accepted = await confirm({
+      title: "Xóa toàn bộ lịch sử?",
+      message: "Toàn bộ tập và thời gian xem gần nhất sẽ bị xóa. Hành động này không thể hoàn tác.",
+      confirmLabel: "Xóa tất cả",
+      tone: "danger",
+    });
+    if (!accepted) return;
 
-    // 2. Clear from UI State
+    const cleared = await clearAllHistoryCtx();
+    if (!cleared) return;
     setHistoryItems([]);
-    setShowClearConfirm(false);
-
-    // 3. Clear from Server & Context State
-    if (clearAllHistoryCtx) {
-      await clearAllHistoryCtx();
-    } else {
-      const token = Cookies.get("token");
-      if (token) {
-        await fetch(`${API_URL}/users/me/history`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-      }
-    }
     showToast("Đã xóa toàn bộ lịch sử xem", "success");
   };
 
@@ -231,7 +158,7 @@ export default function UserHistoryPage() {
 
         {historyItems.length > 0 && (
           <button
-            onClick={() => setShowClearConfirm(true)}
+            onClick={handleClearAllHistory}
             className="h-9 px-4 rounded-full border border-red-500/20 text-red-400 hover:bg-red-500/10 font-bold text-xs flex items-center gap-1.5 transition-all select-none cursor-pointer"
           >
             <Trash2 size={13} />
@@ -239,6 +166,21 @@ export default function UserHistoryPage() {
           </button>
         )}
       </div>
+
+      {loadError && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs text-amber-200">
+          <span>{loadError}</span>
+          <button
+            type="button"
+            onClick={() => setRetryNonce((value) => value + 1)}
+            disabled={loadingDetails}
+            className="flex items-center gap-1.5 rounded-full border border-amber-400/25 px-3 py-1.5 font-bold transition hover:bg-amber-400/10 disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={loadingDetails ? "animate-spin" : ""} />
+            Thử lại
+          </button>
+        </div>
+      )}
 
       {historyItems.length === 0 ? (
         <div className="bg-[#12131b]/30 border border-zinc-900 rounded-3xl py-20 px-8 flex flex-col items-center justify-center gap-3 select-none text-center">
@@ -281,39 +223,7 @@ export default function UserHistoryPage() {
         </>
       )}
 
-      {/* POPUP CONFIRMATION MODAL: XÓA TOÀN BỘ LỊCH SỬ */}
-      {showClearConfirm && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
-          <div className="w-full max-w-xs bg-[#12131b] border border-zinc-800 rounded-3xl p-5 shadow-2xl relative text-center animate-in fade-in zoom-in-95 duration-200">
-            <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center mx-auto mb-3">
-              <Trash2 size={20} className="stroke-[2.5]" />
-            </div>
-
-            <h3 className="text-sm font-black text-zinc-200 uppercase tracking-wider mb-1.5">Xóa tất cả?</h3>
-            <p className="text-[11px] text-zinc-450 leading-relaxed mb-5">
-              Bạn có chắc chắn muốn xóa toàn bộ lịch sử xem không? Hành động này không thể hoàn tác.
-            </p>
-
-            <div className="flex gap-3 justify-center">
-              <button
-                type="button"
-                onClick={() => setShowClearConfirm(false)}
-                className="h-9 px-4 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all cursor-pointer min-w-[85px] border-none"
-              >
-                Hủy
-              </button>
-              <button
-                type="button"
-                onClick={handleClearAllHistory}
-                className="h-9 px-4 bg-red-500 hover:bg-red-655 active:scale-98 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-red-500/10 cursor-pointer min-w-[85px] border-none"
-              >
-                Xóa
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {confirmDialog}
     </div>
   );
 }
@@ -329,12 +239,12 @@ function HistoryItemCard({
   onRemove: (e: React.MouseEvent, slug: string) => void;
   onWatch: () => void;
 }) {
-  const initialUrl = getImageUrl(detail?.thumb_url);
+  const initialUrl = getImageUrl(detail?.poster_url || detail?.thumb_url);
   const [imgSrc, setImgSrc] = useState<string>(initialUrl);
   const [attemptCount, setAttemptCount] = useState(0);
 
   useEffect(() => {
-    const url = getImageUrl(detail?.thumb_url);
+    const url = getImageUrl(detail?.poster_url || detail?.thumb_url);
     if (url) {
       setImgSrc(url);
     } else {
@@ -348,7 +258,7 @@ function HistoryItemCard({
         })
         .catch(() => {});
     }
-  }, [item.movieSlug, detail?.thumb_url]);
+  }, [item.movieSlug, detail?.poster_url, detail?.thumb_url]);
 
   const handleImgError = () => {
     if (attemptCount < 2) {

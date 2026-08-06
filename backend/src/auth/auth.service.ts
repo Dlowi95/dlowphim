@@ -445,9 +445,19 @@ export class AuthService {
     if (!user.playlists) {
       user.playlists = [];
     }
+    const normalizedName = String(name || '').trim();
+    if (normalizedName.length < 1 || normalizedName.length > 40) {
+      throw new BadRequestException('Tên danh sách cần từ 1 đến 40 ký tự');
+    }
+    if (user.playlists.length >= 30) {
+      throw new BadRequestException('Bạn chỉ có thể tạo tối đa 30 danh sách');
+    }
+    if (user.playlists.some((playlist) => playlist.name.trim().toLocaleLowerCase('vi') === normalizedName.toLocaleLowerCase('vi'))) {
+      throw new BadRequestException('Tên danh sách này đã tồn tại');
+    }
     const newPlaylist = {
       id: new Types.ObjectId().toString(),
-      name: name.trim(),
+      name: normalizedName,
       movies: [],
     };
     user.playlists.push(newPlaylist);
@@ -482,7 +492,14 @@ export class AuthService {
     if (!playlist) {
       throw new NotFoundException('Không tìm thấy danh sách phát');
     }
-    playlist.name = name.trim();
+    const normalizedName = String(name || '').trim();
+    if (normalizedName.length < 1 || normalizedName.length > 40) {
+      throw new BadRequestException('Tên danh sách cần từ 1 đến 40 ký tự');
+    }
+    if (user.playlists.some((item) => item.id !== playlistId && item.name.trim().toLocaleLowerCase('vi') === normalizedName.toLocaleLowerCase('vi'))) {
+      throw new BadRequestException('Tên danh sách này đã tồn tại');
+    }
+    playlist.name = normalizedName;
     user.markModified('playlists');
     await user.save();
     return user.playlists;
@@ -500,11 +517,18 @@ export class AuthService {
     if (!playlist) {
       throw new NotFoundException('Không tìm thấy danh sách phát');
     }
-    const movieIndex = playlist.movies.indexOf(movieSlug);
+    const normalizedSlug = String(movieSlug || '').trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{0,199}$/.test(normalizedSlug)) {
+      throw new BadRequestException('Mã phim không hợp lệ');
+    }
+    const movieIndex = playlist.movies.indexOf(normalizedSlug);
     if (movieIndex > -1) {
       playlist.movies.splice(movieIndex, 1);
     } else {
-      playlist.movies.push(movieSlug);
+      if (playlist.movies.length >= 200) {
+        throw new BadRequestException('Mỗi danh sách chỉ có thể chứa tối đa 200 phim');
+      }
+      playlist.movies.push(normalizedSlug);
     }
     user.markModified('playlists');
     await user.save();

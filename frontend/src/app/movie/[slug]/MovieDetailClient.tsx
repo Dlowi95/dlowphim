@@ -98,15 +98,34 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
   const [showPlaylistDropdown, setShowPlaylistDropdown] = useState(false);
   const [isCreatingPlaylist, setIsCreatingPlaylist] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
+  const [playlistBusyId, setPlaylistBusyId] = useState<string | null>(null);
+
+  const handleTogglePlaylist = async (playlistId: string) => {
+    if (!movie?.slug || playlistBusyId) return;
+    setPlaylistBusyId(playlistId);
+    try {
+      await toggleMovieInPlaylist(playlistId, movie.slug);
+    } finally {
+      setPlaylistBusyId(null);
+    }
+  };
 
   const handleQuickCreatePlaylist = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPlaylistName.trim()) return;
-    const success = await createPlaylist(newPlaylistName.trim());
-    if (success) {
+    const normalizedName = newPlaylistName.trim();
+    if (!normalizedName || playlistBusyId) return;
+    if (user?.playlists?.some((playlist) => playlist.name.trim().toLocaleLowerCase("vi") === normalizedName.toLocaleLowerCase("vi"))) {
+      showToast("Tên danh sách này đã tồn tại", "error");
+      return;
+    }
+    setPlaylistBusyId("creating");
+    const playlistId = await createPlaylist(normalizedName, { silent: true });
+    if (playlistId) {
+      if (movie?.slug) await toggleMovieInPlaylist(playlistId, movie.slug);
       setNewPlaylistName("");
       setIsCreatingPlaylist(false);
     }
+    setPlaylistBusyId(null);
   };
 
   // States bình luận
@@ -702,18 +721,23 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
                             user.playlists.map((playlist) => {
                               const hasMovie = playlist.movies?.includes(movie?.slug || "");
                               return (
-                                <div
+                                <button
+                                  type="button"
                                   key={playlist.id}
-                                  onClick={() => toggleMovieInPlaylist(playlist.id, movie?.slug || "")}
-                                  className="flex items-center justify-between p-2 rounded-xl hover:bg-zinc-900/60 cursor-pointer transition-colors"
+                                  onClick={() => handleTogglePlaylist(playlist.id)}
+                                  disabled={Boolean(playlistBusyId)}
+                                  aria-pressed={hasMovie}
+                                  className="flex w-full items-center justify-between p-2 rounded-xl hover:bg-zinc-900/60 cursor-pointer transition-colors disabled:cursor-wait disabled:opacity-60"
                                 >
                                   <span className="text-xs font-bold text-zinc-300 truncate max-w-[150px]">{playlist.name}</span>
-                                  {hasMovie ? (
+                                  {playlistBusyId === playlist.id ? (
+                                    <Loader2 size={13} className="animate-spin text-pink-500" />
+                                  ) : hasMovie ? (
                                     <Check size={13} className="text-pink-500 stroke-[3]" />
                                   ) : (
                                     <Plus size={13} className="text-zinc-650" />
                                   )}
-                                </div>
+                                </button>
                               );
                             })
                           ) : (
@@ -731,14 +755,15 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
                                 value={newPlaylistName}
                                 onChange={(e) => setNewPlaylistName(e.target.value)}
                                 className="flex-1 min-w-0 h-7.5 bg-zinc-900 border border-zinc-800 focus:border-pink-500 rounded-lg px-2 text-xs text-zinc-200 outline-none font-semibold"
-                                maxLength={30}
+                                maxLength={40}
                                 autoFocus
                               />
                               <button
                                 type="submit"
-                                className="h-7.5 px-2.5 bg-pink-500 hover:bg-pink-600 text-white font-extrabold text-[10px] rounded-lg active:scale-95 transition-all shrink-0"
+                                disabled={playlistBusyId === "creating" || !newPlaylistName.trim()}
+                                className="h-7.5 min-w-12 px-2.5 bg-pink-500 hover:bg-pink-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-white font-extrabold text-[10px] rounded-lg active:scale-95 transition-all shrink-0"
                               >
-                                Thêm
+                                {playlistBusyId === "creating" ? <Loader2 size={12} className="mx-auto animate-spin" /> : "Thêm"}
                               </button>
                             </form>
                           ) : (

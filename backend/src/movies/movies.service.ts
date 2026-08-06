@@ -1075,6 +1075,100 @@ export class MoviesService implements OnModuleInit, OnModuleDestroy {
     return normalizeDetail(matched, matchedSlug);
   }
 
+  async getResolvedMovieSummaries(slugs: string[]): Promise<any[]> {
+    const uniqueSlugs = Array.from(
+      new Set(
+        (Array.isArray(slugs) ? slugs : [])
+          .map((slug) => String(slug || '').trim().toLowerCase())
+          .filter((slug) => /^[a-z0-9][a-z0-9-]{0,199}$/.test(slug)),
+      ),
+    ).slice(0, 50);
+
+    if (uniqueSlugs.length === 0) return [];
+
+    const resolveOne = async (slug: string) => {
+      const attempts = [
+        { path: `/phim/${slug}`, source: 'active' },
+        { path: `/v1/api/phim/${slug}`, source: 'active' },
+        { path: `/phim/${slug}`, source: 'fallback' },
+        { path: `/v1/api/phim/${slug}`, source: 'fallback' },
+      ];
+
+      for (const attempt of attempts) {
+        try {
+          const data = await this.fetchOphimProxy(attempt.path, attempt.source);
+          const movie = data?.movie || data?.data?.item;
+          if (movie?.name) {
+            return {
+              slug,
+              resolvedSlug: movie.slug || slug,
+              name: movie.name,
+              origin_name: movie.origin_name || '',
+              thumb_url: movie.thumb_url || movie.poster_url || '',
+              poster_url: movie.poster_url || movie.thumb_url || '',
+              quality: movie.quality || 'HD',
+              lang: movie.lang || 'Vietsub',
+              year: movie.year,
+            };
+          }
+        } catch {
+          // Continue with the other configured provider.
+        }
+      }
+
+      const custom = await this.customModel.findOne({ slug }).lean().exec();
+      if (!custom) return null;
+      return {
+        slug,
+        resolvedSlug: custom.slug,
+        name: custom.name,
+        origin_name: custom.origin_name || '',
+        thumb_url: custom.thumb_url || custom.poster_url || '',
+        poster_url: custom.poster_url || custom.thumb_url || '',
+        quality: custom.quality || 'HD',
+        lang: custom.lang || 'Vietsub',
+        year: custom.year,
+      };
+    };
+
+    const results: any[] = [];
+    const concurrency = Math.min(5, uniqueSlugs.length);
+    let cursor = 0;
+    await Promise.all(
+      Array.from({ length: concurrency }, async () => {
+        while (cursor < uniqueSlugs.length) {
+          const index = cursor++;
+          const summary = await resolveOne(uniqueSlugs[index]);
+          if (summary) results[index] = summary;
+        }
+      }),
+    );
+
+    const summaries = results.filter(Boolean);
+    const artworkSlugs = Array.from(
+      new Set(
+        summaries.flatMap((summary) => [summary.slug, summary.resolvedSlug].filter(Boolean)),
+      ),
+    );
+    const cachedArtwork = await this.movieLogoModel
+      .find({ slug: { $in: artworkSlugs } })
+      .select('slug posterUrl backdropUrl')
+      .lean()
+      .exec();
+    const artworkBySlug = new Map(cachedArtwork.map((item) => [item.slug, item]));
+
+    return summaries.map((summary) => {
+      const artwork =
+        artworkBySlug.get(summary.resolvedSlug) || artworkBySlug.get(summary.slug);
+      return {
+        ...summary,
+        poster_url: artwork?.posterUrl || summary.poster_url,
+        backdrop_url: artwork?.backdropUrl || '',
+        artwork_source: artwork?.posterUrl ? 'tmdb-cache' : 'movie-api',
+      };
+    });
+  }
+
   // Helper dịch tự động bằng Google Translate API miễn phí
   async translateText(text: string, to = 'vi'): Promise<string> {
     if (!text || text.trim().length === 0) return '';
