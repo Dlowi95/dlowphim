@@ -11,7 +11,6 @@ interface AdminHeaderProps {
   reportsCount: number;
   setActiveTab: (tab: any) => void;
   reports?: any[];
-  movieReports?: any[];
   notifications?: any[];
   unreadNotificationsCount?: number;
   onRefreshNotifications?: () => void;
@@ -35,7 +34,6 @@ export default function AdminHeader({
   reportsCount,
   setActiveTab,
   reports = [],
-  movieReports = [],
   notifications = [],
   unreadNotificationsCount = 0,
   onRefreshNotifications,

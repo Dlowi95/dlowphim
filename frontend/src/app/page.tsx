@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Button, Card, CardBody } from "@heroui/react";
-import { Play, Flame, Film, Loader2, Monitor, Heart, Info } from "lucide-react";
+import { Play, Flame, Film, Heart, Info, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Interests from "@/components/Interests";
 import MovieRow from "@/components/MovieRow";
@@ -15,9 +14,6 @@ import AnimeRow from "@/components/AnimeRow";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 import ProgressiveImage from "@/components/ProgressiveImage";
 import { useAuth } from "@/context/AuthContext";
-import Cookies from "js-cookie";
-import { getTmdbApiKey } from "@/utils/tmdb";
-import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import { useResolvedHeroBanners } from "@/hooks/useResolvedHeroBanners";
 
 const FALLBACK_CANDIDATES = [
@@ -112,24 +108,6 @@ const getMovieTitleStyle = (movie: any) => {
   };
 };
 
-const fetchTmdbLogoSmart = async (slug: string, movieTitle: string, apiUrl: string, tmdbType?: string, tmdbId?: string | number) => {
-  try {
-    const res = await fetch(
-      `${apiUrl}/movies/logo/${slug}?title=${encodeURIComponent(movieTitle)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType || "movie"}`
-    );
-    if (!res.ok) return { logoUrl: null, backdropUrl: null, posterUrl: null };
-    const data = await res.json();
-    return {
-      logoUrl: data.logoUrl || null,
-      backdropUrl: data.backdropUrl || null,
-      posterUrl: data.posterUrl || null,
-    };
-  } catch (error) {
-    console.error("Failed to fetch TMDB logo from proxy backend:", error);
-    return { logoUrl: null, backdropUrl: null, posterUrl: null };
-  }
-};
-
 export default function HomePage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
   const {
@@ -147,8 +125,6 @@ export default function HomePage() {
   const [isTransitioning, setIsTransitioning] = useState(false);
 
   const [movieList, setMovieList] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
   const router = useRouter();
   const { user, toggleFavorite } = useAuth();
 
@@ -183,7 +159,6 @@ export default function HomePage() {
 
   // Admin và trang chủ cùng dùng một bộ chọn Hero/TMDB.
   useEffect(() => {
-    setLoading(resolvedHeroLoading);
     if (resolvedHeroLoading) return;
 
     if (resolvedHeroSlots.length > 0) {
@@ -206,6 +181,7 @@ export default function HomePage() {
       setLogoCache((previous) => ({ ...previous, ...preloadedLogos }));
       setBackdropCache((previous) => ({ ...previous, ...preloadedBackdrops }));
       setHeroCandidates(resolvedHeroSlots.map((slot) => slot.movie));
+      setActiveHeroIndex(0);
     } else {
       if (resolvedHeroError) console.error("Không thể đồng bộ Hero Banner:", resolvedHeroError);
       setHeroCandidates(FALLBACK_CANDIDATES);
@@ -217,100 +193,6 @@ export default function HomePage() {
     setMovieList(gridMovies.length > 0 ? gridMovies : FALLBACK_CANDIDATES);
   }, [resolvedHeroError, resolvedHeroLoading, resolvedHeroSlots, resolvedLatestMovies]);
 
-  // 2. Pre-fetch thông tin chi tiết và logo của tất cả phim ứng cử viên Hero Slider
-  useEffect(() => {
-    if (heroCandidates.length === 0) return;
-
-    async function prefetchDetail(movie: any) {
-      // Endpoint batch đã trả sẵn detail cho cả banner hệ thống và tùy biến.
-      if (detailsCache[movie.slug]) return;
-
-      try {
-        const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${movie.slug}`));
-        const data = await res.json();
-        if (data.status === "success" || data.status === true) {
-          const detail = data.data?.item || data.movie || null;
-          if (detail) {
-            setDetailsCache(prev => ({
-              ...prev,
-              [movie.slug]: {
-                ...detail,
-                name: movie.isCustomBanner ? movie.name : detail.name,
-                origin_name: movie.isCustomBanner ? movie.origin_name : detail.origin_name,
-                poster_url: movie.isCustomBanner ? movie.poster_url : detail.poster_url,
-                thumb_url: movie.isCustomBanner ? movie.thumb_url : detail.thumb_url,
-                content: movie.isCustomBanner && movie.content ? movie.content : detail.content
-              }
-            }));
-
-            const tmdbId = detail?.tmdb?.id;
-            const tmdbType = detail?.tmdb?.type || "movie";
-
-            // Lấy TMDB API Key động
-            (async () => {
-              try {
-                const movieTitleQuery = detail.origin_name || detail.name || movie.origin_name || movie.name;
-                const tmdbData = await fetchTmdbLogoSmart(movie.slug, movieTitleQuery, API_URL, tmdbType, tmdbId);
-
-                if (tmdbData.logoUrl) {
-                  setLogoCache(prev => ({ ...prev, [movie.slug]: tmdbData.logoUrl }));
-                }
-                // Banner tùy biến phải hiển thị đúng ảnh admin đang quản lý.
-                setBackdropCache(prev => ({
-                  ...prev,
-                  [movie.slug]: movie.poster_url || movie.thumb_url
-                }));
-              } catch (e) {
-                console.error("Lỗi khi tải dữ liệu TMDB cho Hero:", e);
-              }
-            })();
-          }
-        } else {
-          if (movie.isCustomBanner) {
-            setDetailsCache(prev => ({
-              ...prev,
-              [movie.slug]: {
-                name: movie.name,
-                origin_name: movie.origin_name,
-                content: movie.content,
-                poster_url: movie.poster_url,
-                thumb_url: movie.thumb_url,
-                year: movie.year || 2026,
-                time: "Đang cập nhật",
-                episode_current: "Full HD",
-                category: []
-              }
-            }));
-            setLogoCache(prev => ({ ...prev, [movie.slug]: null }));
-          }
-        }
-      } catch (error) {
-        console.error("Lỗi khi prefetch chi tiết phim Hero:", movie.slug, error);
-        if (movie.isCustomBanner) {
-          setDetailsCache(prev => ({
-            ...prev,
-            [movie.slug]: {
-              name: movie.name,
-              origin_name: movie.origin_name,
-              content: movie.content,
-              poster_url: movie.poster_url,
-              thumb_url: movie.thumb_url,
-              year: movie.year || 2026,
-              time: "Đang cập nhật",
-              episode_current: "Full HD",
-              category: []
-            }
-          }));
-          setLogoCache(prev => ({ ...prev, [movie.slug]: null }));
-        }
-      }
-    }
-
-    heroCandidates.forEach((movie) => {
-      prefetchDetail(movie);
-    });
-  }, [heroCandidates]);
-
   // Hàm click chọn thumbnail có hiệu ứng chuyển cảnh mượt mà
   const handleThumbnailClick = (index: number) => {
     if (index === activeHeroIndex || isTransitioning) return;
@@ -320,6 +202,25 @@ export default function HomePage() {
       setIsTransitioning(false);
     }, 150);
   };
+
+  // Tự chuyển banner và chuẩn bị trước đúng một ảnh kế tiếp, không tải thừa cả slider.
+  useEffect(() => {
+    if (heroCandidates.length < 2 || isTransitioning) return;
+    const timer = window.setTimeout(() => {
+      handleThumbnailClick((activeHeroIndex + 1) % heroCandidates.length);
+    }, 8_000);
+    return () => window.clearTimeout(timer);
+  }, [activeHeroIndex, heroCandidates.length, isTransitioning]);
+
+  useEffect(() => {
+    if (heroCandidates.length < 2) return;
+    const nextMovie = heroCandidates[(activeHeroIndex + 1) % heroCandidates.length];
+    const nextSrc = backdropCache[nextMovie.slug] || getImageUrl(nextMovie.thumb_url || nextMovie.poster_url);
+    if (nextSrc) {
+      const image = new Image();
+      image.src = nextSrc;
+    }
+  }, [activeHeroIndex, backdropCache, heroCandidates]);
 
 
 
@@ -345,54 +246,20 @@ export default function HomePage() {
   const cleanedDesc = cleanContentHtml(heroDetail?.content || "");
   const truncatedDesc = cleanedDesc.length > 210 ? cleanedDesc.slice(0, 210) + "..." : cleanedDesc;
 
-  if (loading) {
-    return (
-      <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#07070e] text-white select-none">
-        <style>{`
-          @keyframes loadingBar {
-            0% { left: -30%; }
-            100% { left: 100%; }
-          }
-        `}</style>
-        <div className="flex flex-col items-center gap-6 animate-pulse duration-2000">
-          {/* Logo lớn sang trọng ở trung tâm */}
-          <div className="flex items-center gap-4 md:gap-6">
-            <div className="w-20 h-20 md:w-24 md:h-24 rounded-full overflow-hidden shadow-[0_0_60px_rgba(244,63,94,0.4)] shrink-0">
-              <img src="/images/logo.png" alt="DlowPhim Logo" className="w-full h-full object-cover" />
-            </div>
-            <span className="font-black text-5xl md:text-6xl tracking-widest select-none">
-              Dlow<span className="text-pink-500">Phim</span>
-            </span>
-          </div>
-
-          {/* Slogan việt hóa cao cấp giống cobephim */}
-          <p className="text-zinc-350 font-black text-base md:text-lg lg:text-xl tracking-wide max-w-2xl text-center px-8 leading-relaxed mt-3 select-text">
-            Xem Phim Miễn Phí Cực Nhanh, Chất Lượng Cao Và Cập Nhật Liên Tục
-          </p>
-
-          {/* Hiệu ứng loading bar mảnh */}
-          <div className="w-56 md:w-64 h-[4px] bg-zinc-800 rounded-full overflow-hidden mt-4 relative">
-            <div className="absolute top-0 h-full bg-pink-500 w-[30%] rounded-full animate-[loadingBar_1.2s_infinite_linear]" />
-          </div>
-
-          {/* Spinner tròn nhẹ */}
-          <div className="flex items-center gap-3.5 text-zinc-400 mt-5">
-            <Loader2 className="animate-spin text-pink-500" size={20} />
-            <span className="text-sm md:text-base font-extrabold tracking-widest uppercase">Đang kết nối máy chủ...</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-
-
-
-
   return (
     <div className="w-full flex-grow flex flex-col bg-black text-white pb-16">
 
       {/* 1. HERO BANNER - SLIDER CHUYÊN NGHIỆP Y HỆT HÌNH ẢNH */}
+      {!activeMovie && resolvedHeroLoading && (
+        <div className="relative w-full h-[75vh] md:h-[88vh] overflow-hidden bg-zinc-950 animate-pulse border-b border-zinc-900/60">
+          <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 via-zinc-950 to-black" />
+          <div className="absolute left-[8%] bottom-20 space-y-4">
+            <div className="h-7 w-56 rounded-lg bg-zinc-800/70" />
+            <div className="h-4 w-80 max-w-[70vw] rounded bg-zinc-900" />
+            <div className="h-12 w-12 rounded-full bg-pink-500/20" />
+          </div>
+        </div>
+      )}
       {activeMovie && (
         <div className="relative w-full h-[75vh] md:h-[88vh] flex items-end overflow-hidden border-b border-zinc-900/60">
 
@@ -499,6 +366,7 @@ export default function HomePage() {
               {/* Nút Play to lớn màu Hồng */}
               <button
                 onClick={() => router.push(`/watch/${activeMovie.slug}`)}
+                aria-label={`Xem ngay ${activeMovie.name}`}
                 className="w-14 h-14 rounded-full bg-pink-500 hover:bg-pink-600 flex items-center justify-center shadow-lg shadow-pink-500/25 hover:scale-110 active:scale-95 transition-all duration-300 group"
               >
                 <Play className="text-white fill-white ml-1 group-hover:scale-105 transition-transform" size={22} />
@@ -507,6 +375,7 @@ export default function HomePage() {
               {/* Nút Yêu thích trái tim */}
               <button
                 onClick={handleHeroFavoriteToggle}
+                aria-label={isFavorited ? "Bỏ khỏi yêu thích" : "Thêm vào yêu thích"}
                 className={`w-12 h-12 rounded-full border flex items-center justify-center backdrop-blur-md transition-all duration-300 active:scale-95 ${isFavorited
                   ? "bg-rose-500/20 border-rose-500 text-rose-500 shadow-md shadow-rose-500/25 scale-105"
                   : "bg-zinc-900/60 border-zinc-800/80 hover:border-zinc-700 text-zinc-300 hover:text-white"
@@ -518,6 +387,7 @@ export default function HomePage() {
               {/* Nút Xem thông tin chi tiết */}
               <button
                 onClick={() => router.push(`/movie/${activeMovie.slug}`)}
+                aria-label={`Xem thông tin ${activeMovie.name}`}
                 className="w-12 h-12 rounded-full border border-zinc-800/80 bg-zinc-900/60 hover:border-zinc-700 text-zinc-300 hover:text-white flex items-center justify-center backdrop-blur-md hover:scale-105 active:scale-95 transition-all duration-300"
               >
                 <Info size={20} />
@@ -531,7 +401,7 @@ export default function HomePage() {
               const isActive = index === activeHeroIndex;
               return (
                 <div
-                  key={movie._id}
+                  key={movie.slug}
                   onClick={() => handleThumbnailClick(index)}
                   className={`relative w-28 h-16 rounded-xl overflow-hidden cursor-pointer transition-all duration-300 ${isActive
                     ? "border-2 border-pink-500 ring-4 ring-pink-500/25 scale-105 opacity-100 shadow-md shadow-pink-500/10"

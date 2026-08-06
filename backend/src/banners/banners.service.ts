@@ -1,6 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Banner, BannerDocument } from './schemas/banner.schema';
 import { MoviesService } from '../movies/movies.service';
 
@@ -61,20 +66,26 @@ export class BannersService {
   private async resolveMovies(
     movies: any[],
     heroCandidatesOnly = false,
+    allowFallbackSource = false,
   ): Promise<ProcessedHeroMovie[]> {
     const detailedMovies = await this.mapWithConcurrency(
       movies,
       HERO_DETAIL_CONCURRENCY,
       async (movie): Promise<{ movie: any; detail: any }> => {
-        try {
-          const detailData = await this.moviesService.fetchOphimProxy(
-            `/v1/api/phim/${movie.slug}`,
-          );
-          const detail = detailData?.data?.item || detailData?.movie || null;
-          return { movie, detail };
-        } catch {
-          return { movie, detail: null };
+        const sources = allowFallbackSource ? ['active', 'fallback'] : ['active'];
+        for (const source of sources) {
+          try {
+            const detailData = await this.moviesService.fetchOphimProxy(
+              `/v1/api/phim/${movie.slug}`,
+              source,
+            );
+            const detail = detailData?.data?.item || detailData?.movie || null;
+            if (detail?.name) return { movie, detail };
+          } catch {
+            // Banner do admin chọn được phép thử nguồn dự phòng.
+          }
         }
+        return { movie, detail: null };
       },
     );
 
@@ -324,7 +335,11 @@ export class BannersService {
         name: banner.title,
         origin_name: banner.originName || '',
       }));
-    const resolvedCustomMovies = await this.resolveMovies(missingCustomMovies);
+    const resolvedCustomMovies = await this.resolveMovies(
+      missingCustomMovies,
+      false,
+      true,
+    );
     for (const processed of resolvedCustomMovies) {
       processedBySlug.set(processed.movie.slug, processed);
     }
@@ -357,14 +372,36 @@ export class BannersService {
 
   // Create a new banner
   async create(createBannerDto: any): Promise<Banner> {
-    const newBanner = new this.bannerModel(createBannerDto);
+    const payload = this.normalizeBannerInput(createBannerDto, false);
+    const occupiedSlot = await this.bannerModel.exists({ order: payload.order });
+    if (occupiedSlot) {
+      throw new ConflictException(
+        `Vị trí ${payload.order} đã có banner. Hãy chỉnh sửa banner hiện tại.`,
+      );
+    }
+    const newBanner = new this.bannerModel(payload);
     return newBanner.save();
   }
 
   // Update a banner
   async update(id: string, updateBannerDto: any): Promise<Banner> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Mã banner không hợp lệ');
+    }
+    const payload = this.normalizeBannerInput(updateBannerDto, true);
+    if (payload.order !== undefined) {
+      const occupiedSlot = await this.bannerModel.exists({
+        order: payload.order,
+        _id: { $ne: new Types.ObjectId(id) },
+      });
+      if (occupiedSlot) {
+        throw new ConflictException(
+          `Vị trí ${payload.order} đã có banner khác.`,
+        );
+      }
+    }
     const updatedBanner = await this.bannerModel
-      .findByIdAndUpdate(id, updateBannerDto, { new: true })
+      .findByIdAndUpdate(id, payload, { returnDocument: 'after' })
       .exec();
 
     if (!updatedBanner) {
@@ -375,10 +412,81 @@ export class BannersService {
 
   // Delete a banner
   async delete(id: string): Promise<any> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Mã banner không hợp lệ');
+    }
     const result = await this.bannerModel.findByIdAndDelete(id).exec();
     if (!result) {
       throw new NotFoundException('Không tìm thấy banner này');
     }
     return { message: 'Xóa banner thành công' };
+  }
+
+  private normalizeBannerInput(input: any, partial: boolean): Record<string, any> {
+    const payload: Record<string, any> = {};
+    const requireField = (key: string) => !partial || input?.[key] !== undefined;
+
+    if (requireField('title')) {
+      const title = String(input?.title || '').replace(/\s+/g, ' ').trim();
+      if (!title || title.length > 200) {
+        throw new BadRequestException('Tên banner cần từ 1 đến 200 ký tự');
+      }
+      payload.title = title;
+    }
+
+    if (input?.originName !== undefined) {
+      const originName = String(input.originName || '').replace(/\s+/g, ' ').trim();
+      payload.originName = originName ? originName.slice(0, 250) : undefined;
+    }
+
+    if (requireField('movieSlug')) {
+      const movieSlug = String(input?.movieSlug || '').trim().toLowerCase();
+      if (!/^[a-z0-9][a-z0-9-]{0,179}$/.test(movieSlug)) {
+        throw new BadRequestException('Slug phim không hợp lệ');
+      }
+      payload.movieSlug = movieSlug;
+    }
+
+    if (requireField('imageUrl')) {
+      const imageUrl = String(input?.imageUrl || '').trim();
+      const isRemoteImage = /^https?:\/\/[^\s]+$/i.test(imageUrl);
+      const isLocalImage = /^\/uploads\/[a-z0-9/_\-.]+$/i.test(imageUrl);
+      if ((!isRemoteImage && !isLocalImage) || imageUrl.length > 2_000) {
+        throw new BadRequestException('Đường dẫn ảnh banner không hợp lệ');
+      }
+      payload.imageUrl = imageUrl;
+    }
+
+    if (input?.description !== undefined) {
+      const description = String(input.description || '')
+        .replace(/<[^>]*>/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      payload.description = description ? description.slice(0, 1_200) : undefined;
+    }
+
+    if (requireField('order')) {
+      const order = Number(input?.order);
+      if (!Number.isInteger(order) || order < 1 || order > HERO_SLOT_COUNT) {
+        throw new BadRequestException(
+          `Vị trí banner phải nằm trong khoảng 1-${HERO_SLOT_COUNT}`,
+        );
+      }
+      payload.order = order;
+    }
+
+    if (input?.isActive !== undefined) {
+      if (typeof input.isActive !== 'boolean') {
+        throw new BadRequestException('Trạng thái banner không hợp lệ');
+      }
+      payload.isActive = input.isActive;
+    } else if (!partial) {
+      payload.isActive = true;
+    }
+
+    if (partial && Object.keys(payload).length === 0) {
+      throw new BadRequestException('Không có dữ liệu banner cần cập nhật');
+    }
+    return payload;
   }
 }

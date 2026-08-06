@@ -1,4 +1,5 @@
 import { BannersService } from './banners.service';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 
 describe('BannersService resolved Hero batch', () => {
   it('merges admin slots and applies the same TMDB filters server-side', async () => {
@@ -90,5 +91,64 @@ describe('BannersService resolved Hero batch', () => {
     expect(result.slots.some((slot: any) => slot.movie.slug === 'anime')).toBe(
       false,
     );
+  });
+
+  it('rejects invalid slots and duplicate hero positions', async () => {
+    const BannerModel: any = jest.fn((payload: any) => ({
+      save: jest.fn().mockResolvedValue(payload),
+    }));
+    BannerModel.exists = jest.fn().mockResolvedValue({ _id: 'occupied' });
+    const service = new BannersService(BannerModel, {} as any);
+
+    await expect(
+      service.create({
+        title: 'Banner lỗi',
+        movieSlug: 'banner-loi',
+        imageUrl: 'https://image.tmdb.org/banner.jpg',
+        order: 0,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    await expect(
+      service.create({
+        title: 'Banner hợp lệ',
+        movieSlug: 'banner-hop-le',
+        imageUrl: 'https://image.tmdb.org/banner.jpg',
+        order: 1,
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('sanitizes banner content before saving', async () => {
+    const save = jest.fn().mockImplementation(function (this: any) {
+      return Promise.resolve(this);
+    });
+    const BannerModel: any = jest.fn(function (this: any, payload: any) {
+      Object.assign(this, payload);
+      this.save = save;
+    });
+    BannerModel.exists = jest.fn().mockResolvedValue(null);
+    const service = new BannersService(BannerModel, {} as any);
+
+    const result: any = await service.create({
+      title: '  Phim   nổi bật  ',
+      originName: '  Featured Movie ',
+      movieSlug: 'PHIM-NOI-BAT',
+      imageUrl: 'https://image.tmdb.org/t/p/w1280/banner.jpg',
+      description: '<b>Mô tả</b>   an toàn',
+      order: 2,
+      isActive: true,
+      ignoredField: 'không được lưu',
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        title: 'Phim nổi bật',
+        movieSlug: 'phim-noi-bat',
+        description: 'Mô tả an toàn',
+        order: 2,
+      }),
+    );
+    expect(result.ignoredField).toBeUndefined();
   });
 });

@@ -132,25 +132,22 @@ export default function AdminDashboardPage() {
   };
 
   // Movie reports state
-  const [movieReports, setMovieReports] = useState<any[]>([]);
-  const [loadingMovieReports, setLoadingMovieReports] = useState(false);
+  const [pendingMovieReportsCount, setPendingMovieReportsCount] = useState(0);
 
   const fetchMovieReports = async () => {
-    setLoadingMovieReports(true);
     try {
       const token = Cookies.get("token");
-      const res = await fetch(`${API_URL}/movie-reports/admin`, {
+      const res = await fetch(`${API_URL}/movie-reports/admin?page=1&limit=1&status=pending`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
       if (res.ok) {
-        setMovieReports(await res.json());
+        const data = await res.json();
+        setPendingMovieReportsCount(data.counts?.pending ?? data.total ?? 0);
       }
     } catch (err) {
       console.error("Lỗi fetch movie reports:", err);
-    } finally {
-      setLoadingMovieReports(false);
     }
   };
 
@@ -252,7 +249,7 @@ export default function AdminDashboardPage() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         reportsCount={reports.length}
-        movieReportsCount={movieReports.filter((r) => r.status === "pending").length}
+        movieReportsCount={pendingMovieReportsCount}
         unreadNotificationsCount={unreadNotificationsCount}
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
@@ -274,7 +271,6 @@ export default function AdminDashboardPage() {
           reportsCount={reports.length}
           setActiveTab={setActiveTab}
           reports={reports}
-          movieReports={movieReports}
           notifications={notifications}
           unreadNotificationsCount={unreadNotificationsCount}
           onRefreshNotifications={fetchNotifications}
@@ -321,7 +317,7 @@ export default function AdminDashboardPage() {
           )}
 
           {activeTab === "reports" && (
-            <MovieReportsView />
+            <MovieReportsView onPendingCountChange={setPendingMovieReportsCount} />
           )}
 
           {activeTab === "playback" && (

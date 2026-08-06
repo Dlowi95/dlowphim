@@ -4,12 +4,8 @@ import React, { useState, useEffect } from "react";
 import Cookies from "js-cookie";
 import {
   Image as ImageIcon,
-  Plus,
-  Search,
   Trash2,
   Edit,
-  EyeOff,
-  Eye,
   Loader2,
   RefreshCw,
   X,
@@ -43,7 +39,9 @@ export default function BannersManagementView() {
   const {
     slots: resolvedHeroSlots,
     rawBanners,
+    sourceId,
     loading,
+    error,
     refresh: refreshResolvedBanners,
   } = useResolvedHeroBanners({ apiUrl: API_URL, admin: true });
 
@@ -55,7 +53,6 @@ export default function BannersManagementView() {
   }, []);
 
   const [banners, setBanners] = useState<Banner[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [editingBanner, setEditingBanner] = useState<Banner | null>(null);
 
@@ -112,30 +109,6 @@ export default function BannersManagementView() {
       })
       .catch(() => undefined);
   }, [API_URL]);
-
-  // Filter banners based on search
-  const filteredBanners = banners.filter((b) => {
-    const q = searchTerm.toLowerCase();
-    return (
-      b.title.toLowerCase().includes(q) ||
-      b.movieSlug.toLowerCase().includes(q) ||
-      (b.originName && b.originName.toLowerCase().includes(q))
-    );
-  });
-
-  // Open modal for adding
-  const openAddModal = () => {
-    setEditingBanner(null);
-    setCrawlerSlug("");
-    setFormTitle("");
-    setFormOriginName("");
-    setFormSlug("");
-    setFormImageUrl("");
-    setFormDescription("");
-    setFormOrder(0);
-    setFormIsActive(true);
-    setShowModal(true);
-  };
 
   // Open modal for editing
   const openEditModal = (banner: Banner) => {
@@ -345,6 +318,16 @@ export default function BannersManagementView() {
 
       {/* Control bar */}
       <div className="flex items-center gap-2 justify-end">
+        <div className="mr-auto flex flex-wrap items-center gap-2 text-[9px] font-black uppercase tracking-wider">
+          <span className="rounded-lg border border-zinc-800 bg-zinc-950 px-2.5 py-1.5 text-zinc-400">
+            {resolvedHeroSlots.length}/5 vị trí đang hiển thị
+          </span>
+          {sourceId && (
+            <span className="rounded-lg border border-blue-500/20 bg-blue-500/5 px-2.5 py-1.5 text-blue-400">
+              Nguồn tự động: {sourceId === "phimapi" ? "PhimAPI" : sourceId === "ophim" ? "OPhim" : sourceId}
+            </span>
+          )}
+        </div>
         <button
           onClick={refreshResolvedBanners}
           disabled={loading}
@@ -357,6 +340,11 @@ export default function BannersManagementView() {
 
       {/* Banners Grid Container */}
       <div className="bg-[#0d0e13] border border-zinc-900 rounded-2xl overflow-hidden shadow-sm">
+        {error && !loading && (
+          <div className="m-5 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-[10px] font-bold text-red-300">
+            Không thể đồng bộ bản xem trước Hero: {error}
+          </div>
+        )}
         {loading ? (
           <div className="p-12 space-y-4">
             {Array.from({ length: 2 }).map((_, i) => (
@@ -369,7 +357,7 @@ export default function BannersManagementView() {
               </div>
             ))}
           </div>
-        ) : filteredBanners.length === 0 ? (
+        ) : banners.length === 0 ? (
           <div className="p-16 text-center flex flex-col items-center justify-center gap-3.5 select-none">
             <div className="w-14 h-14 rounded-full bg-pink-500/5 border border-pink-500/10 flex items-center justify-center text-pink-400">
               <ImageIcon size={28} />
@@ -383,13 +371,13 @@ export default function BannersManagementView() {
           </div>
         ) : (
           <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {filteredBanners.map((banner) => (
+            {banners.map((banner) => (
               <div
                 key={`${banner.movieSlug}-${banner.order}`}
                 className="bg-[#0c0d12] border border-zinc-900/80 rounded-2xl p-4 flex flex-col sm:flex-row gap-4 transition-all hover:border-zinc-800"
               >
                 {/* Image display */}
-                <div className="w-full sm:w-40 aspect-[16/9] rounded-xl bg-zinc-950 border border-zinc-900 overflow-hidden shrink-0 relative select-none">
+                <div className="w-full sm:w-40 aspect-[21/9] rounded-xl bg-zinc-950 border border-zinc-900 overflow-hidden shrink-0 relative select-none">
                   <img
                     src={banner.imageUrl}
                     alt={banner.title}
@@ -530,7 +518,7 @@ export default function BannersManagementView() {
                     <div>
                       <h4 className="text-xs font-black uppercase text-pink-400 tracking-wider">Cào Tin Banner Nhanh</h4>
                       <p className="text-[10px] text-zinc-550 font-semibold mt-0.5 leading-normal">
-                        Nhập slug phim (của OPhim hoặc phim tự đăng), hệ thống sẽ tự động điền tiêu đề, banner ngang và tóm tắt.
+                        Chọn nguồn rồi nhập slug phim; hệ thống sẽ lấy chi tiết qua proxy và ưu tiên tên, logo, backdrop HD từ TMDB.
                       </p>
                     </div>
                   </div>

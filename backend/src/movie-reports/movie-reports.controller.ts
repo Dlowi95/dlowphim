@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -13,6 +14,7 @@ import { JwtService } from '@nestjs/jwt';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { MovieReportsService } from './movie-reports.service';
+import { createHash } from 'node:crypto';
 
 @Controller('movie-reports')
 export class MovieReportsController {
@@ -28,8 +30,13 @@ export class MovieReportsController {
       movieSlug: string;
       movieName: string;
       episodeName: string;
+      episodeSlug?: string;
       errorType: string;
       description?: string;
+      playbackType?: string;
+      serverName?: string;
+      streamOrigin?: string;
+      currentTime?: number;
     },
     @Req() req: any,
   ) {
@@ -44,13 +51,29 @@ export class MovieReportsController {
         // Hết hạn hoặc sai token thì coi như khách vãng lai gửi
       }
     }
-    return this.movieReportsService.createReport(userId, dto);
+    const identity = userId
+      ? `user:${userId}`
+      : `guest:${req.ip || req.socket?.remoteAddress || 'unknown'}:${req.headers['user-agent'] || ''}`;
+    const reporterKey = createHash('sha256').update(identity).digest('hex');
+    return this.movieReportsService.createReport(userId, reporterKey, dto);
   }
 
   @Get('admin')
   @UseGuards(AuthGuard, RolesGuard)
-  async getReportsForAdmin() {
-    return this.movieReportsService.getReportsForAdmin();
+  async getReportsForAdmin(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('status') status?: string,
+    @Query('errorType') errorType?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.movieReportsService.getReportsForAdmin({
+      page: Number(page),
+      limit: Number(limit),
+      status,
+      errorType,
+      search,
+    });
   }
 
   @Put('admin/:id/status')
@@ -58,8 +81,15 @@ export class MovieReportsController {
   async updateStatus(
     @Param('id') id: string,
     @Body('status') status: string,
+    @Body('resolutionNote') resolutionNote: string | undefined,
+    @Req() req: any,
   ) {
-    return this.movieReportsService.updateStatus(id, status);
+    return this.movieReportsService.updateStatus(
+      id,
+      status,
+      req.user.sub,
+      resolutionNote,
+    );
   }
 
   @Delete('admin/:id')

@@ -158,16 +158,7 @@ function WatchContent({ slug }: { slug: string }) {
     e.preventDefault();
     if (!movie) return;
 
-    let episodeName = "Tập 1";
-    try {
-      const server = movie.episodes?.[activeServerIndex] || kkServers?.[activeServerIndex];
-      const ep = server?.server_data?.[activeEpisodeIndex];
-      if (ep) {
-        episodeName = ep.name;
-      }
-    } catch (err) {
-      console.error("Lỗi lấy tập phim:", err);
-    }
+    const episodeName = activeEpisode?.name || "Tập 1";
 
     setSubmittingReport(true);
     try {
@@ -179,6 +170,16 @@ function WatchContent({ slug }: { slug: string }) {
         headers["Authorization"] = `Bearer ${token}`;
       }
 
+      const streamUrl = playerType === "hls"
+        ? activeEpisode?.link_m3u8
+        : activeEpisode?.link_embed;
+      let streamOrigin = "";
+      try {
+        streamOrigin = streamUrl ? new URL(streamUrl).origin : "";
+      } catch {
+        streamOrigin = "";
+      }
+
       const res = await fetch(`${API_URL}/movie-reports`, {
         method: "POST",
         headers,
@@ -186,17 +187,29 @@ function WatchContent({ slug }: { slug: string }) {
           movieSlug: movie.slug,
           movieName: movie.name,
           episodeName,
+          episodeSlug: activeEpisode?.slug || undefined,
           errorType: reportErrorType,
           description: reportDescription.trim() || undefined,
+          playbackType: playerType,
+          serverName: currentServer?.server_name || undefined,
+          streamOrigin: streamOrigin || undefined,
+          currentTime: playerType === "hls"
+            ? Math.floor(videoRef.current?.currentTime || 0)
+            : undefined,
         }),
       });
 
       if (res.ok) {
-        showToast("Gửi báo cáo lỗi thành công! Admin sẽ sớm khắc phục.", "success");
+        const data = await res.json().catch(() => ({}));
+        showToast(
+          data.message || "Gửi báo cáo lỗi thành công! Admin sẽ sớm khắc phục.",
+          "success",
+        );
         setShowReportModal(false);
         setReportDescription("");
       } else {
-        showToast("Gửi báo cáo thất bại, vui lòng thử lại.", "error");
+        const data = await res.json().catch(() => ({}));
+        showToast(data.message || "Gửi báo cáo thất bại, vui lòng thử lại.", "error");
       }
     } catch (err) {
       console.error(err);
@@ -2273,11 +2286,11 @@ function WatchContent({ slug }: { slug: string }) {
                     rows={3}
                     placeholder="Mô tả cụ thể lỗi gặp phải giúp Admin dễ sửa hơn nhé (Ví dụ: Tập 05 bị lệch sub từ phút 10...)"
                     value={reportDescription}
-                    onChange={(e) => setReportDescription(e.target.value.slice(0, 250))}
+                    onChange={(e) => setReportDescription(e.target.value.slice(0, 500))}
                     className="w-full bg-zinc-950 border border-zinc-900 rounded-xl p-3 text-xs text-zinc-200 focus:outline-none focus:border-pink-500/50 placeholder-zinc-650 resize-none"
                   />
                   <div className="flex justify-end">
-                    <span className="text-[8px] font-bold text-zinc-600">{reportDescription.length}/250 ký tự</span>
+                    <span className="text-[8px] font-bold text-zinc-600">{reportDescription.length}/500 ký tự</span>
                   </div>
                 </div>
 
