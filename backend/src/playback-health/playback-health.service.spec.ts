@@ -50,8 +50,39 @@ describe('PlaybackHealthService', () => {
       kind: 'success' as const,
     }));
 
-    expect(service.recordBatch(events, 'viewer-1')).toEqual({ accepted: 20 });
+    expect(service.recordBatch(events, 'viewer-1')).toEqual({ accepted: 19, rejected: 11 });
     expect(await service.getReputation()).toHaveLength(19);
+  });
+
+  it('uses starts as attempts so sampled successes do not inflate the failure rate', async () => {
+    service.recordBatch([
+      ...Array.from({ length: 4 }, () => ({
+        origin: 'https://sampled.example.com/video.m3u8',
+        kind: 'start' as const,
+        durationMs: 900,
+      })),
+      {
+        origin: 'https://sampled.example.com/video.m3u8',
+        kind: 'failure' as const,
+        failureType: 'mediaError',
+      },
+    ], 'viewer-1');
+
+    const dashboard = await service.getAdminDashboard();
+    expect(dashboard.origins[0].failureRate).toBe(25);
+  });
+
+  it('bounds telemetry writes from one reporter', async () => {
+    const events = Array.from({ length: 20 }, () => ({
+      origin: 'https://rate-limit.example.com/video.m3u8',
+      kind: 'buffer' as const,
+      durationMs: 500,
+    }));
+
+    expect(service.recordBatch(events, 'viewer-1').accepted).toBe(20);
+    expect(service.recordBatch(events, 'viewer-1').accepted).toBe(20);
+    expect(service.recordBatch(events, 'viewer-1').accepted).toBe(20);
+    expect(service.recordBatch(events, 'viewer-1')).toEqual({ accepted: 0, rejected: 20 });
   });
 
   it('builds a bounded admin summary with degraded sources first', async () => {

@@ -16,7 +16,6 @@ export interface PlaybackOriginReputation {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 const QUARANTINE_KEY = "dlowphim_hls_quarantine";
-const SESSION_ID_KEY = "dlowphim_playback_session";
 const QUARANTINE_MS = 10 * 60 * 1000;
 const FLUSH_DELAY_MS = 15_000;
 const MAX_QUEUE_SIZE = 20;
@@ -32,19 +31,6 @@ export function getPlaybackOrigin(url = "") {
     return new URL(url).origin;
   } catch {
     return "";
-  }
-}
-
-function getSessionId() {
-  if (typeof window === "undefined") return "server";
-  try {
-    const stored = sessionStorage.getItem(SESSION_ID_KEY);
-    if (stored) return stored;
-    const next = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    sessionStorage.setItem(SESSION_ID_KEY, next);
-    return next;
-  } catch {
-    return "anonymous";
   }
 }
 
@@ -114,7 +100,7 @@ export async function loadPlaybackReputation() {
 async function flushPlaybackHealth(useBeacon = false) {
   if (!queue.length || typeof window === "undefined") return;
   const events = queue.splice(0, MAX_QUEUE_SIZE);
-  const payload = JSON.stringify({ events, sessionId: getSessionId() });
+  const payload = JSON.stringify({ events });
   if (flushTimer) {
     clearTimeout(flushTimer);
     flushTimer = null;

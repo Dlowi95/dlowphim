@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, Post, Req, UseGuards } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { PlaybackHealthEvent, PlaybackHealthService } from './playback-health.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -12,8 +13,10 @@ export class PlaybackHealthController {
     @Body() body: { events?: PlaybackHealthEvent[]; sessionId?: string },
     @Req() request: any,
   ) {
-    const sessionId = String(body?.sessionId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
-    const reporterId = `${request.ip || 'unknown'}:${sessionId || 'anonymous'}`;
+    // Stable per browser/network: opening tabs or rotating a client session cannot
+    // impersonate several viewers and globally block a healthy CDN.
+    const identity = `${request.ip || request.socket?.remoteAddress || 'unknown'}:${request.headers['user-agent'] || ''}`;
+    const reporterId = createHash('sha256').update(identity).digest('hex');
     return this.playbackHealthService.recordBatch(
       Array.isArray(body?.events) ? body.events : [],
       reporterId,
@@ -21,6 +24,7 @@ export class PlaybackHealthController {
   }
 
   @Get('reputation')
+  @Header('Cache-Control', 'public, max-age=20, stale-while-revalidate=40')
   getReputation() {
     return this.playbackHealthService.getReputation();
   }

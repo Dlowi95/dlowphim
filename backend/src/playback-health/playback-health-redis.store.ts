@@ -13,6 +13,7 @@ export interface SharedOriginHealth {
   uniqueFailureReporters: number;
   lastSeenAt: number;
   blockedUntil: number;
+  lastFailureType: string;
 }
 
 const ORIGIN_TTL_SECONDS = 30 * 60;
@@ -34,6 +35,9 @@ redis.call('HINCRBY', healthKey, 'failures', tonumber(ARGV[6]))
 redis.call('HINCRBY', healthKey, 'buffers', tonumber(ARGV[7]))
 redis.call('HINCRBY', healthKey, 'totalStartupMs', tonumber(ARGV[8]))
 redis.call('HINCRBY', healthKey, 'totalBufferMs', tonumber(ARGV[9]))
+if ARGV[12] ~= '' then
+  redis.call('HSET', healthKey, 'lastFailureType', ARGV[12])
+end
 redis.call('EXPIRE', healthKey, ${ORIGIN_TTL_SECONDS})
 redis.call('ZADD', indexKey, now, member)
 redis.call('ZREMRANGEBYSCORE', indexKey, 0, now - ${ORIGIN_TTL_SECONDS * 1000})
@@ -44,9 +48,11 @@ end
 redis.call('ZREMRANGEBYSCORE', reportersKey, 0, now - ${REPORTER_TTL_MS})
 redis.call('EXPIRE', reportersKey, ${ORIGIN_TTL_SECONDS})
 local reporters = redis.call('ZCARD', reportersKey)
+local starts = tonumber(redis.call('HGET', healthKey, 'starts') or '0')
 local successes = tonumber(redis.call('HGET', healthKey, 'successes') or '0')
 local failures = tonumber(redis.call('HGET', healthKey, 'failures') or '0')
-if reporters >= 3 and failures >= 3 and failures / math.max(1, successes + failures) >= 0.6 then
+local attempts = math.max(1, starts, successes + failures)
+if reporters >= 3 and failures >= 3 and failures / attempts >= 0.6 then
   redis.call('HSET', healthKey, 'blockedUntil', now + ${GLOBAL_BLOCK_MS})
 end
 return 1
@@ -84,6 +90,9 @@ export class PlaybackHealthRedisStore {
       const networkFailure = originEvents.some(
         (event) => event.kind === 'failure' && /network|cors|manifest|level|fragment/i.test(event.failureType || ''),
       );
+      const lastFailureType = [...originEvents]
+        .reverse()
+        .find((event) => event.kind === 'failure')?.failureType || '';
       return [
         'EVAL', UPDATE_ORIGIN_SCRIPT, '3',
         `${this.namespace}:origin:${member}`,
@@ -92,7 +101,7 @@ export class PlaybackHealthRedisStore {
         String(now), origin, member,
         String(count('start')), String(count('success')), String(count('failure')), String(count('buffer')),
         String(sumDuration('start')), String(sumDuration('buffer')),
-        networkFailure ? '1' : '0', reporterHash,
+        networkFailure ? '1' : '0', reporterHash, lastFailureType,
       ];
     });
 
@@ -137,6 +146,7 @@ export class PlaybackHealthRedisStore {
         uniqueFailureReporters: reporters,
         lastSeenAt: Number(fields.lastSeenAt) || 0,
         blockedUntil: Number(fields.blockedUntil) || 0,
+        lastFailureType: fields.lastFailureType || '',
       });
     }
     return origins;

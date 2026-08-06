@@ -20,6 +20,7 @@ interface OriginHealth {
   reporters: Map<string, number>;
   lastSeenAt: number;
   blockedUntil: number;
+  lastFailureType: string;
 }
 
 const MAX_ORIGINS = 150;
@@ -27,10 +28,19 @@ const ORIGIN_TTL_MS = 30 * 60 * 1000;
 const REPORTER_TTL_MS = 2 * 60 * 1000;
 const GLOBAL_BLOCK_MS = 5 * 60 * 1000;
 const MAX_REPORTERS_PER_ORIGIN = 50;
+const MAX_EVENTS_PER_REPORTER_MINUTE = 60;
+const MAX_RATE_LIMIT_REPORTERS = 5000;
+
+interface ReporterRate {
+  startedAt: number;
+  count: number;
+  lastSeenAt: number;
+}
 
 @Injectable()
 export class PlaybackHealthService {
   private readonly origins = new Map<string, OriginHealth>();
+  private readonly reporterRates = new Map<string, ReporterRate>();
 
   constructor(
     @Optional() private readonly redisStore?: PlaybackHealthRedisStore,
@@ -40,11 +50,15 @@ export class PlaybackHealthService {
     const now = Date.now();
     this.cleanup(now);
     const sharedEvents: PlaybackHealthEvent[] = [];
+    const allowed = this.consumeReporterQuota(reporterId, Math.min(events.length, 20), now);
+    let accepted = 0;
 
-    for (const event of events.slice(0, 20)) {
+    for (const event of events.slice(0, allowed)) {
       const origin = this.sanitizeOrigin(event.origin);
       if (!origin || !this.isValidKind(event.kind)) continue;
-      sharedEvents.push({ ...event, origin });
+      const failureType = this.cleanFailureType(event.failureType);
+      sharedEvents.push({ ...event, origin, failureType });
+      accepted += 1;
 
       const health = this.origins.get(origin) || this.createHealth(now);
       health.lastSeenAt = now;
@@ -60,7 +74,8 @@ export class PlaybackHealthService {
         health.totalBufferMs += duration;
       } else {
         health.failures += 1;
-        if (this.isNetworkFailure(event.failureType)) {
+        health.lastFailureType = failureType;
+        if (this.isNetworkFailure(failureType)) {
           health.reporters.set(reporterId, now);
           if (health.reporters.size > MAX_REPORTERS_PER_ORIGIN) {
             const oldestReporter = [...health.reporters.entries()]
@@ -78,7 +93,7 @@ export class PlaybackHealthService {
     if (this.redisStore?.isEnabled() && sharedEvents.length > 0) {
       void this.redisStore.recordBatch(sharedEvents, reporterId);
     }
-    return { accepted: Math.min(events.length, 20) };
+    return { accepted, rejected: Math.max(0, events.length - accepted) };
   }
 
   async getReputation() {
@@ -86,7 +101,7 @@ export class PlaybackHealthService {
     this.cleanup(now);
     const entries = await this.getHealthEntries(now);
     return entries.map(([origin, health]) => {
-      const attempts = Math.max(1, health.successes + health.failures);
+      const attempts = this.getAttempts(health);
       const failureRate = health.failures / attempts;
       const averageStartupMs = health.starts
         ? Math.round(health.totalStartupMs / health.starts)
@@ -112,7 +127,7 @@ export class PlaybackHealthService {
     const entries = await this.getHealthEntries(now);
     const origins = entries
       .map(([origin, health]) => {
-        const attempts = Math.max(1, health.successes + health.failures);
+        const attempts = this.getAttempts(health);
         const failureRate = health.failures / attempts;
         const averageStartupMs = health.starts
           ? Math.round(health.totalStartupMs / health.starts)
@@ -121,7 +136,13 @@ export class PlaybackHealthService {
           ? Math.round(health.totalBufferMs / health.buffers)
           : 0;
         const blocked = health.blockedUntil > now;
-        const degraded = !blocked && (failureRate >= 0.25 || averageBufferMs >= 2500);
+        const bufferRate = health.buffers / Math.max(1, health.starts);
+        const degraded = !blocked && (
+          failureRate >= 0.25 ||
+          averageStartupMs >= 4000 ||
+          averageBufferMs >= 2500 ||
+          (health.starts >= 3 && bufferRate >= 0.5)
+        );
         return {
           origin,
           status: blocked ? 'blocked' : degraded ? 'degraded' : 'healthy',
@@ -132,7 +153,9 @@ export class PlaybackHealthService {
           failureRate: Math.round(failureRate * 1000) / 10,
           averageStartupMs,
           averageBufferMs,
+          bufferRate: Math.round(bufferRate * 1000) / 10,
           uniqueFailureReporters: health.uniqueFailureReporters,
+          lastFailureType: health.lastFailureType || '',
           blockedUntil: blocked ? health.blockedUntil : 0,
           lastSeenAt: health.lastSeenAt,
         };
@@ -144,6 +167,8 @@ export class PlaybackHealthService {
 
     return {
       generatedAt: now,
+      storageScope: this.redisStore?.isEnabled() ? 'shared' : 'instance',
+      windowMinutes: ORIGIN_TTL_MS / 60_000,
       summary: {
         activeOrigins: origins.length,
         healthyOrigins: origins.filter((item) => item.status === 'healthy').length,
@@ -182,7 +207,7 @@ export class PlaybackHealthService {
     for (const [reporter, reportedAt] of health.reporters) {
       if (now - reportedAt > REPORTER_TTL_MS) health.reporters.delete(reporter);
     }
-    const attempts = health.successes + health.failures;
+    const attempts = this.getAttempts(health);
     const failureRate = health.failures / Math.max(1, attempts);
     if (health.reporters.size >= 3 && health.failures >= 3 && failureRate >= 0.6) {
       health.blockedUntil = Math.max(health.blockedUntil, now + GLOBAL_BLOCK_MS);
@@ -231,6 +256,38 @@ export class PlaybackHealthService {
       reporters: new Map(),
       lastSeenAt: now,
       blockedUntil: 0,
+      lastFailureType: '',
     };
+  }
+
+  private getAttempts(health: Pick<OriginHealth, 'starts' | 'successes' | 'failures'>) {
+    // Start is sent for every attempt while success may be sampled by older clients.
+    return Math.max(1, health.starts, health.successes + health.failures);
+  }
+
+  private cleanFailureType(value = '') {
+    return String(value)
+      .replace(/[^a-zA-Z0-9:_. -]/g, '')
+      .trim()
+      .slice(0, 100);
+  }
+
+  private consumeReporterQuota(reporterId: string, requested: number, now: number) {
+    const current = this.reporterRates.get(reporterId);
+    const rate = !current || now - current.startedAt >= 60_000
+      ? { startedAt: now, count: 0, lastSeenAt: now }
+      : current;
+    const allowed = Math.max(0, Math.min(requested, MAX_EVENTS_PER_REPORTER_MINUTE - rate.count));
+    rate.count += allowed;
+    rate.lastSeenAt = now;
+    this.reporterRates.set(reporterId, rate);
+
+    if (this.reporterRates.size > MAX_RATE_LIMIT_REPORTERS) {
+      const oldest = [...this.reporterRates.entries()]
+        .sort((left, right) => left[1].lastSeenAt - right[1].lastSeenAt)
+        .slice(0, this.reporterRates.size - MAX_RATE_LIMIT_REPORTERS);
+      oldest.forEach(([id]) => this.reporterRates.delete(id));
+    }
+    return allowed;
   }
 }

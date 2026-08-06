@@ -12,4 +12,9 @@ export class AdminDashboardController {
   getDashboard() {
     return this.dashboardService.getDashboard();
   }
+
+  @Get('source-health')
+  getSourceHealth() {
+    return this.dashboardService.getMovieSourceHealth();
+  }
 }

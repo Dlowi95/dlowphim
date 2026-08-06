@@ -124,7 +124,7 @@ export class AdminDashboardService {
     };
   }
 
-  private async getMovieSourceHealth(): Promise<SourceHealth[]> {
+  async getMovieSourceHealth(): Promise<SourceHealth[]> {
     const now = Date.now();
     if (this.sourceHealthCache && this.sourceHealthCache.expiresAt > now) {
       return this.sourceHealthCache.value;
