@@ -1,13 +1,13 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
-import { ChevronLeft, ChevronRight, Play, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import Link from "next/link";
 import MovieCard from "@/components/MovieCard";
-import { cleanSlug, getImageUrl } from "@/utils/movieUtils";
-import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
+import { cleanSlug } from "@/utils/movieUtils";
+import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
 
 interface Movie {
   _id: string;
@@ -32,6 +32,7 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [showLeftArrow, setShowLeftArrow] = useState(false);
+  const [sourceMode, setSourceMode] = useState<"fallback" | "stale" | null>(null);
   
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -77,12 +78,12 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
     async function fetchMovies() {
       try {
         setLoading(true);
-        const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/quoc-gia/${countrySlug}?page=1`));
-        const data = await res.json();
-        if (data.status === "success" || data.status === true) {
-          const items = data.data?.items || data.items || [];
+        const data = await fetchMovieDiscovery({ kind: "country", slug: countrySlug, page: 1, limit: 24 });
+        if (data.status === true) {
+          const items = data.items || [];
           setMovies(getUniqueMovies(items));
           setHasMore(items.length > 0);
+          setSourceMode(data.stale?.used ? "stale" : data.fallback?.used ? "fallback" : null);
         }
       } catch (err) {
         console.error(`Error fetching movies for country ${countrySlug}:`, err);
@@ -99,10 +100,9 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
     try {
       setLoadingMore(true);
       const nextPage = page + 1;
-      const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/quoc-gia/${countrySlug}?page=${nextPage}`));
-      const data = await res.json();
-      if (data.status === "success" || data.status === true) {
-        const items = data.data?.items || data.items || [];
+      const data = await fetchMovieDiscovery({ kind: "country", slug: countrySlug, page: nextPage, limit: 24 });
+      if (data.status === true) {
+        const items = data.items || [];
         if (items.length > 0) {
           setMovies((prev) => getUniqueMovies([...prev, ...items]));
           setPage(nextPage);
@@ -182,6 +182,7 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
             <span className={getGradientStyle(countrySlug)}>{accentText}</span>
             <span>{suffix}</span>
           </h3>
+          {sourceMode && <span className={`mt-2 inline-flex rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-wider ${sourceMode === "stale" ? "border-sky-500/20 bg-sky-500/10 text-sky-400" : "border-amber-500/20 bg-amber-500/10 text-amber-400"}`}>{sourceMode === "stale" ? "Dữ liệu gần nhất" : "Máy chủ dự phòng"}</span>}
         </div>
         <Link 
           href={`/quoc-gia/${countrySlug}`}

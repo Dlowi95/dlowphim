@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { cleanMovieName, cleanSlug, getImageUrl } from "@/utils/movieUtils";
 import MovieHoverPopup from "./MovieHoverPopup";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
+import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
 import Image from "next/image";
 
 interface Movie {
@@ -213,16 +214,13 @@ export default function Top10Row() {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
 
-        const [res1, res2] = await Promise.all([
-          fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/danh-sach/phim-bo?page=1`), { signal: controller.signal }),
-          fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/danh-sach/phim-bo?page=2`), { signal: controller.signal })
+        const [d1, d2] = await Promise.all([
+          fetchMovieDiscovery({ kind: "list", slug: "phim-bo", page: 1, limit: 24 }, { signal: controller.signal, timeoutMs: 6000 }),
+          fetchMovieDiscovery({ kind: "list", slug: "phim-bo", page: 2, limit: 24 }, { signal: controller.signal, timeoutMs: 6000 }),
         ]);
         clearTimeout(timeoutId);
-        
-        const d1 = await res1.json();
-        const d2 = await res2.json();
 
-        const items = [...(d1.data?.items || d1.items || []), ...(d2.data?.items || d2.items || [])];
+        const items = [...(d1.items || []), ...(d2.items || [])];
 
         if (items.length > 0) {
           // Deduplicate

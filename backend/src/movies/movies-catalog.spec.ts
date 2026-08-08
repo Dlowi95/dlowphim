@@ -146,4 +146,62 @@ describe('MoviesService catalog', () => {
     await expect(service.getMovieCatalog({ type: 'phim-le', page: 1 }))
       .rejects.toThrow('Cả hai máy chủ phim đang tạm gián đoạn');
   });
+
+  it('opens the active-source circuit after repeated failures and skips its timeout', async () => {
+    const service = createService();
+    const fetchSpy = jest.spyOn(service, 'fetchOphimProxy').mockImplementation(async (_path, preference) => {
+      if (preference === 'active') return { status: false, _sourceId: 'phimapi' };
+      return {
+        status: true,
+        _sourceId: 'ophim',
+        items: [{ slug: `fallback-${fetchSpy.mock.calls.length}`, name: 'Fallback Movie' }],
+      };
+    });
+
+    await service.getMovieDiscovery({ kind: 'country', slug: 'han-quoc', page: 1 });
+    await service.getMovieDiscovery({ kind: 'country', slug: 'han-quoc', page: 2 });
+    await service.getMovieDiscovery({ kind: 'country', slug: 'han-quoc', page: 3 });
+
+    const activeCalls = fetchSpy.mock.calls.filter((call) => call[1] === 'active');
+    const fallbackCalls = fetchSpy.mock.calls.filter((call) => call[1] === 'fallback');
+    expect(activeCalls).toHaveLength(2);
+    expect(fallbackCalls).toHaveLength(3);
+  });
+
+  it('does not open a global circuit for an unsupported 404 path', async () => {
+    const service = createService();
+    const fetchSpy = jest.spyOn(service, 'fetchOphimProxy').mockImplementation(async (_path, preference) => {
+      if (preference === 'active') return { status: false, _sourceId: 'phimapi', message: 'Nguồn phản hồi lỗi 404' };
+      return { status: true, _sourceId: 'ophim', items: [{ slug: 'fallback-movie', name: 'Fallback Movie' }] };
+    });
+
+    await service.getMovieDiscovery({ kind: 'genre', slug: 'hanh-dong', page: 1 });
+    await service.getMovieDiscovery({ kind: 'genre', slug: 'hanh-dong', page: 2 });
+    await service.getMovieDiscovery({ kind: 'genre', slug: 'hanh-dong', page: 3 });
+
+    expect(fetchSpy.mock.calls.filter((call) => call[1] === 'active')).toHaveLength(3);
+  });
+
+  it('serves the last successful discovery result when both sources become unavailable', async () => {
+    const service = createService();
+    const fetchSpy = jest.spyOn(service, 'fetchOphimProxy').mockResolvedValue({
+      status: true,
+      _sourceId: 'phimapi',
+      data: { items: [{ slug: 'phim-gan-nhat', name: 'Phim Gần Nhất' }] },
+    });
+
+    const first = await service.getMovieDiscovery({ kind: 'genre', slug: 'hanh-dong', page: 1 });
+    expect(first.stale.used).toBe(false);
+    (service as any).catalogCache.clear();
+    fetchSpy.mockReset();
+    fetchSpy
+      .mockResolvedValueOnce({ status: false, _sourceId: 'phimapi' })
+      .mockRejectedValueOnce(new Error('fallback down'));
+
+    const stale = await service.getMovieDiscovery({ kind: 'genre', slug: 'hanh-dong', page: 1 });
+
+    expect(stale.items[0].slug).toBe('phim-gan-nhat');
+    expect(stale.stale.used).toBe(true);
+    expect(stale.stale.savedAt).toEqual(expect.any(String));
+  });
 });

@@ -5,8 +5,9 @@ import { Film, Loader2, RefreshCw } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MovieCard from "@/components/MovieCard";
 import Pagination from "@/components/Pagination";
+import DiscoverySourceNotice from "@/components/discovery/DiscoverySourceNotice";
 import { cleanSlug } from "@/utils/movieUtils";
-import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
+import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
 
 interface Props {
   kind: "genre" | "country";
@@ -23,24 +24,20 @@ export default function MovieDiscoveryPage({ kind, slug, label }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+  const [sourceState, setSourceState] = useState<{ fallback: boolean; stale: boolean; savedAt?: string | null }>({ fallback: false, stale: false });
 
   useEffect(() => {
     const controller = new AbortController();
     const load = async () => {
       setLoading(true);
       setError("");
+      setSourceState({ fallback: false, stale: false });
       try {
-        const path = kind === "genre"
-          ? (slug === "hoat-hinh" || slug === "phim-chieu-rap"
-            ? `/v1/api/danh-sach/${slug}?page=${page}`
-            : `/v1/api/the-loai/${slug}?page=${page}`)
-          : `/v1/api/quoc-gia/${slug}?page=${page}`;
-        const response = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}${path}`), {
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error("Nguồn phim đang phản hồi chậm");
-        const data = await response.json();
-        const items = data.data?.items || data.items || [];
+        const data = await fetchMovieDiscovery(
+          { kind, slug, page, limit: 24 },
+          { signal: controller.signal, timeoutMs: 9000 },
+        );
+        const items = data.items || [];
         const seen = new Set<string>();
         setMovies(items.filter((movie: any) => {
           const key = cleanSlug(movie.slug);
@@ -48,12 +45,8 @@ export default function MovieDiscoveryPage({ kind, slug, label }: Props) {
           seen.add(key);
           return true;
         }));
-        const pagination = data.data?.params?.pagination;
-        setTotalPages(
-          pagination
-            ? Math.max(1, Math.ceil(Number(pagination.totalItems) / Number(pagination.totalItemsPerPage)))
-            : Math.max(1, Number(data.totalPages) || 1),
-        );
+        setTotalPages(Math.max(1, Number(data.pagination?.totalPages) || 1));
+        setSourceState({ fallback: Boolean(data.fallback?.used), stale: Boolean(data.stale?.used), savedAt: data.stale?.savedAt });
       } catch (loadError) {
         if (!controller.signal.aborted) {
           setMovies([]);
@@ -88,6 +81,8 @@ export default function MovieDiscoveryPage({ kind, slug, label }: Props) {
           </div>
         </header>
 
+        {!loading && !error && <DiscoverySourceNotice fallbackUsed={sourceState.fallback} staleUsed={sourceState.stale} savedAt={sourceState.savedAt} />}
+
         {loading ? (
           <div className="flex min-h-[45vh] flex-col items-center justify-center gap-3 text-zinc-500">
             <Loader2 className="animate-spin text-pink-500" size={38} />
@@ -113,4 +108,3 @@ export default function MovieDiscoveryPage({ kind, slug, label }: Props) {
     </main>
   );
 }
-

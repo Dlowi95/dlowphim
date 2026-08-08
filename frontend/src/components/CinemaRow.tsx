@@ -7,6 +7,7 @@ import { ChevronRight } from "lucide-react";
 import { cleanMovieName, cleanSlug, getImageUrl } from "@/utils/movieUtils";
 import MovieHoverPopup from "./MovieHoverPopup";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
+import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
 
 interface Movie {
   _id: string;
@@ -94,14 +95,13 @@ export default function CinemaRow() {
         setLoading(true);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
-        const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/danh-sach/phim-chieu-rap?page=1`), {
-          signal: controller.signal
-        });
+        const data = await fetchMovieDiscovery(
+          { kind: "list", slug: "phim-chieu-rap", page: 1, limit: 24 },
+          { signal: controller.signal, timeoutMs: 6000 },
+        );
         clearTimeout(timeoutId);
-
-        const data = await res.json();
-        if (data.status === "success" || data.status === true) {
-          const items = data.data?.items || data.items || [];
+        if (data.status === true) {
+          const items = data.items || [];
           if (items.length > 0) {
             // Deduplicate base slug
             const seen = new Set<string>();

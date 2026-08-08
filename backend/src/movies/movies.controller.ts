@@ -105,6 +105,23 @@ export class MoviesController {
     });
   }
 
+  @Get('discovery')
+  async getMovieDiscovery(
+    @Query('kind') kind = 'list',
+    @Query('slug') slug = 'phim-moi-cap-nhat',
+    @Query('keyword') keyword = '',
+    @Query('page') page = '1',
+    @Query('limit') limit = '24',
+  ) {
+    return this.moviesService.getMovieDiscovery({
+      kind,
+      slug,
+      keyword,
+      page: Number(page),
+      limit: Number(limit),
+    });
+  }
+
   @Get('people/:personId/movies')
   async getPersonMovies(
     @Param('personId') personId: string,

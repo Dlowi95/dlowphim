@@ -21,12 +21,17 @@ export class MoviesService {
   private readonly upcomingCache = new Map<string, { data: any; expiry: number }>();
   private readonly peopleCache = new Map<string, { data: any; expiry: number }>();
   private readonly catalogCache = new Map<string, { data: any; expiry: number }>();
+  private readonly discoveryLastKnownGood = new Map<string, { data: any; savedAt: number; expiry: number }>();
+  private readonly sourceCircuits = new Map<string, { failures: number; openUntil: number }>();
   private readonly upcomingCacheTtlMs = 6 * 60 * 60 * 1000;
   private readonly upcomingCacheMaxEntries = 200;
   private readonly peopleCacheTtlMs = 60 * 60 * 1000;
   private readonly peopleCacheMaxEntries = 200;
   private readonly catalogCacheTtlMs = 10 * 60 * 1000;
   private readonly catalogCacheMaxEntries = 300;
+  private readonly discoveryStaleTtlMs = 24 * 60 * 60 * 1000;
+  private readonly sourceCircuitFailureThreshold = 2;
+  private readonly sourceCircuitCooldownMs = 45 * 1000;
 
   constructor(
     @InjectModel(BlockedMovie.name) private blockedModel: Model<BlockedMovieDocument>,
@@ -405,6 +410,129 @@ export class MoviesService {
     return { currentPage, totalItems, totalItemsPerPage, totalPages };
   }
 
+  private getMovieSourceIds(settings: any): { activeId: string; fallbackId: string } {
+    const sources = Array.isArray(settings?.movieSources) && settings.movieSources.length > 0
+      ? settings.movieSources
+      : [{ id: 'phimapi' }, { id: 'ophim' }];
+    const activeId = sources.some((source: any) => source.id === settings?.activeMovieSourceId)
+      ? settings.activeMovieSourceId
+      : (sources.find((source: any) => source.id === 'phimapi')?.id || sources[0]?.id || 'phimapi');
+    const fallbackId = sources.find((source: any) => source.id !== activeId)?.id || activeId;
+    return { activeId, fallbackId };
+  }
+
+  private isSourceCircuitOpen(sourceId: string): boolean {
+    const circuit = this.sourceCircuits.get(sourceId);
+    if (!circuit) return false;
+    if (circuit.openUntil > Date.now()) return true;
+    if (circuit.openUntil > 0) this.sourceCircuits.delete(sourceId);
+    return false;
+  }
+
+  private recordSourceSuccess(sourceId: string): void {
+    this.sourceCircuits.delete(sourceId);
+  }
+
+  private recordSourceFailure(sourceId: string): void {
+    const previous = this.sourceCircuits.get(sourceId);
+    const failures = (previous?.failures || 0) + 1;
+    this.sourceCircuits.set(sourceId, {
+      failures,
+      openUntil: failures >= this.sourceCircuitFailureThreshold
+        ? Date.now() + this.sourceCircuitCooldownMs
+        : 0,
+    });
+  }
+
+  private shouldTripSourceCircuit(payload: any): boolean {
+    const message = String(payload?.message || '');
+    const httpStatus = Number((message.match(/(?:lỗi|error)\s+(\d{3})/i) || [])[1]);
+    // 4xx thường là đường dẫn không được nguồn đó hỗ trợ, không phải cả máy chủ bị hỏng.
+    return !httpStatus || httpStatus >= 500;
+  }
+
+  private setDiscoveryLastKnownGood(key: string, data: any): void {
+    const now = Date.now();
+    for (const [cacheKey, entry] of this.discoveryLastKnownGood) {
+      if (entry.expiry <= now) this.discoveryLastKnownGood.delete(cacheKey);
+    }
+    while (this.discoveryLastKnownGood.size >= this.catalogCacheMaxEntries) {
+      const oldestKey = this.discoveryLastKnownGood.keys().next().value as string | undefined;
+      if (!oldestKey) break;
+      this.discoveryLastKnownGood.delete(oldestKey);
+    }
+    this.discoveryLastKnownGood.set(key, {
+      data: JSON.parse(JSON.stringify(data)),
+      savedAt: now,
+      expiry: now + this.discoveryStaleTtlMs,
+    });
+  }
+
+  private getDiscoveryLastKnownGood(key: string): { data: any; savedAt: number } | null {
+    const entry = this.discoveryLastKnownGood.get(key);
+    if (!entry) return null;
+    if (entry.expiry <= Date.now()) {
+      this.discoveryLastKnownGood.delete(key);
+      return null;
+    }
+    return { data: JSON.parse(JSON.stringify(entry.data)), savedAt: entry.savedAt };
+  }
+
+  private async fetchMovieListWithFallback(path: string, settings: any): Promise<{
+    payload: any;
+    fallbackUsed: boolean;
+    fallbackReason: 'source-error' | 'empty-result' | null;
+  }> {
+    const { activeId, fallbackId } = this.getMovieSourceIds(settings);
+    const attempts = [
+      { preference: 'active', sourceId: activeId },
+      { preference: 'fallback', sourceId: fallbackId },
+    ].filter((attempt, index, values) => values.findIndex((value) => value.sourceId === attempt.sourceId) === index);
+    let firstEmptyPayload: any = null;
+    let firstEmptyWasFallback = false;
+    let activeFailure = false;
+
+    for (const attempt of attempts) {
+      if (this.isSourceCircuitOpen(attempt.sourceId)) {
+        if (attempt.preference === 'active') activeFailure = true;
+        continue;
+      }
+      try {
+        const candidate = await this.fetchOphimProxy(path, attempt.preference);
+        if (!this.isCatalogPayloadSuccessful(candidate)) {
+          if (this.shouldTripSourceCircuit(candidate)) this.recordSourceFailure(attempt.sourceId);
+          if (attempt.preference === 'active') activeFailure = true;
+          continue;
+        }
+        this.recordSourceSuccess(attempt.sourceId);
+        if (this.getCatalogItems(candidate).length > 0) {
+          const fallbackUsed = attempt.preference === 'fallback';
+          return {
+            payload: candidate,
+            fallbackUsed,
+            fallbackReason: fallbackUsed ? (activeFailure ? 'source-error' : 'empty-result') : null,
+          };
+        }
+        if (!firstEmptyPayload) {
+          firstEmptyPayload = candidate;
+          firstEmptyWasFallback = attempt.preference === 'fallback';
+        }
+      } catch {
+        this.recordSourceFailure(attempt.sourceId);
+        if (attempt.preference === 'active') activeFailure = true;
+      }
+    }
+
+    if (firstEmptyPayload) {
+      return {
+        payload: firstEmptyPayload,
+        fallbackUsed: firstEmptyWasFallback,
+        fallbackReason: firstEmptyWasFallback ? (activeFailure ? 'source-error' : 'empty-result') : null,
+      };
+    }
+    throw new ServiceUnavailableException('Cả hai máy chủ phim đang tạm gián đoạn. Vui lòng thử lại sau ít phút.');
+  }
+
   async getMovieCatalog(input: {
     type?: string;
     page?: number;
@@ -448,45 +576,23 @@ export class MoviesService {
     if (status) params.set('status', status);
 
     const path = `/v1/api/danh-sach/${type}?${params.toString()}`;
-    let payload: any = null;
-    let firstEmptyPayload: any = null;
-    let firstEmptyWasFallback = false;
-    let activeFailure = false;
-    let fallbackUsed = false;
-    let fallbackReason: 'source-error' | 'empty-result' | null = null;
-
-    for (const sourcePreference of ['active', 'fallback']) {
-      try {
-        const candidate = await this.fetchOphimProxy(path, sourcePreference);
-        if (!this.isCatalogPayloadSuccessful(candidate)) {
-          if (sourcePreference === 'active') activeFailure = true;
-          continue;
-        }
-        const candidateItems = this.getCatalogItems(candidate);
-        if (candidateItems.length > 0) {
-          payload = candidate;
-          fallbackUsed = sourcePreference === 'fallback';
-          fallbackReason = fallbackUsed ? (activeFailure ? 'source-error' : 'empty-result') : null;
-          break;
-        }
-        if (!firstEmptyPayload) {
-          firstEmptyPayload = candidate;
-          firstEmptyWasFallback = sourcePreference === 'fallback';
-        }
-      } catch {
-        if (sourcePreference === 'active') activeFailure = true;
+    const staleKey = ['catalog', type, page, limit, year, genre, status, sort].join(':');
+    let resolved: Awaited<ReturnType<MoviesService['fetchMovieListWithFallback']>>;
+    try {
+      resolved = await this.fetchMovieListWithFallback(path, settings);
+    } catch (error) {
+      const stale = this.getDiscoveryLastKnownGood(staleKey);
+      if (stale) {
+        return {
+          ...stale.data,
+          stale: { used: true, savedAt: new Date(stale.savedAt).toISOString() },
+          cache: { hit: false, ttlSeconds: 0 },
+        };
       }
+      throw error;
     }
 
-    payload ??= firstEmptyPayload;
-    if (!payload) {
-      throw new ServiceUnavailableException('Cả hai máy chủ phim đang tạm gián đoạn. Vui lòng thử lại sau ít phút.');
-    }
-    if (firstEmptyWasFallback) {
-      fallbackUsed = true;
-      fallbackReason = activeFailure ? 'source-error' : 'empty-result';
-    }
-
+    const { payload, fallbackUsed, fallbackReason } = resolved;
     const sourceId = payload?._sourceId || activeSourceId;
     const rawItems = this.getCatalogItems(payload);
     const statusMatches = (movie: any) => {
@@ -522,9 +628,109 @@ export class MoviesService {
         used: fallbackUsed,
         reason: fallbackReason,
       },
+      stale: { used: false, savedAt: null },
       cache: { hit: false, ttlSeconds },
     };
     this.setCatalogCache(cacheKey, data, ttlSeconds * 1000);
+    if (availability === 'ready') this.setDiscoveryLastKnownGood(staleKey, data);
+    return data;
+  }
+
+  async getMovieDiscovery(input: {
+    kind?: string;
+    slug?: string;
+    keyword?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<any> {
+    const allowedKinds = ['search', 'genre', 'country', 'list'];
+    const kind = allowedKinds.includes(String(input.kind)) ? String(input.kind) : 'list';
+    const page = Math.min(500, Math.max(1, Math.floor(Number(input.page) || 1)));
+    const limit = Math.min(48, Math.max(10, Math.floor(Number(input.limit) || 24)));
+    const keyword = this.cleanText(input.keyword, 100);
+    const requestedSlug = String(input.slug || '').trim().toLowerCase();
+    const listSlugs = ['phim-moi-cap-nhat', 'phim-le', 'phim-bo', 'hoat-hinh', 'phim-chieu-rap'];
+    const slug = kind === 'list'
+      ? (listSlugs.includes(requestedSlug) ? requestedSlug : 'phim-moi-cap-nhat')
+      : (/^[a-z0-9-]{1,80}$/.test(requestedSlug) ? requestedSlug : '');
+
+    if (kind === 'search' && keyword.length < 2) {
+      return {
+        status: true,
+        availability: 'empty',
+        items: [],
+        pagination: { currentPage: 1, totalItems: 0, totalItemsPerPage: limit, totalPages: 1 },
+        fallback: { used: false, reason: null },
+        stale: { used: false, savedAt: null },
+      };
+    }
+    if (kind !== 'search' && !slug) throw new BadRequestException('Danh mục phim không hợp lệ');
+
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    let path = '';
+    if (kind === 'search') {
+      params.set('keyword', keyword);
+      path = `/v1/api/tim-kiem?${params.toString()}`;
+    } else if (kind === 'genre') {
+      path = slug === 'hoat-hinh' || slug === 'phim-chieu-rap'
+        ? `/v1/api/danh-sach/${slug}?${params.toString()}`
+        : `/v1/api/the-loai/${slug}?${params.toString()}`;
+    } else if (kind === 'country') {
+      path = `/v1/api/quoc-gia/${slug}?${params.toString()}`;
+    } else {
+      path = `/v1/api/danh-sach/${slug}?${params.toString()}`;
+    }
+
+    const settings = await this.settingsService.getSettings();
+    const { activeId } = this.getMovieSourceIds(settings);
+    const logicalKey = ['discovery', kind, slug, keyword.toLowerCase(), page, limit].join(':');
+    const cacheKey = [activeId, logicalKey].join(':');
+    const cached = this.catalogCache.get(cacheKey);
+    if (cached && cached.expiry > Date.now()) {
+      return { ...cached.data, cache: { hit: true, ttlSeconds: cached.data?.cache?.ttlSeconds || 600 } };
+    }
+
+    let resolved: Awaited<ReturnType<MoviesService['fetchMovieListWithFallback']>>;
+    try {
+      resolved = await this.fetchMovieListWithFallback(path, settings);
+    } catch (error) {
+      const stale = this.getDiscoveryLastKnownGood(logicalKey);
+      if (stale) {
+        return {
+          ...stale.data,
+          stale: { used: true, savedAt: new Date(stale.savedAt).toISOString() },
+          cache: { hit: false, ttlSeconds: 0 },
+        };
+      }
+      throw error;
+    }
+
+    const sourceId = resolved.payload?._sourceId || activeId;
+    const seen = new Set<string>();
+    const items = this.getCatalogItems(resolved.payload)
+      .map((movie: any) => this.normalizeCatalogMovie(movie, resolved.payload, sourceId))
+      .filter((movie: any) => {
+        if (!movie?.slug || seen.has(movie.slug)) return false;
+        seen.add(movie.slug);
+        return true;
+      });
+    const pagination = this.normalizeCatalogPagination(resolved.payload, page, limit, items.length);
+    const availability = items.length > 0 ? 'ready' : 'empty';
+    const ttlSeconds = availability === 'empty' ? 60 : 600;
+    const data = {
+      status: true,
+      availability,
+      source: sourceId,
+      items,
+      titlePage: resolved.payload?.data?.titlePage || resolved.payload?.titlePage || '',
+      pagination,
+      query: { kind, slug, keyword, page, limit },
+      fallback: { used: resolved.fallbackUsed, reason: resolved.fallbackReason },
+      stale: { used: false, savedAt: null },
+      cache: { hit: false, ttlSeconds },
+    };
+    this.setCatalogCache(cacheKey, data, ttlSeconds * 1000);
+    if (availability === 'ready') this.setDiscoveryLastKnownGood(logicalKey, data);
     return data;
   }
 

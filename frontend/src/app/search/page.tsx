@@ -5,9 +5,10 @@ import { Film, Loader2, Search } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MovieCard from "@/components/MovieCard";
 import Pagination from "@/components/Pagination";
+import DiscoverySourceNotice from "@/components/discovery/DiscoverySourceNotice";
 import { cleanSlug } from "@/utils/movieUtils";
 import { searchMovies } from "@/utils/movieSearch";
-import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
+import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
 
 function SearchContent() {
   const params = useSearchParams();
@@ -19,12 +20,14 @@ function SearchContent() {
   const [moviePages, setMoviePages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [sourceState, setSourceState] = useState<{ fallback: boolean; stale: boolean; savedAt?: string | null }>({ fallback: false, stale: false });
 
   useEffect(() => {
     const controller = new AbortController();
     const load = async () => {
       setLoading(true);
       setError("");
+      setSourceState({ fallback: false, stale: false });
       try {
         if (keyword) {
           const movieResult = await searchMovies(keyword, page, {
@@ -41,24 +44,32 @@ function SearchContent() {
             seen.add(key);
             return true;
           }));
-          const pagination = movieData?.data?.params?.pagination;
+          const pagination = movieData?.pagination || movieData?.data?.params?.pagination;
           setMoviePages(pagination
-            ? Math.max(1, Math.ceil(Number(pagination.totalItems) / Number(pagination.totalItemsPerPage)))
+            ? Math.max(1, Number(pagination.totalPages) || Math.ceil(Number(pagination.totalItems) / Number(pagination.totalItemsPerPage)))
             : Math.max(1, Number(movieData?.totalPages) || 1));
+          setSourceState({
+            fallback: Boolean(movieData?.fallback?.used),
+            stale: Boolean(movieData?.stale?.used),
+            savedAt: movieData?.stale?.savedAt,
+          });
         } else {
           const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-          const path = `/v1/api/danh-sach/${type || "phim-moi-cap-nhat"}?page=${page}`;
-          const requestUrl = type === "phim-sap-chieu"
-            ? `${API_URL}/movies/upcoming?page=${page}`
-            : getProxyUrl(`${MOVIE_API_DOMAIN}${path}`);
-          const response = await fetch(requestUrl, { signal: controller.signal });
-          if (!response.ok) throw new Error("Không thể tải danh sách phim");
-          const data = await response.json();
-          setMovies(data.data?.items || data.items || []);
-          const pagination = data.data?.params?.pagination;
-          setMoviePages(pagination
-            ? Math.max(1, Math.ceil(Number(pagination.totalItems) / Number(pagination.totalItemsPerPage)))
-            : Math.max(1, Number(data.totalPages) || 1));
+          if (type === "phim-sap-chieu") {
+            const response = await fetch(`${API_URL}/movies/upcoming?page=${page}`, { signal: controller.signal });
+            if (!response.ok) throw new Error("Không thể tải danh sách phim");
+            const data = await response.json();
+            setMovies(data.items || []);
+            setMoviePages(Math.max(1, Number(data.totalPages) || 1));
+          } else {
+            const data = await fetchMovieDiscovery(
+              { kind: "list", slug: type || "phim-moi-cap-nhat", page, limit: 24 },
+              { signal: controller.signal, timeoutMs: 8000 },
+            );
+            setMovies(data.items || []);
+            setMoviePages(Math.max(1, Number(data.pagination?.totalPages) || 1));
+            setSourceState({ fallback: Boolean(data.fallback?.used), stale: Boolean(data.stale?.used), savedAt: data.stale?.savedAt });
+          }
         }
       } catch (loadError) {
         if (!controller.signal.aborted) {
@@ -102,6 +113,7 @@ function SearchContent() {
           <div className="rounded-3xl border border-zinc-900 bg-zinc-950 py-20 text-center"><p className="font-bold">{error}</p><p className="mt-2 text-sm text-zinc-500">Bạn thử lại sau một chút nhé.</p></div>
         ) : (
           <section>
+            <DiscoverySourceNotice fallbackUsed={sourceState.fallback} staleUsed={sourceState.stale} savedAt={sourceState.savedAt} />
             <div className="mb-5 flex items-center gap-2"><Film className="text-pink-500" size={21} /><h2 className="text-xl font-black uppercase">Phim</h2></div>
             {movies.length ? <div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7">{movies.map((movie) => <MovieCard key={movie._id || movie.slug} movie={movie} aspect="portrait" />)}</div> : <p className="rounded-2xl border border-zinc-900 bg-zinc-950 p-7 text-sm text-zinc-500">Không tìm thấy phim phù hợp. Bạn thử tên gốc hoặc kiểm tra lại chính tả nhé.</p>}
           </section>

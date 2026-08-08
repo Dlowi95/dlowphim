@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Check, ChevronDown, Filter, Loader2, RefreshCw, RotateCcw, Search, Server } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Filter, Loader2, RefreshCw, RotateCcw, Search } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MovieCard from "@/components/MovieCard";
 import Pagination from "@/components/Pagination";
+import DiscoverySourceNotice from "@/components/discovery/DiscoverySourceNotice";
 import { GENRES } from "@/constants/discovery";
 import { cleanSlug } from "@/utils/movieUtils";
 
@@ -23,6 +24,7 @@ export default function MovieCatalogPage({ type }: { type: "phim-le" | "phim-bo"
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [fallbackUsed, setFallbackUsed] = useState(false);
+  const [staleState, setStaleState] = useState<{ used: boolean; savedAt?: string | null }>({ used: false });
   const [reloadKey, setReloadKey] = useState(0);
   const title = type === "phim-le" ? "Phim lẻ" : "Phim bộ";
   const years = useMemo(() => Array.from({ length: 37 }, (_, index) => new Date().getFullYear() + 1 - index), []);
@@ -37,6 +39,7 @@ export default function MovieCatalogPage({ type }: { type: "phim-le" | "phim-bo"
       setLoading(true);
       setError("");
       setFallbackUsed(false);
+      setStaleState({ used: false });
       try {
         const response = await fetch(`${API_URL}/movies/catalog?${query.toString()}`, { signal: controller.signal });
         const data = await response.json().catch(() => null);
@@ -56,6 +59,7 @@ export default function MovieCatalogPage({ type }: { type: "phim-le" | "phim-bo"
         setMovies(uniqueMovies);
         setTotalPages(pages);
         setFallbackUsed(Boolean(data.fallback?.used));
+        setStaleState({ used: Boolean(data.stale?.used), savedAt: data.stale?.savedAt });
       } catch (loadError) {
         if (!controller.signal.aborted) {
           setMovies([]);
@@ -98,12 +102,7 @@ export default function MovieCatalogPage({ type }: { type: "phim-le" | "phim-bo"
           </div>
         </section>
 
-        {fallbackUsed && !loading && !error && (
-          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-amber-200">
-            <Server size={19} className="mt-0.5 shrink-0 text-amber-400" />
-            <div><p className="text-sm font-bold">Đang dùng máy chủ dự phòng</p><p className="mt-0.5 text-xs text-amber-200/60">Nguồn chính đang chậm hoặc chưa có dữ liệu. Danh sách phim đã được chuyển tự động để bạn tiếp tục xem.</p></div>
-          </div>
-        )}
+        {!loading && !error && <DiscoverySourceNotice fallbackUsed={fallbackUsed} staleUsed={staleState.used} savedAt={staleState.savedAt} />}
 
         {loading ? (
           <div className="flex min-h-[45vh] flex-col items-center justify-center gap-3 text-zinc-500"><Loader2 className="animate-spin text-pink-500" size={40} /><p>Đang tải {title.toLowerCase()}...</p></div>
