@@ -6,6 +6,7 @@ import {
 } from '@nestjs/websockets';
 import { Namespace, Socket } from 'socket.io';
 import { AuthService } from '../auth/auth.service';
+import { normalizeAdminRole } from '../auth/admin-permissions';
 
 @WebSocketGateway({
   namespace: '/notifications',
@@ -48,7 +49,7 @@ export class NotificationsGateway implements OnGatewayConnection {
       client.data.userId = String(payload.sub);
       await client.join(this.userRoom(payload.sub));
       await client.join('notifications:users');
-      if (sessionUser.role === 'admin') await client.join('notifications:admins');
+      if (normalizeAdminRole(sessionUser.role)) await client.join('notifications:admins');
       client.emit('notifications:ready');
     } catch {
       client.emit('notifications:error', {

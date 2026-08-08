@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, UnauthorizedException, NotFoundException, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException, NotFoundException, HttpException, HttpStatus, Logger, OnModuleInit, ForbiddenException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
@@ -33,7 +33,8 @@ function normalizeEpisodeKey(name = ''): string {
 }
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
+  private readonly logger = new Logger(AuthService.name);
   private googleClient: OAuth2Client;
   private readonly loginAttempts = new Map<string, { count: number; lockedUntil: number }>();
   private readonly forgotPasswordAttempts = new Map<string, { count: number; resetAt: number }>();
@@ -47,6 +48,32 @@ export class AuthService {
   ) {
     this.googleClient = new OAuth2Client(
       this.configService.get<string>('GOOGLE_CLIENT_ID'),
+    );
+  }
+
+  async onModuleInit() {
+    await this.ensureSingleSuperAdmin();
+  }
+
+  private async ensureSingleSuperAdmin() {
+    const configuredEmail = String(this.configService.get<string>('SUPER_ADMIN_EMAIL') || '').trim().toLowerCase();
+    const current = await this.userModel.findOne({ role: 'super_admin', isDeleted: { $ne: true } }).sort({ createdAt: 1 });
+    if (!current) {
+      const candidate = configuredEmail
+        ? await this.userModel.findOne({ email: configuredEmail, isDeleted: { $ne: true } })
+        : await this.userModel.findOne({ role: 'admin', isDeleted: { $ne: true } }).sort({ createdAt: 1 });
+      if (candidate) {
+        candidate.role = 'super_admin';
+        candidate.isActive = true;
+        await candidate.save();
+        this.logger.log(`Super Admin owner initialized: ${candidate.email}`);
+      } else {
+        this.logger.warn('No Super Admin owner found. Set SUPER_ADMIN_EMAIL or keep one legacy admin account.');
+      }
+    }
+    await this.userModel.updateMany(
+      { role: 'admin' },
+      { $set: { role: 'content_admin' }, $inc: { tokenVersion: 1 } },
     );
   }
 
@@ -807,7 +834,9 @@ export class AuthService {
         { email: { $regex: escaped, $options: 'i' } },
       ];
     }
-    if (filters.role === 'admin' || filters.role === 'member') query.role = filters.role;
+    if (['member', 'super_admin', 'content_admin', 'moderator', 'support'].includes(String(filters.role))) {
+      query.role = filters.role;
+    }
     if (filters.status === 'active') query.isActive = { $ne: false };
     if (filters.status === 'blocked') query.isActive = false;
     if (filters.provider === 'google') query.googleId = { $exists: true, $ne: '' };
@@ -852,7 +881,7 @@ export class AuthService {
       this.userModel.countDocuments({ isDeleted: { $ne: true }, isActive: false }),
       this.userModel.countDocuments({ isDeleted: { $ne: true }, ...(this.buildUserActivityQuery('inactive', inactiveCutoff) || {}) }),
       this.userModel.countDocuments({ isDeleted: { $ne: true }, createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } }),
-      this.userModel.countDocuments({ isDeleted: { $ne: true }, role: 'admin', isActive: { $ne: false } }),
+      this.userModel.countDocuments({ isDeleted: { $ne: true }, role: { $in: ['super_admin', 'content_admin', 'moderator', 'support'] }, isActive: { $ne: false } }),
       this.userModel.countDocuments({ isDeleted: { $ne: true }, emailVerifiedAt: { $exists: false }, emailVerificationExpiresAt: { $exists: true } }),
     ]);
 
@@ -885,18 +914,21 @@ export class AuthService {
       throw new BadRequestException('Bạn không thể tự thay đổi vai trò của chính mình');
     }
 
-    if (!['member', 'admin'].includes(newRole)) {
+    if (!['member', 'content_admin', 'moderator', 'support'].includes(newRole)) {
       throw new BadRequestException('Vai trò không hợp lệ');
     }
+    const actor = await this.requireSuperAdmin(adminId);
     const user = await this.userModel.findById(userId);
     if (!user) {
       throw new BadRequestException('Không tìm thấy người dùng');
     }
-    if (user.role === 'admin' && newRole !== 'admin') await this.ensureAnotherActiveAdmin(userId);
+    if (user.role === 'super_admin') {
+      throw new ForbiddenException('Không thể thay đổi vai trò của chủ sở hữu Super Admin');
+    }
     user.role = newRole;
     user.tokenVersion = (user.tokenVersion || 0) + 1;
     await user.save();
-    return { message: 'Cập nhật vai trò thành công', user: { id: user._id, role: user.role } };
+    return { message: 'Cập nhật vai trò thành công', user: { id: user._id, role: user.role }, changedBy: actor.email };
   }
 
   async updateUserStatus(adminId: string, userId: string, isActive: boolean, reason?: string) {
@@ -912,7 +944,7 @@ export class AuthService {
     if (!user) {
       throw new BadRequestException('Không tìm thấy người dùng');
     }
-    if (!isActive && user.role === 'admin') await this.ensureAnotherActiveAdmin(userId);
+    await this.assertCanManageTarget(adminId, user);
     const normalizedReason = String(reason || '').trim().slice(0, 200);
     user.isActive = isActive;
     user.suspendedAt = isActive ? undefined : new Date();
@@ -935,10 +967,10 @@ export class AuthService {
     if (!user) {
       throw new BadRequestException('Không tìm thấy người dùng');
     }
+    await this.assertCanManageTarget(adminId, user);
     if (user.isActive !== false) {
       throw new BadRequestException('Hãy khóa tài khoản trước khi xóa vĩnh viễn');
     }
-    if (user.role === 'admin') await this.ensureAnotherActiveAdmin(userId);
     user.email = `deleted-${userId}@deleted.local`;
     user.displayName = 'Tài khoản đã xóa';
     user.password = undefined;
@@ -989,14 +1021,24 @@ export class AuthService {
     if (!Types.ObjectId.isValid(userId)) throw new BadRequestException('ID người dùng không hợp lệ');
   }
 
-  private async ensureAnotherActiveAdmin(userId: string) {
-    const remainingAdmins = await this.userModel.countDocuments({
-      _id: { $ne: new Types.ObjectId(userId) },
-      role: 'admin',
-      isActive: { $ne: false },
-    });
-    if (remainingAdmins < 1) {
-      throw new BadRequestException('Hệ thống phải luôn còn ít nhất một quản trị viên hoạt động');
+  private async requireSuperAdmin(adminId: string) {
+    const actor = await this.userModel.findById(adminId);
+    if (!actor || actor.role !== 'super_admin' || actor.isActive === false || actor.isDeleted === true) {
+      throw new ForbiddenException('Chỉ Super Admin mới được thay đổi vai trò quản trị');
+    }
+    return actor;
+  }
+
+  private async assertCanManageTarget(adminId: string, target: UserDocument) {
+    const actor = await this.userModel.findById(adminId);
+    if (!actor || !['super_admin', 'moderator'].includes(actor.role) || actor.isActive === false || actor.isDeleted === true) {
+      throw new ForbiddenException('Tài khoản quản trị không hợp lệ');
+    }
+    if (target.role === 'super_admin') {
+      throw new ForbiddenException('Không thể khóa hoặc xóa tài khoản Super Admin');
+    }
+    if (target.role !== 'member' && actor.role !== 'super_admin') {
+      throw new ForbiddenException('Chỉ Super Admin mới được quản lý tài khoản nhân sự');
     }
   }
 

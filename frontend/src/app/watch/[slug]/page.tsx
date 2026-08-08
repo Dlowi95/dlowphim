@@ -12,7 +12,6 @@ import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
 import MovieCard from "@/components/MovieCard";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
-import { getTmdbApiKey } from "@/utils/tmdb";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import { useSmartStreamServer } from "@/hooks/useSmartStreamServer";
 import { useHlsPlaybackTelemetry } from "@/hooks/useHlsPlaybackTelemetry";

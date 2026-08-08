@@ -1,21 +1,27 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Cookies from "js-cookie";
 import {
-  Settings,
-  Globe,
+  AlertTriangle,
+  CheckCircle2,
+  Eye,
+  EyeOff,
   Film,
-  Link as LinkIcon,
-  Mail,
-  Shield,
+  Globe,
+  KeyRound,
   Loader2,
   RefreshCw,
+  RotateCcw,
   Save,
-  Radio
+  Settings,
+  Shield,
+  Signal,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { clearTmdbApiKeyCache } from "@/utils/tmdb";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
+
+type Section = "general" | "sources";
 
 interface MovieSource {
   id: string;
@@ -26,498 +32,455 @@ interface MovieSource {
 
 interface SystemSettingsData {
   websiteName: string;
-  websiteDescription?: string;
+  websiteDescription: string;
   maintenanceMode: boolean;
-  movieCrawlSource?: string;
-  activeMovieSourceId?: string;
-  movieSources?: MovieSource[];
-  autoCrawlInterval?: number;
-  contactEmail?: string;
-  facebookLink?: string;
-  telegramLink?: string;
-  adsEnabled: boolean;
-  tmdbApiKey?: string;
+  activeMovieSourceId: string;
+  movieSources: MovieSource[];
+  tmdbApiKeyConfigured: boolean;
+  tmdbApiKeyLast4: string;
+  updatedAt?: string;
+  lastUpdatedBy?: string;
+}
+
+type SourceCheck = {
+  ok: boolean;
+  latencyMs: number;
+  statusCode: number | null;
+};
+
+const DEFAULT_SETTINGS: SystemSettingsData = {
+  websiteName: "DlowPhim",
+  websiteDescription: "Trải nghiệm điện ảnh premium",
+  maintenanceMode: false,
+  activeMovieSourceId: "phimapi",
+  movieSources: [
+    {
+      id: "phimapi",
+      name: "PhimAPI / KKPhim",
+      domain: "https://phimapi.com",
+      crawlUrl: "https://phimapi.com/danh-sach/phim-moi-cap-nhat",
+    },
+    {
+      id: "ophim",
+      name: "OPhim",
+      domain: "https://ophim1.com",
+      crawlUrl: "https://ophim1.com/danh-sach/phim-moi-cap-nhat",
+    },
+  ],
+  tmdbApiKeyConfigured: false,
+  tmdbApiKeyLast4: "",
+};
+
+function sectionSnapshot(settings: SystemSettingsData, section: Section) {
+  if (section === "general") {
+    return JSON.stringify({
+      websiteName: settings.websiteName,
+      websiteDescription: settings.websiteDescription,
+      maintenanceMode: settings.maintenanceMode,
+    });
+  }
+  return JSON.stringify({
+    activeMovieSourceId: settings.activeMovieSourceId,
+    movieSources: settings.movieSources,
+  });
 }
 
 export default function SettingsView() {
-  const { showToast } = useAuth();
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-
-  const [activeSubTab, setActiveSubTab] = useState<"general" | "crawl" | "business">("general");
-  const [loading, setLoading] = useState(false);
+  const { showToast } = useAuth();
+  const { confirm, confirmDialog } = useConfirmDialog();
+  const [activeSection, setActiveSection] = useState<Section>("general");
+  const [settings, setSettings] = useState<SystemSettingsData>(DEFAULT_SETTINGS);
+  const [savedSettings, setSavedSettings] = useState<SystemSettingsData>(DEFAULT_SETTINGS);
+  const [tmdbApiKey, setTmdbApiKey] = useState("");
+  const [showTmdbKey, setShowTmdbKey] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState<string | null>(null);
+  const [sourceChecks, setSourceChecks] = useState<Record<string, SourceCheck>>({});
 
-  const [settings, setSettings] = useState<SystemSettingsData>({
-    websiteName: "DlowPhim",
-    websiteDescription: "Trải Nghiệm Điện Ảnh Premium",
-    maintenanceMode: false,
-    movieCrawlSource: "https://phimapi.com/danh-sach/phim-moi-cap-nhat",
-    activeMovieSourceId: "phimapi",
-    movieSources: [
-      {
-        id: "phimapi",
-        name: "PhimAPI / KKPhim (Khuyên dùng)",
-        domain: "https://phimapi.com",
-        crawlUrl: "https://phimapi.com/danh-sach/phim-moi-cap-nhat",
-      },
-      {
-        id: "ophim",
-        name: "OPhim",
-        domain: "https://ophim1.com",
-        crawlUrl: "https://ophim1.com/danh-sach/phim-moi-cap-nhat",
-      },
-    ],
-    autoCrawlInterval: 12,
-    contactEmail: "support@dlowphim.com",
-    facebookLink: "https://facebook.com/dlowphim",
-    telegramLink: "https://t.me/dlowphim",
-    adsEnabled: false,
-    tmdbApiKey: "591c025bb1641315ae087330271132bc",
-  });
+  const token = Cookies.get("token");
+  const currentDirty = useMemo(
+    () => sectionSnapshot(settings, activeSection) !== sectionSnapshot(savedSettings, activeSection)
+      || (activeSection === "sources" && Boolean(tmdbApiKey.trim())),
+    [activeSection, savedSettings, settings, tmdbApiKey],
+  );
+  const anyDirty = useMemo(
+    () => sectionSnapshot(settings, "general") !== sectionSnapshot(savedSettings, "general")
+      || sectionSnapshot(settings, "sources") !== sectionSnapshot(savedSettings, "sources")
+      || Boolean(tmdbApiKey.trim()),
+    [savedSettings, settings, tmdbApiKey],
+  );
 
-  const fetchSettings = async () => {
+  const fetchSettings = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/system-settings`);
-      if (res.ok) {
-        const data = await res.json();
-        setSettings(data);
-      } else {
-        showToast("Không thể tải cấu hình hệ thống", "error");
-      }
-    } catch (err) {
-      console.error(err);
-      showToast("Lỗi kết nối máy chủ", "error");
+      const response = await fetch(`${API_URL}/system-settings/admin`, {
+        headers: { Authorization: `Bearer ${Cookies.get("token")}` },
+        cache: "no-store",
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.message || "Không thể tải cấu hình hệ thống");
+      const normalized: SystemSettingsData = {
+        ...DEFAULT_SETTINGS,
+        ...data,
+        movieSources: Array.isArray(data?.movieSources) ? data.movieSources : DEFAULT_SETTINGS.movieSources,
+        tmdbApiKeyConfigured: Boolean(data?.tmdbApiKeyConfigured),
+        tmdbApiKeyLast4: String(data?.tmdbApiKeyLast4 || ""),
+      };
+      setSettings(normalized);
+      setSavedSettings(normalized);
+      setTmdbApiKey("");
+      setSourceChecks({});
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Không thể tải cấu hình hệ thống", "error");
     } finally {
       setLoading(false);
     }
-  };
+  }, [API_URL, showToast]);
 
   useEffect(() => {
-    fetchSettings();
-  }, []);
+    const section = new URLSearchParams(window.location.search).get("section");
+    if (section === "sources" || section === "general") setActiveSection(section);
+    void fetchSettings();
+  }, [fetchSettings]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value, type } = e.target;
-    
-    if (type === "checkbox") {
-      const checked = (e.target as HTMLInputElement).checked;
-      setSettings((prev) => ({ ...prev, [name]: checked }));
-    } else {
-      setSettings((prev) => ({ 
-        ...prev, 
-        [name]: name === "autoCrawlInterval" ? parseInt(value, 10) : value 
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!anyDirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [anyDirty]);
+
+  const switchSection = (section: Section) => {
+    setActiveSection(section);
+    const url = new URL(window.location.href);
+    url.searchParams.set("section", section);
+    window.history.replaceState({}, "", url);
+  };
+
+  const toggleMaintenance = async () => {
+    const next = !settings.maintenanceMode;
+    const accepted = await confirm({
+      title: next ? "Bật chế độ bảo trì?" : "Tắt chế độ bảo trì?",
+      message: next
+        ? "Người xem thông thường sẽ tạm thời không thể sử dụng website sau khi bạn lưu thay đổi. Admin vẫn có thể truy cập."
+        : "Website sẽ mở lại cho toàn bộ người xem sau khi bạn lưu thay đổi.",
+      confirmLabel: next ? "Bật bảo trì" : "Mở lại website",
+      tone: "warning",
+    });
+    if (accepted) setSettings((current) => ({ ...current, maintenanceMode: next }));
+  };
+
+  const selectSource = async (source: MovieSource) => {
+    if (source.id === settings.activeMovieSourceId) return;
+    const accepted = await confirm({
+      title: `Chuyển nguồn mặc định sang ${source.name}?`,
+      message: "Danh sách, tìm kiếm và import phim sẽ ưu tiên nguồn này sau khi lưu. Mục Sắp chiếu vẫn dùng luồng OPhim/TMDB riêng.",
+      confirmLabel: "Chọn nguồn này",
+      tone: "warning",
+    });
+    if (accepted) setSettings((current) => ({ ...current, activeMovieSourceId: source.id }));
+  };
+
+  const updateSource = (index: number, patch: Partial<MovieSource>) => {
+    setSettings((current) => ({
+      ...current,
+      movieSources: current.movieSources.map((source, sourceIndex) =>
+        sourceIndex === index ? { ...source, ...patch } : source,
+      ),
+    }));
+    setSourceChecks({});
+  };
+
+  const resetCurrentSection = () => {
+    if (activeSection === "general") {
+      setSettings((current) => ({
+        ...current,
+        websiteName: savedSettings.websiteName,
+        websiteDescription: savedSettings.websiteDescription,
+        maintenanceMode: savedSettings.maintenanceMode,
       }));
+      return;
     }
+    setSettings((current) => ({
+      ...current,
+      activeMovieSourceId: savedSettings.activeMovieSourceId,
+      movieSources: savedSettings.movieSources,
+    }));
+    setTmdbApiKey("");
+    setSourceChecks({});
   };
 
-  const handleToggle = (name: keyof SystemSettingsData) => {
-    setSettings((prev) => ({ ...prev, [name]: !prev[name] }));
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const saveCurrentSection = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!currentDirty || saving) return;
     setSaving(true);
     try {
-      const token = Cookies.get("token");
-      const res = await fetch(`${API_URL}/system-settings`, {
+      const payload = activeSection === "general"
+        ? {
+            websiteName: settings.websiteName,
+            websiteDescription: settings.websiteDescription,
+            maintenanceMode: settings.maintenanceMode,
+          }
+        : {
+            activeMovieSourceId: settings.activeMovieSourceId,
+            movieSources: settings.movieSources,
+            ...(tmdbApiKey.trim() ? { tmdbApiKey: tmdbApiKey.trim() } : {}),
+          };
+      const response = await fetch(`${API_URL}/system-settings/admin/${activeSection}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(settings),
+        body: JSON.stringify(payload),
       });
-
-      if (res.ok) {
-        const updated = await res.json();
-        setSettings(updated);
-        clearTmdbApiKeyCache();
-        showToast("Lưu cấu hình hệ thống thành công", "success");
-      } else {
-        showToast("Lưu cấu hình thất bại", "error");
-      }
-    } catch (err) {
-      console.error(err);
-      showToast("Lỗi kết nối máy chủ", "error");
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(Array.isArray(data?.message) ? data.message[0] : data?.message || "Lưu cấu hình thất bại");
+      const normalized = { ...DEFAULT_SETTINGS, ...data, movieSources: data.movieSources || settings.movieSources };
+      setSettings(normalized);
+      setSavedSettings(normalized);
+      setTmdbApiKey("");
+      setSourceChecks({});
+      showToast("Đã lưu nhóm cấu hình hiện tại", "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Lưu cấu hình thất bại", "error");
     } finally {
       setSaving(false);
     }
   };
 
+  const testSource = async (sourceId: string) => {
+    if (sectionSnapshot(settings, "sources") !== sectionSnapshot(savedSettings, "sources")) {
+      showToast("Hãy lưu thay đổi nguồn trước khi kiểm tra kết nối", "warning");
+      return;
+    }
+    setTesting(sourceId);
+    try {
+      const response = await fetch(`${API_URL}/system-settings/admin/test-source`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ sourceId }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.message || "Không thể kiểm tra nguồn");
+      setSourceChecks((current) => ({ ...current, [sourceId]: data }));
+      showToast(data.ok ? `Nguồn hoạt động tốt (${data.latencyMs}ms)` : "Nguồn đang không phản hồi", data.ok ? "success" : "warning");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Không thể kiểm tra nguồn", "error");
+    } finally {
+      setTesting(null);
+    }
+  };
+
+  const testTmdb = async () => {
+    if (tmdbApiKey.trim()) {
+      showToast("Hãy lưu TMDB API key mới trước khi kiểm tra", "warning");
+      return;
+    }
+    setTesting("tmdb");
+    try {
+      const response = await fetch(`${API_URL}/system-settings/admin/test-tmdb`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.message || "Không thể kiểm tra TMDB");
+      showToast(data.ok ? `TMDB hoạt động tốt (${data.latencyMs}ms)` : "TMDB API key không hợp lệ hoặc đang gián đoạn", data.ok ? "success" : "warning");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Không thể kiểm tra TMDB", "error");
+    } finally {
+      setTesting(null);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[420px] flex-col items-center justify-center gap-3 rounded-2xl border border-zinc-900 bg-[#0d0e13]">
+        <Loader2 className="animate-spin text-pink-500" size={26} />
+        <span className="text-xs font-bold text-zinc-500">Đang tải cấu hình an toàn...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fadeIn">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-left">
-          <h3 className="text-base md:text-lg font-black text-white tracking-tight flex items-center gap-2">
-            <Settings size={18} className="text-pink-500" />
-            Cài đặt Hệ thống
+          <h3 className="flex items-center gap-2 text-lg font-black tracking-tight text-white">
+            <Settings size={19} className="text-pink-500" /> Cài đặt hệ thống
+            {anyDirty && <span className="rounded-full bg-amber-500/10 px-2 py-1 text-[9px] uppercase tracking-wider text-amber-400">Chưa lưu</span>}
           </h3>
-          <p className="text-[10px] font-semibold text-zinc-500 mt-0.5">
-            Cấu hình hoạt động, SEO, nguồn API phim, thông tin liên hệ và chế độ bảo trì của DlowPhim.
+          <p className="mt-1 text-[10px] font-semibold text-zinc-500">
+            Cấu hình website và nguồn dữ liệu đang được sử dụng thật trong DlowPhim.
           </p>
+          {settings.updatedAt && (
+            <p className="mt-1 text-[9px] text-zinc-600">
+              Lưu gần nhất: {new Date(settings.updatedAt).toLocaleString("vi-VN")}
+            </p>
+          )}
         </div>
-
         <button
-          onClick={fetchSettings}
-          disabled={loading || saving}
-          className="w-9 h-9 rounded-xl bg-zinc-900/60 hover:bg-zinc-900 text-zinc-400 hover:text-white flex items-center justify-center transition-all cursor-pointer border-none disabled:opacity-50 self-end"
-          title="Tải lại dữ liệu"
+          type="button"
+          onClick={async () => {
+            if (anyDirty && !(await confirm({ title: "Tải lại cấu hình?", message: "Các thay đổi chưa lưu sẽ bị hủy.", confirmLabel: "Tải lại", tone: "warning" }))) return;
+            void fetchSettings();
+          }}
+          disabled={saving}
+          className="flex h-10 items-center gap-2 self-end rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 text-[10px] font-black text-zinc-400 transition hover:text-white disabled:opacity-50"
         >
-          <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+          <RefreshCw size={13} /> Tải lại
         </button>
       </div>
 
-      {/* Internal Tabs Navigator */}
-      <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-900">
-        {[
-          { id: "general", label: "Cấu hình chung", icon: Globe },
-          { id: "crawl", label: "Nguồn cào phim", icon: Film },
-          { id: "business", label: "Kinh doanh & Liên hệ", icon: Mail },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeSubTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveSubTab(tab.id as any)}
-              className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border-none cursor-pointer flex items-center justify-center gap-2 ${
-                isActive
-                  ? "bg-pink-500 text-white"
-                  : "bg-transparent text-zinc-500 hover:text-zinc-350"
-              }`}
-            >
-              <Icon size={12} />
-              <span className="hidden sm:inline">{tab.label}</span>
-            </button>
-          );
-        })}
+      <div className="grid grid-cols-2 rounded-xl border border-zinc-900 bg-zinc-950 p-1">
+        {([
+          { id: "general", label: "Website & vận hành", icon: Globe },
+          { id: "sources", label: "Nguồn phim & TMDB", icon: Film },
+        ] as const).map(({ id, label, icon: Icon }) => (
+          <button
+            type="button"
+            key={id}
+            onClick={() => switchSection(id)}
+            className={`flex items-center justify-center gap-2 rounded-lg py-2.5 text-[10px] font-black uppercase tracking-wider transition ${activeSection === id ? "bg-pink-500 text-white" : "text-zinc-500 hover:text-white"}`}
+          >
+            <Icon size={13} /> {label}
+          </button>
+        ))}
       </div>
 
-      {/* Form Settings */}
-      {loading ? (
-        <div className="p-20 text-center flex flex-col items-center justify-center gap-3">
-          <Loader2 className="animate-spin text-pink-500" size={24} />
-          <span className="text-xs text-zinc-500 font-bold">Đang tải cấu hình...</span>
-        </div>
-      ) : (
-        <form onSubmit={handleSave} className="space-y-6">
-          <div className="bg-[#0d0e13] border border-zinc-900 rounded-2xl p-5 md:p-6 space-y-6 text-left">
-            
-            {/* 1. GENERAL TAB */}
-            {activeSubTab === "general" && (
-              <div className="space-y-5">
-                <div className="border-b border-zinc-900 pb-3">
-                  <h4 className="text-xs font-black text-white uppercase tracking-wider">Cấu hình Website & SEO</h4>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">Tên Website</label>
-                    <input
-                      type="text"
-                      name="websiteName"
-                      value={settings.websiteName}
-                      onChange={handleChange}
-                      required
-                      placeholder="VD: DlowPhim"
-                      className="w-full bg-zinc-950 border border-zinc-900 hover:border-zinc-800 focus:border-pink-500/50 rounded-xl px-4 py-3 text-xs text-white outline-none transition-all placeholder-zinc-700"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">Mô tả Website (SEO)</label>
-                    <input
-                      type="text"
-                      name="websiteDescription"
-                      value={settings.websiteDescription || ""}
-                      onChange={handleChange}
-                      placeholder="VD: Trải Nghiệm Điện Ảnh Premium"
-                      className="w-full bg-zinc-950 border border-zinc-900 hover:border-zinc-800 focus:border-pink-500/50 rounded-xl px-4 py-3 text-xs text-white outline-none transition-all placeholder-zinc-700"
-                    />
-                  </div>
-                </div>
-
-                {/* Maintenance mode toggle card */}
-                <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/10 flex items-center justify-between gap-4 mt-6">
-                  <div className="space-y-0.5 max-w-lg">
-                    <h5 className="text-xs font-extrabold text-amber-400 flex items-center gap-1.5">
-                      <Shield size={14} /> Chế độ bảo trì hệ thống
-                    </h5>
-                    <p className="text-[10px] text-zinc-500 leading-normal font-semibold">
-                      Khi được bật, người xem thông thường sẽ không thể xem phim hay sử dụng các tính năng trên website. Chỉ quản trị viên mới được phép truy cập.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleToggle("maintenanceMode")}
-                    className={`w-11 h-6 rounded-full transition-all relative outline-none border-none cursor-pointer ${
-                      settings.maintenanceMode ? "bg-amber-500" : "bg-zinc-800"
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all shadow-sm ${
-                        settings.maintenanceMode ? "left-5.5" : "left-0.5"
-                      }`}
-                    />
-                  </button>
-                </div>
+      <form onSubmit={saveCurrentSection} className="rounded-2xl border border-zinc-900 bg-[#0d0e13] p-5 text-left md:p-6">
+        {activeSection === "general" ? (
+          <div className="space-y-6">
+            <div>
+              <h4 className="text-xs font-black uppercase tracking-wider text-white">Nhận diện website & SEO</h4>
+              <p className="mt-1 text-[10px] text-zinc-500">Mô tả SEO nên rõ nghĩa và không vượt quá 180 ký tự.</p>
+            </div>
+            <div className="grid gap-5 md:grid-cols-2">
+              <label className="space-y-2 text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                Tên website
+                <input
+                  required
+                  maxLength={60}
+                  value={settings.websiteName}
+                  onChange={(event) => setSettings((current) => ({ ...current, websiteName: event.target.value }))}
+                  className="w-full rounded-xl border border-zinc-900 bg-zinc-950 px-4 py-3 text-xs font-medium normal-case text-white outline-none transition focus:border-pink-500/50"
+                />
+              </label>
+              <label className="space-y-2 text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                Mô tả website (SEO)
+                <input
+                  maxLength={180}
+                  value={settings.websiteDescription}
+                  onChange={(event) => setSettings((current) => ({ ...current, websiteDescription: event.target.value }))}
+                  className="w-full rounded-xl border border-zinc-900 bg-zinc-950 px-4 py-3 text-xs font-medium normal-case text-white outline-none transition focus:border-pink-500/50"
+                />
+                <span className="block text-right text-[9px] font-semibold normal-case text-zinc-600">{settings.websiteDescription.length}/180</span>
+              </label>
+            </div>
+            <div className="flex items-center justify-between gap-5 rounded-2xl border border-amber-500/15 bg-amber-500/5 p-5">
+              <div className="max-w-2xl">
+                <h5 className="flex items-center gap-2 text-xs font-black text-amber-400"><Shield size={15} /> Chế độ bảo trì</h5>
+                <p className="mt-1 text-[10px] font-semibold leading-5 text-zinc-500">Sau khi lưu, người xem sẽ bị tạm khóa tính năng; tài khoản admin vẫn truy cập được.</p>
               </div>
-            )}
-
-            {/* 2. CRAWL TAB */}
-            {activeSubTab === "crawl" && (
-              <div className="space-y-5">
-                <div className="border-b border-zinc-900 pb-3">
-                  <h4 className="text-xs font-black text-white uppercase tracking-wider">Cấu hình Cào Phim & API Nguồn</h4>
-                </div>
-
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <LinkIcon size={12} className="text-pink-500" />
-                    Cài đặt Danh sách các API Nguồn
-                  </label>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    {settings.movieSources?.map((src, index) => {
-                      const isActive = settings.activeMovieSourceId === src.id;
-                      return (
-                        <div
-                          key={src.id}
-                          className={`p-5 rounded-2xl border transition-all duration-300 flex flex-col justify-between gap-4 ${
-                            isActive
-                              ? "bg-pink-500/5 border-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.08)]"
-                              : "bg-zinc-950 border-zinc-900 hover:border-zinc-800"
-                          }`}
-                        >
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className={`w-2 h-2 rounded-full ${
-                                    isActive ? "bg-pink-500 animate-pulse" : "bg-zinc-700"
-                                  }`}
-                                />
-                                <span className="text-[11px] font-black text-white">{src.name}</span>
-                              </div>
-                              {isActive && (
-                                <span className="text-[8px] font-black text-pink-500 uppercase tracking-widest bg-pink-500/10 px-2 py-0.5 rounded">
-                                  Đang Hoạt Động
-                                </span>
-                              )}
-                            </div>
-
-                            <div className="space-y-2.5 pt-1 text-left">
-                              <div className="space-y-1">
-                                <span className="text-[9px] font-black text-zinc-500 uppercase tracking-wider">Tên nguồn</span>
-                                <input
-                                  type="text"
-                                  value={src.name}
-                                  onChange={(e) => {
-                                    const newSources = [...(settings.movieSources || [])];
-                                    newSources[index] = { ...src, name: e.target.value };
-                                    setSettings(prev => ({ ...prev, movieSources: newSources }));
-                                  }}
-                                  className="w-full bg-zinc-900/40 border border-zinc-900 focus:border-pink-500/30 rounded-xl px-3 py-2 text-[11px] text-white outline-none"
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <span className="text-[9px] font-black text-zinc-500 uppercase tracking-wider">Tên miền (Domain)</span>
-                                <input
-                                  type="url"
-                                  value={src.domain}
-                                  onChange={(e) => {
-                                    const newSources = [...(settings.movieSources || [])];
-                                    newSources[index] = { ...src, domain: e.target.value };
-                                    setSettings(prev => ({ ...prev, movieSources: newSources }));
-                                  }}
-                                  className="w-full bg-zinc-900/40 border border-zinc-900 focus:border-pink-500/30 rounded-xl px-3 py-2 text-[11px] text-white outline-none font-mono"
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <span className="text-[9px] font-black text-zinc-500 uppercase tracking-wider">Đường dẫn cào phim (Crawl URL)</span>
-                                <input
-                                  type="url"
-                                  value={src.crawlUrl}
-                                  onChange={(e) => {
-                                    const newSources = [...(settings.movieSources || [])];
-                                    newSources[index] = { ...src, crawlUrl: e.target.value };
-                                    setSettings(prev => ({ ...prev, movieSources: newSources }));
-                                  }}
-                                  className="w-full bg-zinc-900/40 border border-zinc-900 focus:border-pink-500/30 rounded-xl px-3 py-2 text-[11px] text-white outline-none font-mono"
-                                />
-                              </div>
-                            </div>
-                          </div>
-
-                          {!isActive && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSettings(prev => ({
-                                  ...prev,
-                                  activeMovieSourceId: src.id,
-                                  movieCrawlSource: src.crawlUrl
-                                }));
-                                showToast(`Đã chuyển nguồn hoạt động thành ${src.name}. Nhớ nhấn LƯU CẤU HÌNH.`, "success");
-                              }}
-                              className="w-full py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white text-[9px] font-black uppercase tracking-wider transition-all border-none cursor-pointer mt-2"
-                            >
-                              Kích hoạt nguồn này
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 pt-3">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">
-                      Tần suất Tự động cập nhật
-                    </label>
-                    <select
-                      name="autoCrawlInterval"
-                      value={settings.autoCrawlInterval}
-                      onChange={handleChange}
-                      className="w-full bg-zinc-950 border border-zinc-900 hover:border-zinc-800 focus:border-pink-500/50 rounded-xl px-4 py-3 text-xs text-white outline-none transition-all cursor-pointer"
-                    >
-                      <option value={4}>4 giờ một lần</option>
-                      <option value={8}>8 giờ một lần</option>
-                      <option value={12}>12 giờ một lần</option>
-                      <option value={24}>24 giờ một lần (Hàng ngày)</option>
-                      <option value={48}>48 giờ một lần (2 ngày)</option>
-                    </select>
-                  </div>
-                  
-                  <div className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-900 flex items-center justify-between gap-3 self-end h-[46px]">
-                    <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <Radio size={12} className="text-pink-500 animate-pulse" />
-                      Trạng thái quét tự động:
-                    </span>
-                    <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider bg-emerald-500/10 px-2 py-0.5 rounded">
-                      Đang Bật
-                    </span>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5 pt-3">
-                  <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <Settings size={12} className="text-zinc-550" />
-                    TMDB API Key (Miễn phí)
-                  </label>
-                  <input
-                    type="text"
-                    name="tmdbApiKey"
-                    value={settings.tmdbApiKey || ""}
-                    onChange={handleChange}
-                    placeholder="Nhập API Key TMDB riêng của bạn..."
-                    className="w-full bg-zinc-950 border border-zinc-900 hover:border-zinc-800 focus:border-pink-500/50 rounded-xl px-4 py-3 text-xs text-white outline-none transition-all placeholder-zinc-700 font-mono"
-                  />
-                  <span className="text-[9px] font-bold text-zinc-650 leading-relaxed block">
-                    Dùng để tra cứu hình ảnh chất lượng cao 4K/HD sạch sẽ từ TheMovieDB. Nếu trống, hệ thống sẽ tự động sử dụng API Key công cộng của DlowPhim.
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* 3. BUSINESS TAB */}
-            {activeSubTab === "business" && (
-              <div className="space-y-5">
-                <div className="border-b border-zinc-900 pb-3">
-                  <h4 className="text-xs font-black text-white uppercase tracking-wider">Thông tin liên hệ & Cấu hình thương mại</h4>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">Email hỗ trợ</label>
-                    <input
-                      type="email"
-                      name="contactEmail"
-                      value={settings.contactEmail || ""}
-                      onChange={handleChange}
-                      placeholder="VD: support@dlowphim.com"
-                      className="w-full bg-zinc-950 border border-zinc-900 hover:border-zinc-800 focus:border-pink-500/50 rounded-xl px-4 py-3 text-xs text-white outline-none transition-all placeholder-zinc-700"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">Facebook Fanpage</label>
-                    <input
-                      type="url"
-                      name="facebookLink"
-                      value={settings.facebookLink || ""}
-                      onChange={handleChange}
-                      placeholder="Link Facebook Page"
-                      className="w-full bg-zinc-950 border border-zinc-900 hover:border-zinc-800 focus:border-pink-500/50 rounded-xl px-4 py-3 text-xs text-white outline-none transition-all placeholder-zinc-700"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">Telegram Channel</label>
-                    <input
-                      type="url"
-                      name="telegramLink"
-                      value={settings.telegramLink || ""}
-                      onChange={handleChange}
-                      placeholder="Link Telegram"
-                      className="w-full bg-zinc-950 border border-zinc-900 hover:border-zinc-800 focus:border-pink-500/50 rounded-xl px-4 py-3 text-xs text-white outline-none transition-all placeholder-zinc-700"
-                    />
-                  </div>
-                </div>
-
-                {/* Ads monetization toggle card */}
-                <div className="p-4 rounded-xl bg-pink-500/5 border border-pink-500/10 flex items-center justify-between gap-4 mt-6">
-                  <div className="space-y-0.5 max-w-lg">
-                    <h5 className="text-xs font-extrabold text-pink-500 flex items-center gap-1.5">
-                      💰 Doanh thu: Banner Quảng cáo
-                    </h5>
-                    <p className="text-[10px] text-zinc-500 leading-normal font-semibold">
-                      Bật hoặc tắt toàn bộ các vị trí đặt biểu ngữ quảng cáo trên trang chủ, trang tìm kiếm và trang xem phim của người dùng.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleToggle("adsEnabled")}
-                    className={`w-11 h-6 rounded-full transition-all relative outline-none border-none cursor-pointer ${
-                      settings.adsEnabled ? "bg-pink-500" : "bg-zinc-800"
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all shadow-sm ${
-                        settings.adsEnabled ? "left-5.5" : "left-0.5"
-                      }`}
-                    />
-                  </button>
-                </div>
-              </div>
-            )}
-            
-            {/* Submit button */}
-            <div className="flex justify-end pt-2 border-t border-zinc-900/60 mt-4">
-              <button
-                type="submit"
-                disabled={saving}
-                className="px-5 py-2.5 bg-pink-500 hover:bg-pink-600 disabled:bg-pink-500/50 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer border-none flex items-center gap-2 shadow shadow-pink-500/10"
-              >
-                {saving ? (
-                  <>
-                    <Loader2 size={14} className="animate-spin" />
-                    Đang lưu...
-                  </>
-                ) : (
-                  <>
-                    <Save size={14} />
-                    Lưu cấu hình
-                  </>
-                )}
+              <button type="button" onClick={toggleMaintenance} aria-pressed={settings.maintenanceMode} className={`relative h-6 w-11 shrink-0 rounded-full transition ${settings.maintenanceMode ? "bg-amber-500" : "bg-zinc-800"}`}>
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${settings.maintenanceMode ? "left-[22px]" : "left-0.5"}`} />
               </button>
             </div>
           </div>
-        </form>
-      )}
+        ) : (
+          <div className="space-y-7">
+            <div>
+              <h4 className="text-xs font-black uppercase tracking-wider text-white">Nguồn dữ liệu phim</h4>
+              <p className="mt-1 text-[10px] text-zinc-500">PhimAPI mặc định, OPhim dự phòng. Riêng mục Sắp chiếu sử dụng luồng OPhim/TMDB.</p>
+            </div>
+            <div className="grid gap-5 lg:grid-cols-2">
+              {settings.movieSources.map((source, index) => {
+                const active = settings.activeMovieSourceId === source.id;
+                const check = sourceChecks[source.id];
+                return (
+                  <section key={source.id} className={`space-y-4 rounded-2xl border p-5 transition ${active ? "border-pink-500/70 bg-pink-500/5" : "border-zinc-900 bg-zinc-950"}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h5 className="flex items-center gap-2 text-xs font-black text-white">
+                          <span className={`h-2 w-2 rounded-full ${active ? "bg-pink-500" : "bg-zinc-700"}`} /> {source.name}
+                        </h5>
+                        <p className="mt-1 text-[9px] font-bold uppercase tracking-wider text-zinc-600">Mã nguồn: {source.id}</p>
+                      </div>
+                      {active && <span className="rounded-full bg-pink-500/10 px-2 py-1 text-[8px] font-black uppercase text-pink-400">Mặc định</span>}
+                    </div>
+                    {(["name", "domain", "crawlUrl"] as const).map((field) => (
+                      <label key={field} className="block space-y-1.5 text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                        {field === "name" ? "Tên hiển thị" : field === "domain" ? "Tên miền API" : "URL danh sách mới"}
+                        <input
+                          type={field === "name" ? "text" : "url"}
+                          value={source[field]}
+                          onChange={(event) => updateSource(index, { [field]: event.target.value })}
+                          className={`w-full rounded-xl border border-zinc-900 bg-zinc-900/40 px-3 py-2.5 text-[11px] font-medium normal-case text-white outline-none focus:border-pink-500/40 ${field !== "name" ? "font-mono" : ""}`}
+                        />
+                      </label>
+                    ))}
+                    <div className="flex gap-2">
+                      {!active && <button type="button" onClick={() => selectSource(source)} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[9px] font-black uppercase text-zinc-300 hover:bg-zinc-800">Đặt làm mặc định</button>}
+                      <button type="button" onClick={() => testSource(source.id)} disabled={testing === source.id} className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-zinc-800 py-2.5 text-[9px] font-black uppercase text-zinc-400 hover:text-white disabled:opacity-50">
+                        {testing === source.id ? <Loader2 size={12} className="animate-spin" /> : <Signal size={12} />} Kiểm tra
+                      </button>
+                    </div>
+                    {check && (
+                      <div className={`flex items-center gap-2 text-[10px] font-bold ${check.ok ? "text-emerald-400" : "text-red-400"}`}>
+                        {check.ok ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
+                        {check.ok ? `Hoạt động · ${check.latencyMs}ms · HTTP ${check.statusCode}` : "Nguồn không phản hồi ổn định"}
+                      </div>
+                    )}
+                  </section>
+                );
+              })}
+            </div>
+
+            <section className="rounded-2xl border border-zinc-900 bg-zinc-950 p-5">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+                <label className="flex-1 space-y-2 text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                  <span className="flex items-center gap-2"><KeyRound size={13} className="text-pink-500" /> TMDB API key</span>
+                  <div className="relative">
+                    <input
+                      type={showTmdbKey ? "text" : "password"}
+                      autoComplete="new-password"
+                      value={tmdbApiKey}
+                      onChange={(event) => setTmdbApiKey(event.target.value.trim())}
+                      placeholder={settings.tmdbApiKeyConfigured ? `Đã cấu hình ····${settings.tmdbApiKeyLast4}` : "Nhập TMDB API key 32 ký tự"}
+                      className="w-full rounded-xl border border-zinc-900 bg-zinc-900/40 px-4 py-3 pr-12 text-xs font-medium normal-case text-white outline-none focus:border-pink-500/40"
+                    />
+                    <button type="button" onClick={() => setShowTmdbKey((visible) => !visible)} aria-label={showTmdbKey ? "Ẩn API key" : "Hiện API key"} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white">
+                      {showTmdbKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  <span className="block text-[9px] font-semibold normal-case leading-4 text-zinc-600">Khóa hiện tại không bao giờ được gửi lại trình duyệt. Để trống nếu không muốn thay đổi.</span>
+                </label>
+                <button type="button" onClick={testTmdb} disabled={testing === "tmdb" || !settings.tmdbApiKeyConfigured} className="flex h-[42px] items-center justify-center gap-2 rounded-xl border border-zinc-800 px-4 text-[9px] font-black uppercase text-zinc-400 hover:text-white disabled:opacity-40">
+                  {testing === "tmdb" ? <Loader2 size={12} className="animate-spin" /> : <Signal size={12} />} Kiểm tra TMDB
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
+
+        <div className="mt-7 flex flex-col-reverse gap-3 border-t border-zinc-900 pt-5 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-[9px] font-semibold text-zinc-600">Chỉ nhóm đang mở được lưu, tránh ghi đè cấu hình ở nhóm khác.</p>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={resetCurrentSection} disabled={!currentDirty || saving} className="flex items-center gap-2 rounded-xl border border-zinc-800 px-4 py-2.5 text-[10px] font-black uppercase text-zinc-400 hover:text-white disabled:opacity-30">
+              <RotateCcw size={13} /> Hoàn tác
+            </button>
+            <button type="submit" disabled={!currentDirty || saving} className="flex min-w-36 items-center justify-center gap-2 rounded-xl bg-pink-500 px-5 py-2.5 text-[10px] font-black uppercase text-white shadow-lg shadow-pink-500/10 hover:bg-pink-600 disabled:cursor-not-allowed disabled:opacity-40">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {saving ? "Đang lưu" : "Lưu nhóm này"}
+            </button>
+          </div>
+        </div>
+      </form>
+      {confirmDialog}
     </div>
   );
 }

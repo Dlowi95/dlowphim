@@ -75,4 +75,70 @@ describe('SystemSettingsService movie source configuration', () => {
     expect(result.activeMovieSourceId).toBe('ophim');
     expect(result.movieCrawlSource).toBe(movieSources[1].crawlUrl);
   });
+
+  it('never exposes the TMDB key through public settings', async () => {
+    const settings = {
+      websiteName: 'DlowPhim',
+      websiteDescription: 'Movie website',
+      maintenanceMode: false,
+      contactEmail: 'support@example.com',
+      facebookLink: '',
+      telegramLink: '',
+      tmdbApiKey: '0123456789abcdef0123456789abcdef',
+      activeMovieSourceId: 'phimapi',
+      movieSourceConfigVersion: 1,
+      movieSources,
+      save: jest.fn(),
+    };
+
+    const result = await createService(settings).getPublicSettings();
+
+    expect(result).not.toHaveProperty('tmdbApiKey');
+    expect(result).not.toHaveProperty('movieSources');
+    expect(result.websiteName).toBe('DlowPhim');
+  });
+
+  it('returns only masked TMDB metadata to an administrator', async () => {
+    const settings = {
+      websiteName: 'DlowPhim',
+      maintenanceMode: false,
+      tmdbApiKey: '0123456789abcdef0123456789abcdef',
+      activeMovieSourceId: 'phimapi',
+      movieSourceConfigVersion: 1,
+      movieSources,
+      save: jest.fn(),
+    };
+
+    const result = await createService(settings).getAdminSettings();
+
+    expect(result).not.toHaveProperty('tmdbApiKey');
+    expect(result.tmdbApiKeyConfigured).toBe(true);
+    expect(result.tmdbApiKeyLast4).toBe('cdef');
+  });
+
+  it('updates one settings section without overwriting unrelated fields', async () => {
+    const settings = {
+      websiteName: 'Old name',
+      websiteDescription: 'Old description',
+      maintenanceMode: false,
+      contactEmail: 'keep@example.com',
+      tmdbApiKey: '0123456789abcdef0123456789abcdef',
+      activeMovieSourceId: 'phimapi',
+      movieSourceConfigVersion: 1,
+      movieSources,
+      save: jest.fn().mockImplementation(async function (this: any) { return this; }),
+    };
+
+    await createService(settings).updateSection('general', {
+      websiteName: 'DlowPhim',
+      websiteDescription: 'New description',
+      maintenanceMode: true,
+    }, 'admin-id');
+
+    expect(settings.websiteName).toBe('DlowPhim');
+    expect(settings.maintenanceMode).toBe(true);
+    expect(settings.contactEmail).toBe('keep@example.com');
+    expect(settings.tmdbApiKey).toBe('0123456789abcdef0123456789abcdef');
+    expect((settings as any).lastUpdatedBy).toBe('admin-id');
+  });
 });

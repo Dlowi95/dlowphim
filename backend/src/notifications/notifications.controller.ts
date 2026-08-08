@@ -2,6 +2,7 @@ import { Controller, Get, Put, Delete, Post, Param, Query, UseGuards, Req, Body 
 import * as express from 'express';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { RequirePermissions } from '../auth/guards/require-permissions.decorator';
 import { NotificationsService } from './notifications.service';
 
 @Controller('notifications')
@@ -12,6 +13,7 @@ export class NotificationsController {
   // ─── ADMIN NOTIFICATION ENDPOINTS (Reports) ───
   @Get()
   @UseGuards(RolesGuard)
+  @RequirePermissions('notifications.manage')
   async getNotifications(
     @Req() req: express.Request,
     @Query('page') page?: string,
@@ -31,24 +33,28 @@ export class NotificationsController {
 
   @Put('read-all')
   @UseGuards(RolesGuard)
+  @RequirePermissions('notifications.manage')
   async markAllAsRead(@Req() req: express.Request) {
     return this.notificationsService.markAllAsRead(req['user']?.sub);
   }
 
   @Put(':id/read')
   @UseGuards(RolesGuard)
+  @RequirePermissions('notifications.manage')
   async markAsRead(@Req() req: express.Request, @Param('id') id: string) {
     return this.notificationsService.markAsRead(req['user']?.sub, id);
   }
 
   @Delete('clear')
   @UseGuards(RolesGuard)
+  @RequirePermissions('notifications.manage')
   async clearAll(@Req() req: express.Request) {
     return this.notificationsService.clearAll(req['user']?.sub);
   }
 
   @Get('admin/broadcasts')
   @UseGuards(RolesGuard)
+  @RequirePermissions('notifications.manage')
   async getBroadcasts(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
@@ -61,6 +67,7 @@ export class NotificationsController {
 
   @Post('admin/broadcasts')
   @UseGuards(RolesGuard)
+  @RequirePermissions('notifications.manage')
   async createBroadcast(
     @Req() req: express.Request,
     @Body() body: { title?: string; content?: string; link?: string; expiresInDays?: number },
@@ -111,6 +118,7 @@ export class NotificationsController {
   // Admin route to trigger a manual movie update notification for testing or automatic flows
   @Post('admin/movie-update')
   @UseGuards(RolesGuard)
+  @RequirePermissions('notifications.manage')
   async notifyMovieUpdate(
     @Body('movieSlug') movieSlug: string,
     @Body('movieName') movieName: string,

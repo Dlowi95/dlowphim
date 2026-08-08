@@ -8,7 +8,6 @@ import { cleanMovieName, cleanSlug, getImageUrl, getBestMovieImage, isValidMovie
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
-import { getTmdbApiKey } from "@/utils/tmdb";
 import Image from "next/image";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 

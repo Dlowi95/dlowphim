@@ -13,6 +13,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { RequirePermissions } from '../auth/guards/require-permissions.decorator';
 import { MovieReportsService } from './movie-reports.service';
 import { createHash } from 'node:crypto';
 
@@ -60,6 +61,7 @@ export class MovieReportsController {
 
   @Get('admin')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('reports.manage')
   async getReportsForAdmin(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
@@ -78,6 +80,7 @@ export class MovieReportsController {
 
   @Put('admin/:id/status')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('reports.manage')
   async updateStatus(
     @Param('id') id: string,
     @Body('status') status: string,
@@ -94,6 +97,7 @@ export class MovieReportsController {
 
   @Delete('admin/:id')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('reports.manage')
   async deleteReport(@Param('id') id: string) {
     return this.movieReportsService.deleteReport(id);
   }

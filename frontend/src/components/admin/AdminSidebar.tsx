@@ -16,7 +16,9 @@ import {
   Clapperboard,
   Sword,
   Activity,
+  ScrollText,
 } from "lucide-react";
+import { ADMIN_ROLE_LABELS, hasAdminPermission, normalizeAdminRole, type AdminPermission } from "@/utils/adminPermissions";
 
 interface AdminSidebarProps {
   activeTab: string;
@@ -28,15 +30,16 @@ interface AdminSidebarProps {
   setSidebarOpen: (open: boolean) => void;
 }
 
-const NAV_ITEMS = [
-  { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
-  { id: "movies", label: "Quản lý Phim", icon: Film },
-  { id: "users", label: "Người dùng", icon: Users },
-  { id: "comments", label: "Bình luận & Báo xấu", icon: MessageSquare, countKey: "reports" },
-  { id: "banners", label: "Banner", icon: ImageIcon },
-  { id: "reports", label: "Báo cáo lỗi", icon: AlertTriangle, countKey: "movieReports" },
-  { id: "playback", label: "Sức khỏe nguồn", icon: Activity },
-  { id: "notifications", label: "Trung tâm thông báo", icon: Bell, countKey: "notifications" },
+const NAV_ITEMS: { id: string; label: string; icon: typeof LayoutDashboard; permission: AdminPermission; countKey?: string }[] = [
+  { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard, permission: "dashboard.read" },
+  { id: "movies", label: "Quản lý Phim", icon: Film, permission: "movies.manage" },
+  { id: "users", label: "Người dùng", icon: Users, permission: "users.read" },
+  { id: "comments", label: "Bình luận & Báo xấu", icon: MessageSquare, permission: "comments.moderate", countKey: "reports" },
+  { id: "banners", label: "Banner", icon: ImageIcon, permission: "banners.manage" },
+  { id: "reports", label: "Báo cáo lỗi", icon: AlertTriangle, permission: "reports.manage", countKey: "movieReports" },
+  { id: "playback", label: "Sức khỏe nguồn", icon: Activity, permission: "playback.read" },
+  { id: "notifications", label: "Trung tâm thông báo", icon: Bell, permission: "notifications.manage", countKey: "notifications" },
+  { id: "operations", label: "Nhật ký & tác vụ", icon: ScrollText, permission: "jobs.manage" },
 ];
 
 export default function AdminSidebar({
@@ -106,7 +109,7 @@ export default function AdminSidebar({
 
         {/* Nav items */}
         <nav className="flex-1 py-3 flex flex-col gap-1 px-2 overflow-hidden">
-          {NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.filter((item) => hasAdminPermission(user?.role, item.permission)).map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             const count = getCount(item.countKey);
@@ -188,13 +191,13 @@ export default function AdminSidebar({
               }`}
             >
               <span className="text-[11px] font-bold text-zinc-200 truncate">{user?.displayName || "Admin"}</span>
-              <span className="text-[9px] font-black text-pink-500 uppercase tracking-widest">Super Admin</span>
+              <span className="text-[9px] font-black text-pink-500 uppercase tracking-widest">{normalizeAdminRole(user?.role) ? ADMIN_ROLE_LABELS[normalizeAdminRole(user?.role)!] : "Admin"}</span>
             </div>
 
             {/* Action icons (visible when expanded) */}
             {expanded && (
               <div className="flex items-center gap-1 ml-auto shrink-0">
-                <button
+                {hasAdminPermission(user?.role, "settings.manage") && <button
                   onClick={() => { setActiveTab("settings"); setSidebarOpen(false); }}
                   title="Cài đặt"
                   className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all cursor-pointer border-none ${
@@ -204,7 +207,7 @@ export default function AdminSidebar({
                   }`}
                 >
                   <Settings size={12} />
-                </button>
+                </button>}
                 <button
                   onClick={() => router.push("/")}
                   title="Về trang chủ"

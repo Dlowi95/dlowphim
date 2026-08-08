@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Cookies from "js-cookie";
 import { useAuth } from "@/context/AuthContext";
 import { Bell, Menu, AlertTriangle, ShieldCheck, CheckCheck, Sparkles } from "lucide-react";
+import { hasAdminPermission } from "@/utils/adminPermissions";
 
 interface AdminHeaderProps {
   activeTab: string;
@@ -26,6 +27,7 @@ const TAB_LABELS: Record<string, string> = {
   playback: "Sức khỏe nguồn phát",
   notifications: "Trung tâm thông báo",
   settings: "Cài đặt",
+  operations: "Nhật ký & tác vụ",
 };
 
 export default function AdminHeader({
@@ -100,7 +102,7 @@ export default function AdminHeader({
       {/* Right side: notification bell + avatar */}
       <div className="flex items-center gap-2.5">
         {/* Bell */}
-        <div className="relative">
+        {hasAdminPermission(user?.role, "notifications.manage") && <div className="relative">
           <button
             onClick={() => setShowNotif(!showNotif)}
             className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer border-none ${
@@ -191,7 +193,7 @@ export default function AdminHeader({
               </div>
             </>
           )}
-        </div>
+        </div>}
 
         {/* Subtle user avatar in header (optional) */}
         {user?.avatar ? (

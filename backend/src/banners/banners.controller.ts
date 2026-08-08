@@ -11,6 +11,7 @@ import {
 import { BannersService } from './banners.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { RequirePermissions } from '../auth/guards/require-permissions.decorator';
 
 @Controller('banners')
 export class BannersController {
@@ -29,6 +30,7 @@ export class BannersController {
 
   @Get('hero/admin')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('banners.manage')
   async getResolvedHeroForAdmin() {
     return this.bannersService.getResolvedHero(true);
   }
@@ -36,24 +38,28 @@ export class BannersController {
   // Admin endpoints (protected by AuthGuard and RolesGuard)
   @Get('admin')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('banners.manage')
   async getAdminBanners() {
     return this.bannersService.findAllForAdmin();
   }
 
   @Post()
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('banners.manage')
   async createBanner(@Body() createBannerDto: any) {
     return this.bannersService.create(createBannerDto);
   }
 
   @Put(':id')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('banners.manage')
   async updateBanner(@Param('id') id: string, @Body() updateBannerDto: any) {
     return this.bannersService.update(id, updateBannerDto);
   }
 
   @Delete(':id')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('banners.manage')
   async deleteBanner(@Param('id') id: string) {
     return this.bannersService.delete(id);
   }

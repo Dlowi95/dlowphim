@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import NavbarComponent from "@/components/Navbar";
 import FooterComponent from "@/components/Footer";
 import { ShieldAlert, Loader2 } from "lucide-react";
+import { normalizeAdminRole } from "@/utils/adminPermissions";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading } = useAuth();
@@ -45,7 +46,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   // Nếu đang bảo trì hệ thống VÀ không phải trang admin VÀ tài khoản hiện tại không phải admin
-  if (maintenance && !isAdminPath && user?.role !== "admin") {
+  if (maintenance && !isAdminPath && !normalizeAdminRole(user?.role)) {
     return (
       <div className="min-h-screen bg-[#07070a] flex flex-col items-center justify-center p-6 text-center select-none">
         <div className="w-24 h-24 rounded-full bg-pink-500/5 border border-pink-500/10 flex items-center justify-center text-pink-500 shadow-[0_0_40px_rgba(236,72,153,0.15)] mb-8 animate-pulse">

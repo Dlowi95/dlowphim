@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { PlaybackHealthEvent, PlaybackHealthService } from './playback-health.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { RequirePermissions } from '../auth/guards/require-permissions.decorator';
 
 @Controller('playback-health')
 export class PlaybackHealthController {
@@ -31,6 +32,7 @@ export class PlaybackHealthController {
 
   @Get('admin')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('playback.read')
   getAdminDashboard() {
     return this.playbackHealthService.getAdminDashboard();
   }

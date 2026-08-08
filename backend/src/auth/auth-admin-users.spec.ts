@@ -60,7 +60,8 @@ describe('AuthService admin users', () => {
       tokenVersion: 2,
       save: jest.fn().mockResolvedValue(undefined),
     };
-    const { service } = createService({ userModel: { findById: jest.fn().mockResolvedValue(user) } });
+    const actor = { _id: new Types.ObjectId(), role: 'moderator', isActive: true };
+    const { service } = createService({ userModel: { findById: jest.fn().mockResolvedValueOnce(user).mockResolvedValueOnce(actor) } });
 
     await service.updateUserStatus(new Types.ObjectId().toString(), userId, false, 'Spam');
 
@@ -88,8 +89,9 @@ describe('AuthService admin users', () => {
       tokenVersion: 1,
       save: jest.fn().mockResolvedValue(undefined),
     };
+    const actor = { _id: new Types.ObjectId(), role: 'moderator', isActive: true };
     const { service, notificationModel } = createService({
-      userModel: { findById: jest.fn().mockResolvedValue(user) },
+      userModel: { findById: jest.fn().mockResolvedValueOnce(user).mockResolvedValueOnce(actor) },
     });
 
     await service.deleteUser(new Types.ObjectId().toString(), userId);

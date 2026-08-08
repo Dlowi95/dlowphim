@@ -2,6 +2,7 @@ import { Controller, Get, Post, Delete, Body, Param, UseGuards, Req, Headers, Qu
 import { RatingsService } from './ratings.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { RequirePermissions } from '../auth/guards/require-permissions.decorator';
 import { JwtService } from '@nestjs/jwt';
 
 @Controller('ratings')
@@ -13,6 +14,7 @@ export class RatingsController {
 
   @Get('admin/stats')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('movies.manage')
   async getAdminStats(
     @Query('search') search = '',
     @Query('page') page = '1',
@@ -23,6 +25,7 @@ export class RatingsController {
 
   @Delete('admin/movie/:movieSlug')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('movies.manage')
   async deleteMovieRatings(@Param('movieSlug') movieSlug: string) {
     return this.ratingsService.deleteMovieRatings(movieSlug);
   }

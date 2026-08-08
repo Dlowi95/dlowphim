@@ -10,7 +10,6 @@ import HalftoneOverlay from "@/components/HalftoneOverlay";
 import ProgressiveImage from "@/components/ProgressiveImage";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
-import { getTmdbApiKey } from "@/utils/tmdb";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import { normalizeEpisodeKey } from "@/utils/episodeUtils";
 

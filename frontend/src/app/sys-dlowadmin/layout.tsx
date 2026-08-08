@@ -4,6 +4,7 @@ import React from "react";
 import { useAuth } from "@/context/AuthContext";
 import { notFound } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { normalizeAdminRole } from "@/utils/adminPermissions";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -19,7 +20,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   // If loading is done but no user or user is not an admin, render notFound (404)
-  if (!user || user.role !== "admin") {
+  if (!user || !normalizeAdminRole(user.role)) {
     notFound();
   }
 

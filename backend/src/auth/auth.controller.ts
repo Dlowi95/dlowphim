@@ -2,6 +2,7 @@ import { Controller, Post, Body, Get, Put, Delete, Param, Query, UseGuards, Req 
 import { AuthService } from './auth.service';
 import { AuthGuard } from './guards/auth.guard';
 import { RolesGuard } from './guards/roles.guard';
+import { RequirePermissions } from './guards/require-permissions.decorator';
 import * as express from 'express';
 
 @Controller('auth')
@@ -92,6 +93,7 @@ export class AuthController {
 
   @Get('admin/users')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('users.read')
   async getAllUsers(
     @Query('search') search?: string,
     @Query('page') page?: string,
@@ -107,6 +109,7 @@ export class AuthController {
 
   @Put('admin/users/:id/role')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('roles.manage')
   async updateUserRole(
     @Req() req: express.Request,
     @Param('id') userId: string,
@@ -118,6 +121,7 @@ export class AuthController {
 
   @Put('admin/users/:id/status')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('users.manage')
   async updateUserStatus(
     @Req() req: express.Request,
     @Param('id') userId: string,
@@ -130,6 +134,7 @@ export class AuthController {
 
   @Delete('admin/users/:id')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('users.manage')
   async deleteUser(@Req() req: express.Request, @Param('id') userId: string) {
     const adminId = req['user']?.sub;
     return this.authService.deleteUser(adminId, userId);

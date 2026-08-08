@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import { FeaturedRidersService } from './featured-riders.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { RequirePermissions } from '../auth/guards/require-permissions.decorator';
 
 // Upload thư mục: backend/uploads/riders/
 const UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'riders');
@@ -26,24 +27,28 @@ export class FeaturedRidersController {
   // ─── ADMIN (bảo vệ bằng auth + role) ───
   @Get('admin')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('banners.manage')
   async getAll() {
     return this.service.findAll();
   }
 
   @Post()
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('banners.manage')
   async create(@Body() dto: any) {
     return this.service.create(dto);
   }
 
   @Put(':id')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('banners.manage')
   async update(@Param('id') id: string, @Body() dto: any) {
     return this.service.update(id, dto);
   }
 
   @Delete(':id')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('banners.manage')
   async delete(@Param('id') id: string) {
     return this.service.delete(id);
   }
@@ -51,6 +56,7 @@ export class FeaturedRidersController {
   // Drag & Drop reorder
   @Patch('reorder')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('banners.manage')
   async reorder(@Body() body: { orders: { id: string; order: number }[] }) {
     return this.service.reorder(body.orders);
   }
@@ -58,6 +64,7 @@ export class FeaturedRidersController {
   // Upload ảnh (poster hoặc banner) trả về URL
   @Post('upload')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('banners.manage')
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({

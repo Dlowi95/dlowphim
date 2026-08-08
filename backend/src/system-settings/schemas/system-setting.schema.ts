@@ -77,6 +77,9 @@ export class SystemSetting {
   // TMDB API Config
   @Prop({ default: '591c025bb1641315ae087330271132bc' })
   tmdbApiKey?: string;
+
+  @Prop({ default: '' })
+  lastUpdatedBy?: string;
 }
 
 export const SystemSettingSchema = SchemaFactory.createForClass(SystemSetting);

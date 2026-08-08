@@ -18,8 +18,9 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { useConfirmDialog } from "@/components/ConfirmDialog";
 import Pagination from "./Pagination";
+import { ADMIN_ROLE_LABELS, hasAdminPermission, normalizeAdminRole } from "@/utils/adminPermissions";
 
-type UserRole = "member" | "admin";
+type UserRole = "member" | "super_admin" | "content_admin" | "moderator" | "support";
 type AuthProvider = "password" | "google" | "hybrid";
 
 interface UserItem {
@@ -89,6 +90,8 @@ export default function UsersManagementView() {
   const { confirm, confirmDialog } = useConfirmDialog();
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
   const requestIdRef = useRef(0);
+  const canManageRoles = hasAdminPermission(currentUser?.role, "roles.manage");
+  const roleLabel = (value: UserRole) => value === "member" ? "Thành viên" : ADMIN_ROLE_LABELS[normalizeAdminRole(value)!];
 
   const [users, setUsers] = useState<UserItem[]>([]);
   const [summary, setSummary] = useState(EMPTY_SUMMARY);
@@ -180,7 +183,7 @@ export default function UsersManagementView() {
     if (nextRole === target.role) return;
     const accepted = await confirm({
       title: "Thay đổi quyền tài khoản?",
-      message: `${target.displayName} sẽ được chuyển thành ${nextRole === "admin" ? "quản trị viên" : "thành viên"}. Các phiên đăng nhập cũ sẽ được thu hồi.`,
+      message: `${target.displayName} sẽ được chuyển thành ${roleLabel(nextRole)}. Các phiên đăng nhập cũ sẽ được thu hồi. Không thể cấp vai trò Super Admin tại đây.`,
       confirmLabel: "Đổi quyền",
       tone: "warning",
     });
@@ -285,7 +288,7 @@ export default function UsersManagementView() {
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" />
             <input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Tìm tên hoặc email..." className="h-9 w-full rounded-xl border border-white/[0.06] bg-black/25 pl-9 pr-3 text-xs text-white outline-none transition-colors focus:border-pink-500/40" />
           </label>
-          <select value={role} onChange={(event) => { setRole(event.target.value); setPage(1); }} className="h-9 rounded-xl border border-white/[0.06] bg-[#090a0f] px-3 text-[10px] font-bold text-zinc-400 outline-none"><option value="">Mọi vai trò</option><option value="member">Thành viên</option><option value="admin">Quản trị viên</option></select>
+          <select value={role} onChange={(event) => { setRole(event.target.value); setPage(1); }} className="h-9 rounded-xl border border-white/[0.06] bg-[#090a0f] px-3 text-[10px] font-bold text-zinc-400 outline-none"><option value="">Mọi vai trò</option><option value="member">Thành viên</option><option value="super_admin">Super Admin</option><option value="content_admin">Quản lý nội dung</option><option value="moderator">Kiểm duyệt viên</option><option value="support">Hỗ trợ vận hành</option></select>
           <select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} className="h-9 rounded-xl border border-white/[0.06] bg-[#090a0f] px-3 text-[10px] font-bold text-zinc-400 outline-none"><option value="">Mọi trạng thái</option><option value="active">Đang mở</option><option value="blocked">Đang khóa</option></select>
           <select value={activity} onChange={(event) => { setActivity(event.target.value); setPage(1); }} className="h-9 rounded-xl border border-white/[0.06] bg-[#090a0f] px-3 text-[10px] font-bold text-zinc-400 outline-none"><option value="">Mọi hoạt động</option><option value="recent">Trong 15 ngày</option><option value="inactive">Quá 15 ngày</option><option value="never">Chưa ghi nhận</option></select>
           <select value={provider} onChange={(event) => { setProvider(event.target.value); setPage(1); }} className="h-9 rounded-xl border border-white/[0.06] bg-[#090a0f] px-3 text-[10px] font-bold text-zinc-400 outline-none"><option value="">Mọi đăng nhập</option><option value="password">Mật khẩu</option><option value="google">Google</option><option value="hybrid">Hybrid</option></select>
@@ -304,15 +307,17 @@ export default function UsersManagementView() {
               <tbody className="divide-y divide-white/[0.04]">
                 {users.map((target) => {
                   const self = currentUser?.id === target._id;
+                  const targetIsStaff = target.role !== "member";
+                  const canManageTarget = !self && target.role !== "super_admin" && (canManageRoles || !targetIsStaff);
                   const activityMeta = activityLabel(target);
                   return (
                     <tr key={target._id} className="transition-colors hover:bg-white/[0.018]">
                       <td className="px-4 py-3"><div className="flex items-center gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-pink-500/10 text-xs font-black text-pink-400">{target.avatar ? <img src={target.avatar} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : target.displayName?.[0]?.toUpperCase() || "U"}</div><div className="min-w-0"><div className="flex items-center gap-2"><p className="max-w-52 truncate text-xs font-black text-zinc-200">{target.displayName}</p>{self && <span className="rounded bg-pink-500/10 px-1.5 py-0.5 text-[8px] font-black text-pink-400">BẠN</span>}</div><p className="mt-0.5 max-w-60 truncate text-[10px] text-zinc-600">{target.email}</p><p className="mt-1 text-[8px] text-zinc-700">Tạo {formatDate(target.createdAt)}</p></div></div></td>
                       <td className="px-3 py-3"><span className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.05] bg-white/[0.025] px-2 py-1 text-[9px] font-bold text-zinc-400"><KeyRound size={10} />{providerLabel[target.authProvider]}</span>{target.verificationStatus === "pending" && <p className="mt-1 text-[8px] font-black text-cyan-400">CHỜ XÁC MINH · tự dọn sau 72 giờ</p>}</td>
                       <td className="px-3 py-3"><p className={`text-[10px] font-black ${activityMeta.stale ? "text-amber-400" : "text-emerald-400"}`}>{activityMeta.text}</p><p className="mt-1 text-[8px] text-zinc-700">{target.lastActiveAt || target.lastLoginAt ? formatDate(target.lastActiveAt || target.lastLoginAt) : "Ước tính theo ngày tạo"}</p></td>
-                      <td className="px-3 py-3">{self ? <span className="text-[9px] font-black uppercase text-pink-400">{target.role}</span> : <select value={target.role} disabled={actionLoading} onChange={(event) => void changeRole(target, event.target.value as UserRole)} className="rounded-lg border border-white/[0.06] bg-[#08090d] px-2 py-1.5 text-[9px] font-black text-zinc-300 outline-none"><option value="member">Thành viên</option><option value="admin">Quản trị viên</option></select>}</td>
-                      <td className="px-3 py-3"><button type="button" disabled={self || actionLoading} onClick={() => target.isActive ? setLockTarget(target) : void unlockUser(target)} className={`rounded-full border px-2.5 py-1 text-[9px] font-black disabled:cursor-not-allowed disabled:opacity-60 ${target.isActive ? "border-emerald-500/15 bg-emerald-500/[0.06] text-emerald-400" : "border-red-500/15 bg-red-500/[0.06] text-red-400"}`}>{target.isActive ? "Đang mở" : "Bị khóa"}</button>{!target.isActive && target.suspensionReason && <p title={target.suspensionReason} className="mt-1 max-w-40 truncate text-[8px] text-zinc-700">{target.suspensionReason}</p>}</td>
-                      <td className="px-4 py-3 text-right">{!self && !target.isActive && <button type="button" disabled={actionLoading} onClick={() => void deleteUser(target)} title="Xóa dữ liệu cá nhân và ẩn danh tài khoản đã khóa" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/10 bg-red-500/[0.04] text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-40"><Trash2 size={12} /></button>}</td>
+                      <td className="px-3 py-3">{canManageRoles && !self && target.role !== "super_admin" ? <select value={target.role} disabled={actionLoading} onChange={(event) => void changeRole(target, event.target.value as UserRole)} className="rounded-lg border border-white/[0.06] bg-[#08090d] px-2 py-1.5 text-[9px] font-black text-zinc-300 outline-none"><option value="member">Thành viên</option><option value="content_admin">Quản lý nội dung</option><option value="moderator">Kiểm duyệt viên</option><option value="support">Hỗ trợ vận hành</option></select> : <span className="text-[9px] font-black uppercase text-pink-400">{roleLabel(target.role)}</span>}</td>
+                      <td className="px-3 py-3"><button type="button" disabled={!canManageTarget || actionLoading} onClick={() => target.isActive ? setLockTarget(target) : void unlockUser(target)} className={`rounded-full border px-2.5 py-1 text-[9px] font-black disabled:cursor-not-allowed disabled:opacity-60 ${target.isActive ? "border-emerald-500/15 bg-emerald-500/[0.06] text-emerald-400" : "border-red-500/15 bg-red-500/[0.06] text-red-400"}`}>{target.isActive ? "Đang mở" : "Bị khóa"}</button>{!target.isActive && target.suspensionReason && <p title={target.suspensionReason} className="mt-1 max-w-40 truncate text-[8px] text-zinc-700">{target.suspensionReason}</p>}</td>
+                      <td className="px-4 py-3 text-right">{canManageTarget && !target.isActive && <button type="button" disabled={actionLoading} onClick={() => void deleteUser(target)} title="Xóa dữ liệu cá nhân và ẩn danh tài khoản đã khóa" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/10 bg-red-500/[0.04] text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-40"><Trash2 size={12} /></button>}</td>
                     </tr>
                   );
                 })}

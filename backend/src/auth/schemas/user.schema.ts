@@ -97,7 +97,11 @@ export class User {
     resolvedSlug?: string;
   }[];
 
-  @Prop({ default: 'member' })
+  @Prop({
+    default: 'member',
+    enum: ['member', 'super_admin', 'content_admin', 'moderator', 'support', 'admin'],
+    index: true,
+  })
   role: string;
 
   @Prop({ default: true })
@@ -127,6 +131,10 @@ export const UserSchema = SchemaFactory.createForClass(User);
 UserSchema.index({ isActive: 1, lastActiveAt: -1 });
 UserSchema.index({ role: 1, isActive: 1 });
 UserSchema.index({ createdAt: -1 });
+UserSchema.index(
+  { role: 1 },
+  { unique: true, partialFilterExpression: { role: 'super_admin' }, name: 'single_super_admin' },
+);
 // Chỉ tài khoản đăng ký tay đang chờ xác minh mới có trường này.
 // Khi xác minh thành công trường bị xóa, vì vậy TTL không ảnh hưởng user thật/legacy/Google.
 UserSchema.index({ emailVerificationExpiresAt: 1 }, { expireAfterSeconds: 0 });

@@ -16,6 +16,7 @@ import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { io } from "socket.io-client";
 import { ReactionsSummary, ReactTriggerButton } from "./comment/CommentReactions";
+import { hasAdminPermission, normalizeAdminRole } from "@/utils/adminPermissions";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -25,7 +26,7 @@ interface Comment {
   avatar: string;
   avatarUrl?: string;
   name: string;
-  role: "member" | "vip" | "admin";
+  role: "member" | "vip" | "admin" | "super_admin" | "content_admin" | "moderator" | "support";
   content: string;
   time: string;
   likes: number;
@@ -588,7 +589,7 @@ export default function CommentRatingSection({
                   <img
                     src={user.avatar}
                     alt={user.displayName}
-                    className={`w-10 h-10 rounded-full object-cover shrink-0 shadow-sm border border-zinc-800 ${user.role === "admin"
+                    className={`w-10 h-10 rounded-full object-cover shrink-0 shadow-sm border border-zinc-800 ${normalizeAdminRole(user.role)
                         ? "ring-2 ring-pink-500 ring-offset-2 ring-offset-[#0d0e13] shadow-[0_0_10px_rgba(236,72,153,0.5)]"
                         : ""
                       }`}
@@ -598,7 +599,7 @@ export default function CommentRatingSection({
                   <img
                     src="/images/avatars/default.png"
                     alt={user.displayName}
-                    className={`w-10 h-10 rounded-full object-cover shrink-0 shadow-sm border border-zinc-800 ${user.role === "admin"
+                    className={`w-10 h-10 rounded-full object-cover shrink-0 shadow-sm border border-zinc-800 ${normalizeAdminRole(user.role)
                         ? "ring-2 ring-pink-500 ring-offset-2 ring-offset-[#0d0e13] shadow-[0_0_10px_rgba(236,72,153,0.5)]"
                         : ""
                       }`}
@@ -703,7 +704,7 @@ export default function CommentRatingSection({
             ) : (
               <div className="space-y-5 divide-y divide-zinc-900/60">
                 {comments.filter((c: Comment) => !c.parentId).map((comment: Comment, index: number) => {
-                  const isAdmin = comment.role === "admin";
+                  const isAdmin = Boolean(normalizeAdminRole(comment.role));
                   const hasSpoiler = comment.isSpoiler;
                   const isRevealed = revealedSpoilers[comment.id];
                   const replies = comments.filter((r: Comment) => r.parentId === comment.id).sort((a: Comment, b: Comment) => a.id.localeCompare(b.id));
@@ -714,8 +715,8 @@ export default function CommentRatingSection({
                     currentUserId: user?.id,
                     currentUserRole: user?.role,
                     isOwner: user?.id === comment.userId,
-                    isAdmin: user?.role === "admin",
-                    showDelete: user && (user.id === comment.userId || user.role === "admin")
+                    isAdmin: Boolean(normalizeAdminRole(user?.role)),
+                    showDelete: Boolean(user && (user.id === comment.userId || hasAdminPermission(user.role, "comments.moderate")))
                   });
 
                   return (
@@ -873,7 +874,7 @@ export default function CommentRatingSection({
                                   {/* Dropdown Box */}
                                   <div className="absolute left-0 mt-1.5 w-32 bg-[#0d0e13] border rounded-xl shadow-[0_0_15px_rgba(236,72,153,0.15)] p-1 z-50 animate-fadeIn flex flex-col gap-0.5" style={{ borderColor: "rgba(236, 72, 153, 0.25)" }}>
                                     {/* Delete option */}
-                                    {user && (user.id === comment.userId || user.role === "admin") && (
+                                    {user && (user.id === comment.userId || hasAdminPermission(user.role, "comments.moderate")) && (
                                       <button
                                         type="button"
                                         onClick={() => handleDeleteComment(comment.id)}
@@ -918,7 +919,7 @@ export default function CommentRatingSection({
                       {replies.length > 0 && (
                         <div className="ml-12 pl-3 border-l border-zinc-900/80 space-y-5.5">
                           {replies.map((reply: Comment) => {
-                            const isReplyAdmin = reply.role === "admin";
+                            const isReplyAdmin = Boolean(normalizeAdminRole(reply.role));
                             const isReplySpoiler = reply.isSpoiler;
                             const isReplyRevealed = revealedSpoilers[reply.id];
                             const repliesOfReply = comments.filter(r => r.parentId === reply.id).sort((a, b) => a.id.localeCompare(b.id)); // not used yet but for safety
@@ -1064,7 +1065,7 @@ export default function CommentRatingSection({
                                           {/* Dropdown Box */}
                                           <div className="absolute left-0 mt-1 w-32 bg-[#0d0e13] border rounded-xl shadow-[0_0_15px_rgba(236,72,153,0.15)] p-1 z-50 animate-fadeIn flex flex-col gap-0.5" style={{ borderColor: "rgba(236, 72, 153, 0.25)" }}>
                                             {/* Delete option */}
-                                            {user && (user.id === reply.userId || user.role === "admin") && (
+                                            {user && (user.id === reply.userId || hasAdminPermission(user.role, "comments.moderate")) && (
                                               <button
                                                 type="button"
                                                 onClick={() => handleDeleteComment(reply.id)}

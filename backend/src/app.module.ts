@@ -16,6 +16,8 @@ import { join } from 'path';
 import { RoomsModule } from './rooms/rooms.module';
 import { PlaybackHealthModule } from './playback-health/playback-health.module';
 import { AdminDashboardModule } from './admin-dashboard/admin-dashboard.module';
+import { AdminAuditModule } from './admin-audit/admin-audit.module';
+import { AdminJobsModule } from './admin-jobs/admin-jobs.module';
 
 @Module({
   imports: [
@@ -40,6 +42,8 @@ import { AdminDashboardModule } from './admin-dashboard/admin-dashboard.module';
     RoomsModule,
     PlaybackHealthModule,
     AdminDashboardModule,
+    AdminAuditModule,
+    AdminJobsModule,
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),
       serveRoot: '/uploads',

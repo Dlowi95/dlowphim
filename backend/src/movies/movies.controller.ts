@@ -3,6 +3,7 @@ import type { Request } from 'express';
 import { MoviesService } from './movies.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { RequirePermissions } from '../auth/guards/require-permissions.decorator';
 
 @Controller('movies')
 export class MoviesController {
@@ -11,6 +12,7 @@ export class MoviesController {
   // ─── PUBLIC ENDPOINTS ───
   @Get('blocked')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('movies.manage')
   async getBlockedMovies() {
     return this.moviesService.getBlockedMovies();
   }
@@ -28,6 +30,7 @@ export class MoviesController {
 
   @Get('admin/custom')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('movies.manage')
   async getAdminCustomMovies(
     @Query('search') search = '',
     @Query('page') page = '1',
@@ -38,6 +41,7 @@ export class MoviesController {
 
   @Get('admin/blocked')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('movies.manage')
   async getAdminBlockedMovies(
     @Query('search') search = '',
     @Query('page') page = '1',
@@ -169,6 +173,7 @@ export class MoviesController {
 
   @Post('override')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('movies.manage')
   async createOrUpdateOverride(
     @Body('slug') slug: string,
     @Body('customContent') customContent: string,
@@ -180,6 +185,7 @@ export class MoviesController {
   // ─── ADMIN ENDPOINTS (REQUIRES ADMIN ROLE) ───
   @Post('blocked')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('movies.manage')
   async blockMovie(
     @Body('slug') slug: string,
     @Body('title') title?: string,
@@ -190,24 +196,28 @@ export class MoviesController {
 
   @Delete('blocked/:slug')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('movies.manage')
   async unblockMovie(@Param('slug') slug: string) {
     return this.moviesService.unblockMovie(slug);
   }
 
   @Post('custom')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('movies.manage')
   async createCustomMovie(@Body() dto: any) {
     return this.moviesService.createCustomMovie(dto);
   }
 
   @Put('custom/:id')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('movies.manage')
   async updateCustomMovie(@Param('id') id: string, @Body() dto: any) {
     return this.moviesService.updateCustomMovie(id, dto);
   }
 
   @Delete('custom/:id')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('movies.manage')
   async deleteCustomMovie(@Param('id') id: string) {
     return this.moviesService.deleteCustomMovie(id);
   }

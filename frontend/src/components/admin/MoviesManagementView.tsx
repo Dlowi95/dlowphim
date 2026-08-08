@@ -225,7 +225,9 @@ export default function MoviesManagementView() {
   }, [subTab, ratingsPage]);
 
   useEffect(() => {
-    fetch(`${API_URL}/system-settings`)
+    fetch(`${API_URL}/system-settings/admin`, {
+      headers: { Authorization: `Bearer ${Cookies.get("token")}` },
+    })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.activeMovieSourceId === "ophim" || data?.activeMovieSourceId === "phimapi") {

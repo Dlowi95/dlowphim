@@ -15,6 +15,8 @@ import MovieReportsView from "@/components/admin/MovieReportsView";
 import NotificationsManagementView from "@/components/admin/NotificationsManagementView";
 import SettingsView from "@/components/admin/SettingsView";
 import PlaybackHealthView from "@/components/admin/PlaybackHealthView";
+import AdminOperationsView from "@/components/admin/AdminOperationsView";
+import { hasAdminPermission } from "@/utils/adminPermissions";
 
 interface ReportedComment {
   id: string;
@@ -41,11 +43,11 @@ interface ReportedComment {
 }
 
 export default function AdminDashboardPage() {
-  const { showToast } = useAuth();
+  const { user, showToast } = useAuth();
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<"dashboard" | "comments" | "movies" | "users" | "banners" | "reports" | "playback" | "notifications" | "settings" | "tokusatsu">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "comments" | "movies" | "users" | "banners" | "reports" | "playback" | "notifications" | "settings" | "operations" | "tokusatsu">("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Reported comments state
@@ -175,9 +177,9 @@ export default function AdminDashboardPage() {
 
   // Run on mount to populate sidebar badge
   useEffect(() => {
-    fetchReports();
-    fetchMovieReports();
-  }, []);
+    if (hasAdminPermission(user?.role, "comments.moderate")) fetchReports();
+    if (hasAdminPermission(user?.role, "reports.manage")) fetchMovieReports();
+  }, [user?.role]);
 
   useEffect(() => {
     const refreshAdminNotifications = () => void fetchNotifications();
@@ -195,8 +197,8 @@ export default function AdminDashboardPage() {
     } else if (activeTab === "reports") {
       fetchMovieReports();
     }
-    fetchNotifications();
-  }, [activeTab]);
+    if (hasAdminPermission(user?.role, "notifications.manage")) fetchNotifications();
+  }, [activeTab, user?.role]);
 
   // Handle dismiss (bỏ qua báo cáo)
   const handleDismissReport = async (reportId: string) => {
@@ -225,7 +227,7 @@ export default function AdminDashboardPage() {
   const handleDeleteComment = async (commentId: string) => {
     try {
       const token = Cookies.get("token");
-      const res = await fetch(`${API_URL}/comments/${commentId}`, {
+      const res = await fetch(`${API_URL}/comments/admin/comments/${commentId}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -339,6 +341,10 @@ export default function AdminDashboardPage() {
 
           {activeTab === "settings" && (
             <SettingsView />
+          )}
+
+          {activeTab === "operations" && (
+            <AdminOperationsView />
           )}
 
 

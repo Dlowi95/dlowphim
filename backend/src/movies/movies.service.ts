@@ -3,8 +3,6 @@ import {
   ConflictException,
   NotFoundException,
   BadRequestException,
-  OnModuleDestroy,
-  OnModuleInit,
   Optional,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -18,12 +16,10 @@ import { User, UserDocument } from '../auth/schemas/user.schema';
 import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
-export class MoviesService implements OnModuleInit, OnModuleDestroy {
+export class MoviesService {
   private readonly upcomingCache = new Map<string, { data: any; expiry: number }>();
   private readonly upcomingCacheTtlMs = 6 * 60 * 60 * 1000;
   private readonly upcomingCacheMaxEntries = 200;
-  private upcomingScanTimer?: NodeJS.Timeout;
-  private upcomingInitialScanTimer?: NodeJS.Timeout;
 
   constructor(
     @InjectModel(BlockedMovie.name) private blockedModel: Model<BlockedMovieDocument>,
@@ -34,19 +30,6 @@ export class MoviesService implements OnModuleInit, OnModuleDestroy {
     @Optional() @InjectModel(User.name) private readonly userModel?: Model<UserDocument>,
     @Optional() private readonly notificationsService?: NotificationsService,
   ) {}
-
-  onModuleInit() {
-    if (!this.userModel || !this.notificationsService) return;
-    this.upcomingInitialScanTimer = setTimeout(() => void this.scanUpcomingReminders(), 60_000);
-    this.upcomingScanTimer = setInterval(() => void this.scanUpcomingReminders(), 30 * 60_000);
-    this.upcomingInitialScanTimer.unref?.();
-    this.upcomingScanTimer.unref?.();
-  }
-
-  onModuleDestroy() {
-    if (this.upcomingInitialScanTimer) clearTimeout(this.upcomingInitialScanTimer);
-    if (this.upcomingScanTimer) clearInterval(this.upcomingScanTimer);
-  }
 
   // ─── BLOCKED MOVIES ───
   async getBlockedMovies(): Promise<any[]> {

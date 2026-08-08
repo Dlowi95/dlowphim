@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Param, UseGuards, Req, Headers, Delete } f
 import { CommentsService } from './comments.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { RequirePermissions } from '../auth/guards/require-permissions.decorator';
 import { JwtService } from '@nestjs/jwt';
 import { CommentsGateway } from './comments.gateway';
 
@@ -69,6 +70,15 @@ export class CommentsController {
     return result;
   }
 
+  @Delete('admin/comments/:id')
+  @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('comments.moderate')
+  async deleteCommentAsAdmin(@Param('id') commentId: string, @Req() req: any) {
+    const result = await this.commentsService.deleteComment(commentId, req.user.sub);
+    this.commentsGateway.notifyChanged(result.movieSlug);
+    return result;
+  }
+
   @Post(':id/report')
   @UseGuards(AuthGuard)
   async reportComment(
@@ -82,24 +92,28 @@ export class CommentsController {
 
   @Get('admin/reports')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('comments.moderate')
   async getReportedComments() {
     return this.commentsService.getReportedComments();
   }
 
   @Get('admin/all')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('comments.moderate')
   async getAllComments() {
     return this.commentsService.getAllComments();
   }
 
   @Delete('admin/reports/:id/dismiss')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('comments.moderate')
   async dismissReport(@Param('id') reportId: string) {
     return this.commentsService.dismissReport(reportId);
   }
 
   @Get('admin/stats')
   @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('comments.moderate')
   async getAdminStats() {
     return this.commentsService.getAdminStats();
   }

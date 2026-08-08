@@ -430,14 +430,14 @@ export default function CommentReportsView({
                         <td className="py-4">
                           <span
                             className={`inline-flex font-black text-[9px] uppercase tracking-wider px-2 py-0.5 rounded ${
-                              u.role === "admin"
+                              u.role !== "member" && u.role !== "vip"
                                 ? "bg-pink-500/10 text-pink-400 border border-pink-500/20"
                                 : u.role === "vip"
                                 ? "bg-amber-500/10 text-amber-500 border border-amber-500/20"
                                 : "bg-zinc-800 text-zinc-400"
                             }`}
                           >
-                            {u.role === "admin" ? "Quản trị" : u.role === "vip" ? "Vip" : "Thành viên"}
+                            {u.role !== "member" && u.role !== "vip" ? "Quản trị" : u.role === "vip" ? "Vip" : "Thành viên"}
                           </span>
                         </td>
 
@@ -473,14 +473,14 @@ export default function CommentReportsView({
                       </div>
                       <span
                         className={`inline-flex font-black text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                          u.role === "admin"
+                          u.role !== "member" && u.role !== "vip"
                             ? "bg-pink-500/10 text-pink-400 border border-pink-500/20"
                             : u.role === "vip"
                             ? "bg-amber-500/10 text-amber-500 border border-amber-500/20"
                             : "bg-zinc-800 text-zinc-400"
                         }`}
                       >
-                        {u.role === "admin" ? "Quản trị" : u.role === "vip" ? "Vip" : "Thành viên"}
+                        {u.role !== "member" && u.role !== "vip" ? "Quản trị" : u.role === "vip" ? "Vip" : "Thành viên"}
                       </span>
                     </div>
 
