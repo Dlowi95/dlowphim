@@ -390,46 +390,27 @@ export class MoviesService {
 
     const perPage = 16;
     const pageCredits = uniqueCredits.slice((safePage - 1) * perPage, safePage * perPage);
-    const resolved: any[] = new Array(pageCredits.length);
-    let cursor = 0;
-    await Promise.all(Array.from({ length: Math.min(4, pageCredits.length) }, async () => {
-      while (cursor < pageCredits.length) {
-        const index = cursor++;
-        const credit: any = pageCredits[index];
-        const title = credit.title || credit.name || credit.original_title || credit.original_name || '';
-        const originTitle = credit.original_title || credit.original_name || title;
-        try {
-          const normalize = (value: unknown) => this.generateSlug(String(value || '')).replace(/-/g, '');
-          const expectedTmdbId = String(credit.id);
-          const year = Number(String(credit.release_date || credit.first_air_date || '').slice(0, 4));
-          const findMatch = (candidates: any[]) => candidates
-            .map((movie: any) => {
-              let score = 0;
-              const movieTmdbId = String(movie?.tmdb?.id || movie?.tmdb || '');
-              if (movieTmdbId && movieTmdbId === expectedTmdbId) score += 100;
-              if (normalize(movie.origin_name) === normalize(originTitle)) score += 70;
-              if (normalize(movie.name) === normalize(title)) score += 60;
-              if (year && Number(movie.year) === year) score += 15;
-              return { movie, score };
-            })
-            .filter(({ movie, score }: any) => movie?.slug && score >= 60)
-            .sort((a: any, b: any) => b.score - a.score)[0]?.movie;
-
-          let match: any = null;
-          for (const source of ['active', 'fallback']) {
-            const search = await this.fetchOphimProxy(
-              `/v1/api/tim-kiem?keyword=${encodeURIComponent(originTitle || title)}&limit=12`,
-              source,
-            );
-            match = findMatch(search?.data?.items || search?.items || []);
-            if (match) break;
-          }
-          if (match) resolved[index] = match;
-        } catch {
-          // Một phim không có trong nguồn hiện tại không làm hỏng toàn bộ danh sách.
-        }
-      }
-    }));
+    const items = pageCredits.map((credit: any) => {
+      const name = credit.title || credit.name || credit.original_title || credit.original_name || 'Chưa rõ tên';
+      const originName = credit.original_title || credit.original_name || name;
+      const releaseDate = credit.release_date || credit.first_air_date || '';
+      return {
+        _id: `tmdb-${credit.media_type}-${credit.id}`,
+        slug: `tmdb-${credit.id}-${this.generateSlug(originName || name)}`,
+        name,
+        origin_name: originName,
+        poster_url: credit.poster_path ? `https://image.tmdb.org/t/p/w500${credit.poster_path}` : '',
+        thumb_url: credit.backdrop_path
+          ? `https://image.tmdb.org/t/p/w780${credit.backdrop_path}`
+          : (credit.poster_path ? `https://image.tmdb.org/t/p/w500${credit.poster_path}` : ''),
+        year: Number(String(releaseDate).slice(0, 4)) || undefined,
+        release_date: releaseDate,
+        character: credit.character || '',
+        quality: 'TMDB',
+        lang: credit.media_type === 'tv' ? 'Phim bộ' : 'Phim lẻ',
+        tmdb: { id: String(credit.id), type: credit.media_type },
+      };
+    });
 
     const data = {
       person: {
@@ -440,11 +421,11 @@ export class MoviesService {
         placeOfBirth: person.place_of_birth || '',
         profileUrl: person.profile_path ? `https://image.tmdb.org/t/p/h632${person.profile_path}` : null,
       },
-      items: resolved.filter(Boolean),
+      items,
       page: safePage,
       totalPages: Math.max(1, Math.ceil(uniqueCredits.length / perPage)),
       totalItems: uniqueCredits.length,
-      availableItems: resolved.filter(Boolean).length,
+      itemsPerPage: perPage,
     };
     this.setPeopleCache(cacheKey, data);
     return data;

@@ -45,7 +45,7 @@ describe('MoviesService people discovery', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('returns only provider movies that confidently match the actor credits', async () => {
+  it('returns a stable TMDB filmography page without querying every movie provider', async () => {
     const service = createService();
     jest.spyOn(global, 'fetch')
       .mockResolvedValueOnce({
@@ -65,24 +65,19 @@ describe('MoviesService people discovery', () => {
           }],
         }),
       } as Response);
-    jest.spyOn(service, 'fetchOphimProxy').mockResolvedValue({
-      data: {
-        items: [{
-          _id: 'provider-1',
-          slug: 'movie-name',
-          name: 'Tên phim',
-          origin_name: 'Movie Name',
-          year: 2025,
-          tmdb: { id: '99' },
-        }],
-      },
-    });
+    const providerSpy = jest.spyOn(service, 'fetchOphimProxy');
 
     const result = await service.getPersonMovies('10', 1);
 
     expect(result.person.name).toBe('Actor A');
     expect(result.items).toHaveLength(1);
-    expect(result.items[0].slug).toBe('movie-name');
+    expect(result.items[0]).toEqual(expect.objectContaining({
+      slug: 'tmdb-99-movie-name',
+      name: 'Tên phim',
+      year: 2025,
+      tmdb: { id: '99', type: 'movie' },
+    }));
+    expect(providerSpy).not.toHaveBeenCalled();
   });
 
   it('rejects invalid person ids before calling external services', async () => {
@@ -90,4 +85,3 @@ describe('MoviesService people discovery', () => {
     await expect(service.getPersonMovies('abc')).rejects.toBeInstanceOf(BadRequestException);
   });
 });
-

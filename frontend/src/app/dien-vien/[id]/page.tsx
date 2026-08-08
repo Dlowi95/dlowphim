@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { Loader2, MapPin, UserRound } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import MovieCard from "@/components/MovieCard";
 import Pagination from "@/components/Pagination";
+import PersonMovieCard from "@/components/discovery/PersonMovieCard";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -54,12 +54,11 @@ export default function PersonMoviesPage({ params }: { params: { id: string } })
           </div>
         </section>
         <section>
-          <div className="mb-6"><h2 className="text-2xl font-black uppercase">Phim có trên DlowPhim</h2><p className="mt-2 text-sm text-zinc-500">Đã đối chiếu vai diễn với PhimAPI và nguồn dự phòng. Một số tác phẩm chưa có bản phát sẽ không hiển thị.</p></div>
-          {data.items.length ? <div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7">{data.items.map((movie: any) => <MovieCard key={movie._id || movie.slug} movie={movie} aspect="portrait" />)}</div> : <div className="rounded-3xl border border-zinc-900 bg-zinc-950 py-16 text-center text-zinc-500">Chưa tìm thấy phim của diễn viên này trong kho DlowPhim ở trang hiện tại.</div>}
+          <div className="mb-6"><h2 className="text-2xl font-black uppercase">Phim đã tham gia</h2><p className="mt-2 text-sm text-zinc-500">Hiển thị theo dữ liệu TMDB. Khi bạn chọn phim, DlowPhim mới dò bản phát từ PhimAPI rồi đến nguồn dự phòng.</p></div>
+          {data.items.length ? <div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">{data.items.map((movie: any) => <PersonMovieCard key={movie._id || movie.slug} movie={movie} />)}</div> : <div className="rounded-3xl border border-zinc-900 bg-zinc-950 py-16 text-center text-zinc-500">Chưa có dữ liệu phim của diễn viên này.</div>}
           <Pagination currentPage={page} totalPages={data.totalPages} onPageChange={(nextPage) => { router.push(`/dien-vien/${params.id}?page=${nextPage}`); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
         </section>
       </div>
     </main>
   );
 }
-
