@@ -357,10 +357,14 @@ export class MoviesService {
   private normalizeCatalogNamedItems(value: unknown): Array<{ name: string; slug: string }> {
     if (!Array.isArray(value)) return [];
     return value
-      .map((item: any) => ({
-        name: this.cleanText(typeof item === 'string' ? item : item?.name, 100),
-        slug: this.cleanText(typeof item === 'string' ? this.generateSlug(item) : item?.slug, 100),
-      }))
+      .map((item: any) => {
+        const name = this.cleanText(typeof item === 'string' ? item : item?.name, 100);
+        const slug = this.cleanText(
+          typeof item === 'string' ? this.generateSlug(item) : (item?.slug || this.generateSlug(name)),
+          100,
+        );
+        return { name, slug };
+      })
       .filter((item) => item.name);
   }
 
@@ -378,7 +382,7 @@ export class MoviesService {
       _id: String(movie?._id || movie?.id || `${sourceId}-${slug}`),
       slug,
       name,
-      origin_name: this.cleanText(movie?.origin_name || movie?.original_name || movie?.originName, 250),
+      origin_name: this.cleanText(movie?.origin_name || movie?.original_name || movie?.originName || name, 250),
       thumb_url: this.normalizeCatalogImage(movie?.thumb_url || movie?.thumbnail, imageBase, sourceId),
       poster_url: this.normalizeCatalogImage(movie?.poster_url || movie?.poster, imageBase, sourceId),
       year: Number.isInteger(year) && year > 1800 ? year : undefined,
@@ -430,7 +434,7 @@ export class MoviesService {
     const cacheKey = [activeSourceId, type, page, limit, year, genre, status, sort].join(':');
     const cached = this.catalogCache.get(cacheKey);
     if (cached && cached.expiry > Date.now()) {
-      return { ...cached.data, cache: { hit: true, ttlSeconds: 600 } };
+      return { ...cached.data, cache: { hit: true, ttlSeconds: cached.data?.cache?.ttlSeconds || 600 } };
     }
 
     const params = new URLSearchParams({
@@ -446,6 +450,7 @@ export class MoviesService {
     const path = `/v1/api/danh-sach/${type}?${params.toString()}`;
     let payload: any = null;
     let firstEmptyPayload: any = null;
+    let firstEmptyWasFallback = false;
     let activeFailure = false;
     let fallbackUsed = false;
     let fallbackReason: 'source-error' | 'empty-result' | null = null;
@@ -464,7 +469,10 @@ export class MoviesService {
           fallbackReason = fallbackUsed ? (activeFailure ? 'source-error' : 'empty-result') : null;
           break;
         }
-        firstEmptyPayload ??= candidate;
+        if (!firstEmptyPayload) {
+          firstEmptyPayload = candidate;
+          firstEmptyWasFallback = sourcePreference === 'fallback';
+        }
       } catch {
         if (sourcePreference === 'active') activeFailure = true;
       }
@@ -473,6 +481,10 @@ export class MoviesService {
     payload ??= firstEmptyPayload;
     if (!payload) {
       throw new ServiceUnavailableException('Cả hai máy chủ phim đang tạm gián đoạn. Vui lòng thử lại sau ít phút.');
+    }
+    if (firstEmptyWasFallback) {
+      fallbackUsed = true;
+      fallbackReason = activeFailure ? 'source-error' : 'empty-result';
     }
 
     const sourceId = payload?._sourceId || activeSourceId;

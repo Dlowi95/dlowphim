@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Filter, Loader2, RotateCcw, Search } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Filter, Loader2, RefreshCw, RotateCcw, Search, Server } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MovieCard from "@/components/MovieCard";
 import Pagination from "@/components/Pagination";
@@ -9,8 +9,6 @@ import { GENRES } from "@/constants/discovery";
 import { cleanSlug } from "@/utils/movieUtils";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-const clientCache = new Map<string, { data: any; expiresAt: number }>();
-const CLIENT_CACHE_TTL = 5 * 60 * 1000;
 
 export default function MovieCatalogPage({ type }: { type: "phim-le" | "phim-bo" }) {
   const router = useRouter();
@@ -24,6 +22,8 @@ export default function MovieCatalogPage({ type }: { type: "phim-le" | "phim-bo"
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [fallbackUsed, setFallbackUsed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const title = type === "phim-le" ? "Phim lẻ" : "Phim bộ";
   const years = useMemo(() => Array.from({ length: 37 }, (_, index) => new Date().getFullYear() + 1 - index), []);
 
@@ -33,23 +33,17 @@ export default function MovieCatalogPage({ type }: { type: "phim-le" | "phim-bo"
     if (year) query.set("year", year);
     if (genre) query.set("genre", genre);
     if (status) query.set("status", status);
-    const cacheKey = query.toString();
-    const cached = clientCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      setMovies(cached.data.movies);
-      setTotalPages(cached.data.totalPages);
-      setError("");
-      setLoading(false);
-      return () => controller.abort();
-    }
-
     const load = async () => {
       setLoading(true);
       setError("");
+      setFallbackUsed(false);
       try {
         const response = await fetch(`${API_URL}/movies/catalog?${query.toString()}`, { signal: controller.signal });
-        if (!response.ok) throw new Error("Nguồn phim đang phản hồi chậm");
-        const data = await response.json();
+        const data = await response.json().catch(() => null);
+        if (!response.ok || data?.status === false) {
+          const message = Array.isArray(data?.message) ? data.message[0] : data?.message;
+          throw new Error(message || "Máy chủ phim đang phản hồi chậm");
+        }
         const seen = new Set<string>();
         const uniqueMovies = (data.items || []).filter((movie: any) => {
           const key = cleanSlug(movie.slug);
@@ -61,11 +55,7 @@ export default function MovieCatalogPage({ type }: { type: "phim-le" | "phim-bo"
         const pages = Math.max(1, Math.ceil(Number(pagination.totalItems || uniqueMovies.length) / Number(pagination.totalItemsPerPage || 24)));
         setMovies(uniqueMovies);
         setTotalPages(pages);
-        clientCache.set(cacheKey, {
-          data: { movies: uniqueMovies, totalPages: pages },
-          expiresAt: Date.now() + CLIENT_CACHE_TTL,
-        });
-        if (clientCache.size > 80) clientCache.delete(clientCache.keys().next().value as string);
+        setFallbackUsed(Boolean(data.fallback?.used));
       } catch (loadError) {
         if (!controller.signal.aborted) {
           setMovies([]);
@@ -77,7 +67,7 @@ export default function MovieCatalogPage({ type }: { type: "phim-le" | "phim-bo"
     };
     void load();
     return () => controller.abort();
-  }, [genre, page, sort, status, type, year]);
+  }, [genre, page, reloadKey, sort, status, type, year]);
 
   const updateFilter = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams.toString());
@@ -108,14 +98,31 @@ export default function MovieCatalogPage({ type }: { type: "phim-le" | "phim-bo"
           </div>
         </section>
 
+        {fallbackUsed && !loading && !error && (
+          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-amber-200">
+            <Server size={19} className="mt-0.5 shrink-0 text-amber-400" />
+            <div><p className="text-sm font-bold">Đang dùng máy chủ dự phòng</p><p className="mt-0.5 text-xs text-amber-200/60">Nguồn chính đang chậm hoặc chưa có dữ liệu. Danh sách phim đã được chuyển tự động để bạn tiếp tục xem.</p></div>
+          </div>
+        )}
+
         {loading ? (
           <div className="flex min-h-[45vh] flex-col items-center justify-center gap-3 text-zinc-500"><Loader2 className="animate-spin text-pink-500" size={40} /><p>Đang tải {title.toLowerCase()}...</p></div>
         ) : error ? (
-          <div className="rounded-3xl border border-zinc-900 bg-zinc-950 py-20 text-center"><p className="font-bold">{error}</p><button onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-pink-500 px-5 py-2 text-sm font-bold">Thử lại</button></div>
+          <div className="flex min-h-[38vh] flex-col items-center justify-center rounded-3xl border border-red-500/15 bg-gradient-to-b from-red-500/5 to-zinc-950 px-5 text-center">
+            <span className="mb-4 grid h-14 w-14 place-items-center rounded-2xl border border-red-500/20 bg-red-500/10 text-red-400"><AlertTriangle size={27} /></span>
+            <h2 className="text-lg font-black">Kho phim đang tạm gián đoạn</h2>
+            <p className="mt-2 max-w-lg text-sm leading-6 text-zinc-500">{error}</p>
+            <button onClick={() => setReloadKey((value) => value + 1)} className="mt-5 flex items-center gap-2 rounded-xl bg-pink-500 px-5 py-2.5 text-sm font-bold transition hover:bg-pink-400"><RefreshCw size={15} /> Thử lại cả hai máy chủ</button>
+          </div>
         ) : movies.length ? (
           <div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">{movies.map((movie) => <MovieCard key={movie._id || movie.slug} movie={movie} aspect="portrait" />)}</div>
         ) : (
-          <div className="rounded-3xl border border-zinc-900 bg-zinc-950 py-20 text-center text-zinc-500">Không có phim phù hợp với bộ lọc này.</div>
+          <div className="flex min-h-[34vh] flex-col items-center justify-center rounded-3xl border border-zinc-900 bg-zinc-950 px-5 text-center">
+            <span className="mb-4 grid h-14 w-14 place-items-center rounded-2xl border border-zinc-800 bg-black text-zinc-600"><Filter size={25} /></span>
+            <h2 className="font-black text-zinc-200">{hasFilters ? "Chưa có phim phù hợp" : "Kho phim hiện chưa có dữ liệu"}</h2>
+            <p className="mt-2 max-w-md text-sm text-zinc-600">{hasFilters ? "Bạn thử bỏ bớt điều kiện hoặc chọn một năm, thể loại khác nhé." : "Dữ liệu có thể đang được nguồn phim cập nhật. Bạn thử tải lại sau một chút nhé."}</p>
+            <button onClick={hasFilters ? resetFilters : () => setReloadKey((value) => value + 1)} className="mt-5 flex items-center gap-2 rounded-xl border border-zinc-800 bg-black px-5 py-2.5 text-sm font-bold text-zinc-300 transition hover:border-pink-500 hover:text-pink-400">{hasFilters ? <RotateCcw size={15} /> : <RefreshCw size={15} />}{hasFilters ? "Xóa toàn bộ bộ lọc" : "Tải lại danh sách"}</button>
+          </div>
         )}
 
         {!loading && !error && <Pagination currentPage={page} totalPages={totalPages} onPageChange={(nextPage) => { const next = new URLSearchParams(searchParams.toString()); next.set("page", String(nextPage)); router.push(`/${type}?${next.toString()}`); window.scrollTo({ top: 0, behavior: "smooth" }); }} />}
