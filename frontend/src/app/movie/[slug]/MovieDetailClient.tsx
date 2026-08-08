@@ -12,6 +12,7 @@ import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import { normalizeEpisodeKey } from "@/utils/episodeUtils";
+import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
 
 interface Episode {
   name: string;
@@ -421,15 +422,12 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
       try {
         setLoadingRelated(true);
         const genreSlug = movie!.category[0].slug;
-        const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/the-loai/${genreSlug}?page=1`), { signal: controller.signal });
-        const data = await res.json();
-
-        if (data.status === true || data.status === "success") {
-          const items = data.data?.items || data.items || [];
-          // Lọc bỏ phim hiện tại
-          const filtered = items.filter((item: any) => item.slug !== movie!.slug).slice(0, 6);
-          setRelatedMovies(filtered);
-        }
+        const data = await fetchMovieDiscovery(
+          { kind: "genre", slug: genreSlug, page: 1, limit: 24 },
+          { signal: controller.signal, timeoutMs: 8000 },
+        );
+        const filtered = data.items.filter((item: any) => item.slug !== movie!.slug).slice(0, 6);
+        setRelatedMovies(filtered);
       } catch (err: any) {
         if (err?.name === "AbortError") return;
         console.error("Lỗi lấy phim liên quan:", err);

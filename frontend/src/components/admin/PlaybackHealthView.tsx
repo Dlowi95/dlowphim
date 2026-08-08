@@ -32,6 +32,48 @@ interface MovieSourceHealth {
   checkedAt: string;
 }
 
+interface DiscoveryHealth {
+  generatedAt: string;
+  storageScope: "instance";
+  startedAt: string;
+  summary: {
+    resolutions: number;
+    fallbackResponses: number;
+    fallbackRate: number;
+    staleResponses: number;
+    circuitTrips: number;
+    circuitSkips: number;
+    openCircuits: number;
+    lastKnownGoodEntries: number;
+  };
+  sources: Array<{
+    id: string;
+    name: string;
+    active: boolean;
+    failures: number;
+    consecutiveFailures: number;
+    circuitOpen: boolean;
+    openUntil: string | null;
+  }>;
+}
+
+const EMPTY_DISCOVERY: DiscoveryHealth = {
+  generatedAt: "",
+  storageScope: "instance",
+  startedAt: "",
+  summary: {
+    resolutions: 0,
+    fallbackResponses: 0,
+    fallbackRate: 0,
+    staleResponses: 0,
+    circuitTrips: 0,
+    circuitSkips: 0,
+    openCircuits: 0,
+    lastKnownGoodEntries: 0,
+  },
+  sources: [],
+};
+
 interface HealthDashboard {
   generatedAt: number;
   storageScope: "shared" | "instance";
@@ -70,6 +112,7 @@ export default function PlaybackHealthView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [movieSources, setMovieSources] = useState<MovieSourceHealth[]>([]);
+  const [discoveryHealth, setDiscoveryHealth] = useState<DiscoveryHealth>(EMPTY_DISCOVERY);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | OriginHealth["status"]>("all");
 
@@ -77,13 +120,15 @@ export default function PlaybackHealthView() {
     if (!silent) setLoading(true);
     try {
       const headers = { Authorization: `Bearer ${Cookies.get("token")}` };
-      const [response, sourcesResponse] = await Promise.all([
+      const [response, sourcesResponse, discoveryResponse] = await Promise.all([
         fetch(`${API_URL}/playback-health/admin`, { cache: "no-store", headers }),
         fetch(`${API_URL}/admin/dashboard/source-health`, { cache: "no-store", headers }),
+        fetch(`${API_URL}/movies/admin/discovery-health`, { cache: "no-store", headers }),
       ]);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       setData(await response.json());
       if (sourcesResponse.ok) setMovieSources(await sourcesResponse.json());
+      if (discoveryResponse.ok) setDiscoveryHealth(await discoveryResponse.json());
       setError("");
     } catch {
       setError("Không thể tải dữ liệu sức khỏe nguồn phát.");
@@ -160,6 +205,56 @@ export default function PlaybackHealthView() {
           <span>Dữ liệu hiện chỉ nằm trong bộ nhớ của server này và sẽ mất khi restart. Khi deploy nhiều instance, cấu hình Upstash Redis để mọi server dùng chung số liệu.</span>
         </div>
       )}
+
+      <div className="overflow-hidden rounded-2xl border border-white/[0.05] bg-[#0c0c13]">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/[0.05] px-4 py-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-wider text-zinc-300">Độ ổn định API danh sách phim</p>
+            <p className="mt-1 text-[10px] text-zinc-600">Theo dõi fallback PhimAPI/OPhim, circuit breaker và dữ liệu gần nhất được dùng khi nguồn lỗi.</p>
+          </div>
+          <span className="rounded-md border border-amber-500/15 bg-amber-500/[0.06] px-2 py-1 text-[8px] font-black uppercase text-amber-300">
+            Bộ nhớ instance
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-px bg-white/[0.04] md:grid-cols-4">
+          {[
+            ["Lần chuyển nguồn", discoveryHealth.summary.fallbackResponses, `${discoveryHealth.summary.fallbackRate}% yêu cầu`],
+            ["Dùng dữ liệu gần nhất", discoveryHealth.summary.staleResponses, `${discoveryHealth.summary.lastKnownGoodEntries} bản đang lưu`],
+            ["Circuit đã kích hoạt", discoveryHealth.summary.circuitTrips, `${discoveryHealth.summary.circuitSkips} lần bỏ qua nguồn lỗi`],
+            ["Circuit đang mở", discoveryHealth.summary.openCircuits, `${discoveryHealth.summary.resolutions} lượt xử lý`],
+          ].map(([label, value, hint]) => (
+            <div key={String(label)} className="bg-[#0c0c13] px-4 py-4">
+              <p className="text-xl font-black text-white">{loading ? "—" : value}</p>
+              <p className="mt-1 text-[9px] font-black uppercase tracking-wider text-zinc-500">{label}</p>
+              <p className="mt-1 text-[9px] text-zinc-700">{hint}</p>
+            </div>
+          ))}
+        </div>
+        {discoveryHealth.sources.length > 0 && (
+          <div className="grid gap-3 border-t border-white/[0.05] p-4 md:grid-cols-2 xl:grid-cols-3">
+            {discoveryHealth.sources.map((source) => (
+              <div key={source.id} className={`rounded-xl border p-3 ${source.circuitOpen ? "border-red-500/20 bg-red-500/[0.05]" : "border-white/[0.05] bg-white/[0.015]"}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-black text-white">{source.name}</p>
+                    <p className="mt-1 text-[9px] text-zinc-600">{source.failures} lỗi từ khi backend khởi động</p>
+                  </div>
+                  <span className={`rounded-md border px-2 py-1 text-[8px] font-black uppercase ${source.circuitOpen ? "border-red-500/20 bg-red-500/10 text-red-400" : "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"}`}>
+                    {source.circuitOpen ? "Đang tạm né" : "Sẵn sàng"}
+                  </span>
+                </div>
+                <p className="mt-3 text-[9px] text-zinc-600">
+                  Lỗi liên tiếp: {source.consecutiveFailures}
+                  {source.openUntil ? ` · thử lại lúc ${new Date(source.openUntil).toLocaleTimeString("vi-VN")}` : ""}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="border-t border-white/[0.05] px-4 py-2 text-[9px] text-zinc-700">
+          Số liệu bắt đầu từ {discoveryHealth.startedAt ? new Date(discoveryHealth.startedAt).toLocaleString("vi-VN") : "lần khởi động backend hiện tại"} và sẽ đặt lại khi server restart.
+        </div>
+      </div>
 
       <div className="overflow-hidden rounded-2xl border border-white/[0.05] bg-[#0c0c13]">
         <div className="border-b border-white/[0.05] px-4 py-3">

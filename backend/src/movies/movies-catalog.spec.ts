@@ -204,4 +204,28 @@ describe('MoviesService catalog', () => {
     expect(stale.stale.used).toBe(true);
     expect(stale.stale.savedAt).toEqual(expect.any(String));
   });
+
+  it('exposes fallback and circuit metrics for the admin source-health view', async () => {
+    const service = createService();
+    jest.spyOn(service, 'fetchOphimProxy').mockImplementation(async (_path, preference) => {
+      if (preference === 'active') return { status: false, _sourceId: 'phimapi', message: 'timeout' };
+      return { status: true, _sourceId: 'ophim', items: [{ slug: 'fallback-movie', name: 'Fallback Movie' }] };
+    });
+
+    await service.getMovieDiscovery({ kind: 'genre', slug: 'hanh-dong', page: 1 });
+    await service.getMovieDiscovery({ kind: 'genre', slug: 'tam-ly', page: 1 });
+
+    const health = await service.getDiscoveryHealth();
+    expect(health.storageScope).toBe('instance');
+    expect(health.summary).toEqual(expect.objectContaining({
+      resolutions: 2,
+      fallbackResponses: 2,
+      fallbackRate: 100,
+      circuitTrips: 1,
+      openCircuits: 1,
+    }));
+    expect(health.sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'phimapi', failures: 2, circuitOpen: true }),
+    ]));
+  });
 });

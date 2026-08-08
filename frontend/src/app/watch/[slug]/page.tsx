@@ -18,6 +18,7 @@ import { useHlsPlaybackTelemetry } from "@/hooks/useHlsPlaybackTelemetry";
 import ProgressiveImage from "@/components/ProgressiveImage";
 import { destroyHlsInstance, loadHlsLibrary, WATCH_HLS_CONFIG } from "@/utils/hlsLoader";
 import { normalizeEpisodeKey } from "@/utils/episodeUtils";
+import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
 import {
   findEpisodeHistory,
   findNextEpisode,
@@ -1185,17 +1186,12 @@ function WatchContent({ slug }: { slug: string }) {
     async function fetchRelated() {
       try {
         setLoadingRelated(true);
-        const res = await fetch(
-          getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/the-loai/${genreSlug}?page=1`),
-          { signal: controller.signal },
+        const data = await fetchMovieDiscovery(
+          { kind: "genre", slug: genreSlug, page: 1, limit: 24 },
+          { signal: controller.signal, timeoutMs: 8000 },
         );
-        const data = await res.json();
-
-        if (data.status === true || data.status === "success") {
-          const items = data.data?.items || data.items || [];
-          const filtered = items.filter((item: any) => item.slug !== movieSlug).slice(0, 7);
-          setRelatedMovies(filtered);
-        }
+        const filtered = data.items.filter((item: any) => item.slug !== movieSlug).slice(0, 7);
+        setRelatedMovies(filtered);
       } catch (err) {
         if (!controller.signal.aborted) console.error("Lỗi lấy phim liên quan:", err);
       } finally {

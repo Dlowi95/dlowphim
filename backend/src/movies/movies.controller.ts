@@ -122,6 +122,13 @@ export class MoviesController {
     });
   }
 
+  @Get('admin/discovery-health')
+  @UseGuards(AuthGuard, RolesGuard)
+  @RequirePermissions('playback.read')
+  async getDiscoveryHealth() {
+    return this.moviesService.getDiscoveryHealth();
+  }
+
   @Get('people/:personId/movies')
   async getPersonMovies(
     @Param('personId') personId: string,

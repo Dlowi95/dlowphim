@@ -23,6 +23,15 @@ export class MoviesService {
   private readonly catalogCache = new Map<string, { data: any; expiry: number }>();
   private readonly discoveryLastKnownGood = new Map<string, { data: any; savedAt: number; expiry: number }>();
   private readonly sourceCircuits = new Map<string, { failures: number; openUntil: number }>();
+  private readonly sourceFailureTotals = new Map<string, number>();
+  private readonly discoveryMetrics = {
+    startedAt: Date.now(),
+    resolutions: 0,
+    fallbackResponses: 0,
+    staleResponses: 0,
+    circuitTrips: 0,
+    circuitSkips: 0,
+  };
   private readonly upcomingCacheTtlMs = 6 * 60 * 60 * 1000;
   private readonly upcomingCacheMaxEntries = 200;
   private readonly peopleCacheTtlMs = 60 * 60 * 1000;
@@ -436,12 +445,16 @@ export class MoviesService {
   private recordSourceFailure(sourceId: string): void {
     const previous = this.sourceCircuits.get(sourceId);
     const failures = (previous?.failures || 0) + 1;
+    const circuitJustOpened = failures >= this.sourceCircuitFailureThreshold
+      && (previous?.failures || 0) < this.sourceCircuitFailureThreshold;
     this.sourceCircuits.set(sourceId, {
       failures,
       openUntil: failures >= this.sourceCircuitFailureThreshold
         ? Date.now() + this.sourceCircuitCooldownMs
         : 0,
     });
+    this.sourceFailureTotals.set(sourceId, (this.sourceFailureTotals.get(sourceId) || 0) + 1);
+    if (circuitJustOpened) this.discoveryMetrics.circuitTrips += 1;
   }
 
   private shouldTripSourceCircuit(payload: any): boolean {
@@ -483,6 +496,7 @@ export class MoviesService {
     fallbackUsed: boolean;
     fallbackReason: 'source-error' | 'empty-result' | null;
   }> {
+    this.discoveryMetrics.resolutions += 1;
     const { activeId, fallbackId } = this.getMovieSourceIds(settings);
     const attempts = [
       { preference: 'active', sourceId: activeId },
@@ -494,6 +508,7 @@ export class MoviesService {
 
     for (const attempt of attempts) {
       if (this.isSourceCircuitOpen(attempt.sourceId)) {
+        this.discoveryMetrics.circuitSkips += 1;
         if (attempt.preference === 'active') activeFailure = true;
         continue;
       }
@@ -507,6 +522,7 @@ export class MoviesService {
         this.recordSourceSuccess(attempt.sourceId);
         if (this.getCatalogItems(candidate).length > 0) {
           const fallbackUsed = attempt.preference === 'fallback';
+          if (fallbackUsed) this.discoveryMetrics.fallbackResponses += 1;
           return {
             payload: candidate,
             fallbackUsed,
@@ -524,6 +540,7 @@ export class MoviesService {
     }
 
     if (firstEmptyPayload) {
+      if (firstEmptyWasFallback) this.discoveryMetrics.fallbackResponses += 1;
       return {
         payload: firstEmptyPayload,
         fallbackUsed: firstEmptyWasFallback,
@@ -583,6 +600,7 @@ export class MoviesService {
     } catch (error) {
       const stale = this.getDiscoveryLastKnownGood(staleKey);
       if (stale) {
+        this.discoveryMetrics.staleResponses += 1;
         return {
           ...stale.data,
           stale: { used: true, savedAt: new Date(stale.savedAt).toISOString() },
@@ -696,6 +714,7 @@ export class MoviesService {
     } catch (error) {
       const stale = this.getDiscoveryLastKnownGood(logicalKey);
       if (stale) {
+        this.discoveryMetrics.staleResponses += 1;
         return {
           ...stale.data,
           stale: { used: true, savedAt: new Date(stale.savedAt).toISOString() },
@@ -732,6 +751,49 @@ export class MoviesService {
     this.setCatalogCache(cacheKey, data, ttlSeconds * 1000);
     if (availability === 'ready') this.setDiscoveryLastKnownGood(logicalKey, data);
     return data;
+  }
+
+  async getDiscoveryHealth(): Promise<any> {
+    const settings = await this.settingsService.getSettings();
+    const configuredSources = Array.isArray(settings?.movieSources) ? settings.movieSources : [];
+    const sourceIds = new Set<string>([
+      ...configuredSources.map((source: any) => String(source?.id || '')).filter(Boolean),
+      ...this.sourceCircuits.keys(),
+      ...this.sourceFailureTotals.keys(),
+    ]);
+    const now = Date.now();
+    const sources = [...sourceIds].map((sourceId) => {
+      const circuit = this.sourceCircuits.get(sourceId);
+      const openUntil = circuit?.openUntil || 0;
+      return {
+        id: sourceId,
+        name: configuredSources.find((source: any) => source?.id === sourceId)?.name || sourceId,
+        active: settings?.activeMovieSourceId === sourceId,
+        failures: this.sourceFailureTotals.get(sourceId) || 0,
+        consecutiveFailures: circuit?.failures || 0,
+        circuitOpen: openUntil > now,
+        openUntil: openUntil > now ? new Date(openUntil).toISOString() : null,
+      };
+    });
+    const resolutions = this.discoveryMetrics.resolutions;
+    return {
+      generatedAt: new Date(now).toISOString(),
+      storageScope: 'instance',
+      startedAt: new Date(this.discoveryMetrics.startedAt).toISOString(),
+      summary: {
+        resolutions,
+        fallbackResponses: this.discoveryMetrics.fallbackResponses,
+        fallbackRate: resolutions > 0
+          ? Number(((this.discoveryMetrics.fallbackResponses / resolutions) * 100).toFixed(1))
+          : 0,
+        staleResponses: this.discoveryMetrics.staleResponses,
+        circuitTrips: this.discoveryMetrics.circuitTrips,
+        circuitSkips: this.discoveryMetrics.circuitSkips,
+        openCircuits: sources.filter((source) => source.circuitOpen).length,
+        lastKnownGoodEntries: this.discoveryLastKnownGood.size,
+      },
+      sources,
+    };
   }
 
   async searchPeople(query: string, page = 1): Promise<any> {
