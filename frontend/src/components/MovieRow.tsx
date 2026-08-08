@@ -184,7 +184,7 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
           </h3>
         </div>
         <Link 
-          href={`/search?country=${countrySlug}`}
+          href={`/quoc-gia/${countrySlug}`}
           className="text-xs font-bold text-zinc-500 hover:text-pink-500 transition-colors duration-200 uppercase tracking-wider md:mt-2"
         >
           Xem toàn bộ &gt;

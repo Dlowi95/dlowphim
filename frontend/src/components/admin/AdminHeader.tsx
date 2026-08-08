@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Cookies from "js-cookie";
 import { useAuth } from "@/context/AuthContext";
-import { Bell, Menu, AlertTriangle, ShieldCheck, CheckCheck, Sparkles } from "lucide-react";
+import { Bell, Menu, AlertTriangle, ShieldCheck, CheckCheck } from "lucide-react";
 import { hasAdminPermission } from "@/utils/adminPermissions";
 
 interface AdminHeaderProps {
@@ -87,15 +87,12 @@ export default function AdminHeader({
         </button>
 
         {/* Breadcrumb */}
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-black text-zinc-600 uppercase tracking-widest hidden sm:block">Admin</span>
-          <span className="text-zinc-700 text-[10px] hidden sm:block">/</span>
-          <div className="flex items-center gap-1.5">
-            <Sparkles size={11} className="text-pink-500" />
-            <span className="text-[11px] font-black text-zinc-300 uppercase tracking-wider">
-              {TAB_LABELS[activeTab] || activeTab}
-            </span>
-          </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-medium text-zinc-500 hidden sm:block">Admin</span>
+          <span className="text-zinc-700 text-xs hidden sm:block">/</span>
+          <span className="text-sm font-semibold text-zinc-200">
+            {TAB_LABELS[activeTab] || activeTab}
+          </span>
         </div>
       </div>
 
@@ -105,11 +102,10 @@ export default function AdminHeader({
         {hasAdminPermission(user?.role, "notifications.manage") && <div className="relative">
           <button
             onClick={() => setShowNotif(!showNotif)}
-            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer border-none ${
-              showNotif
+            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer border-none ${showNotif
                 ? "bg-pink-500/15 text-pink-400 shadow-[inset_0_0_0_1px_rgba(236,72,153,0.3)]"
                 : "bg-white/[0.04] hover:bg-white/[0.07] text-zinc-500 hover:text-zinc-200"
-            }`}
+              }`}
           >
             <Bell size={14} />
           </button>
@@ -143,18 +139,16 @@ export default function AdminHeader({
                         <div
                           key={notif._id}
                           onClick={() => handleMarkAsRead(notif._id, notif.targetTab)}
-                          className={`p-2.5 rounded-xl cursor-pointer flex gap-2.5 items-start text-left transition-all ${
-                            !notif.isRead
+                          className={`p-2.5 rounded-xl cursor-pointer flex gap-2.5 items-start text-left transition-all ${!notif.isRead
                               ? "bg-pink-500/[0.07] hover:bg-pink-500/[0.11] shadow-[inset_0_0_0_1px_rgba(236,72,153,0.15)]"
                               : "bg-white/[0.025] hover:bg-white/[0.04]"
-                          }`}
+                            }`}
                         >
                           <div
-                            className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
-                              notif.type === "comment_report"
+                            className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${notif.type === "comment_report"
                                 ? "bg-red-500/10 text-red-400"
                                 : "bg-amber-500/10 text-amber-400"
-                            }`}
+                              }`}
                           >
                             <AlertTriangle size={11} />
                           </div>

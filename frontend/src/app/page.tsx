@@ -338,7 +338,7 @@ export default function HomePage() {
                 {heroDetail.category.slice(0, 3).map((cat: any) => (
                   <button
                     key={cat.slug}
-                    onClick={() => router.push(`/search?genre=${cat.slug}`)}
+                    onClick={() => router.push(`/the-loai/${cat.slug}`)}
                     className="bg-zinc-900/80 border border-zinc-800/80 hover:border-zinc-700 hover:text-pink-500 text-zinc-400 text-xs px-3 py-1 rounded-xl transition-all duration-200"
                   >
                     {cat.name}

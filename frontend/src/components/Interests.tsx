@@ -12,8 +12,8 @@ export const themes = [
   { name: "Lồng Tiếng Cực Mạnh", query: "/search?keyword=lồng%20tiếng", gradient: "from-[#cd9cf2] to-[#f6f3ff]" },
   { name: "Netflix", query: "/search?keyword=netflix", gradient: "from-[#f857a6] to-[#ff5858]" },
   { name: "TVB", query: "/search?keyword=TVB", gradient: "from-[#11998e] to-[#38ef7d]" },
-  { name: "Cổ Trang", query: "/search?genre=co-trang", gradient: "from-[#ba5370] to-[#f4e2d8]" },
-  { name: "Chữa lành", query: "/search?genre=tam-ly", gradient: "from-[#ff9a9e] via-[#fecfef] to-[#fecfef]" },
+  { name: "Cổ Trang", query: "/the-loai/co-trang", gradient: "from-[#ba5370] to-[#f4e2d8]" },
+  { name: "Chữa lành", query: "/the-loai/tam-ly", gradient: "from-[#ff9a9e] via-[#fecfef] to-[#fecfef]" },
   { name: "Marvel Studios", query: "/search?keyword=marvel", gradient: "from-[#2193b0] to-[#6dd5ed]" },
   { name: "Ngày Giải Phóng Miền...", query: "/search?keyword=lịch%20sử", gradient: "from-[#f12711] to-[#f5af19]" }
 ];

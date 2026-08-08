@@ -197,7 +197,7 @@ export default function CinemaRow() {
         {/* Custom tooltip arrow */}
         <div className="relative group/tooltip">
           <Link
-            href="/search?genre=phim-chieu-rap"
+            href="/the-loai/phim-chieu-rap"
             className="w-8 h-8 rounded-full border border-zinc-800 bg-zinc-900/60 hover:border-pink-500 hover:text-pink-500 flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer"
           >
             <ChevronRight size={16} className="ml-0.5" />

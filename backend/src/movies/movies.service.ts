@@ -18,8 +18,11 @@ import { NotificationsService } from '../notifications/notifications.service';
 @Injectable()
 export class MoviesService {
   private readonly upcomingCache = new Map<string, { data: any; expiry: number }>();
+  private readonly peopleCache = new Map<string, { data: any; expiry: number }>();
   private readonly upcomingCacheTtlMs = 6 * 60 * 60 * 1000;
   private readonly upcomingCacheMaxEntries = 200;
+  private readonly peopleCacheTtlMs = 60 * 60 * 1000;
+  private readonly peopleCacheMaxEntries = 200;
 
   constructor(
     @InjectModel(BlockedMovie.name) private blockedModel: Model<BlockedMovieDocument>,
@@ -299,6 +302,152 @@ export class MoviesService {
       this.upcomingCache.delete(oldestKey);
     }
     this.upcomingCache.set(key, { data, expiry: now + this.upcomingCacheTtlMs });
+  }
+
+  private setPeopleCache(key: string, data: any): void {
+    const now = Date.now();
+    for (const [cacheKey, entry] of this.peopleCache) {
+      if (entry.expiry <= now) this.peopleCache.delete(cacheKey);
+    }
+    while (this.peopleCache.size >= this.peopleCacheMaxEntries) {
+      const oldestKey = this.peopleCache.keys().next().value;
+      if (!oldestKey) break;
+      this.peopleCache.delete(oldestKey);
+    }
+    this.peopleCache.set(key, { data, expiry: now + this.peopleCacheTtlMs });
+  }
+
+  async searchPeople(query: string, page = 1): Promise<any> {
+    const normalizedQuery = this.cleanText(query, 100);
+    if (normalizedQuery.length < 2) {
+      return { items: [], page: 1, totalPages: 1, totalItems: 0 };
+    }
+    const safePage = Math.min(20, Math.max(1, Math.floor(Number(page) || 1)));
+    const cacheKey = `search:${normalizedQuery.toLowerCase()}:${safePage}`;
+    const cached = this.peopleCache.get(cacheKey);
+    if (cached && cached.expiry > Date.now()) return cached.data;
+
+    const settings = await this.settingsService.getSettings();
+    const apiKey = settings.tmdbApiKey || '591c025bb1641315ae087330271132bc';
+    const response = await this.safeFetchTmdb(
+      `https://api.themoviedb.org/3/search/person?api_key=${apiKey}&query=${encodeURIComponent(normalizedQuery)}&language=vi-VN&page=${safePage}&include_adult=false`,
+    );
+    if (!response?.ok) {
+      return { items: [], page: safePage, totalPages: 1, totalItems: 0 };
+    }
+
+    const payload = await response.json();
+    const items = (payload.results || []).slice(0, 20).map((person: any) => ({
+      id: String(person.id),
+      name: person.name,
+      originalName: person.original_name || person.name,
+      profileUrl: person.profile_path
+        ? `https://image.tmdb.org/t/p/w342${person.profile_path}`
+        : null,
+      department: person.known_for_department || 'Acting',
+      knownFor: (person.known_for || []).slice(0, 3).map((movie: any) =>
+        movie.title || movie.name || movie.original_title || movie.original_name,
+      ).filter(Boolean),
+    }));
+    const data = {
+      items,
+      page: Number(payload.page) || safePage,
+      totalPages: Math.min(20, Number(payload.total_pages) || 1),
+      totalItems: Number(payload.total_results) || items.length,
+    };
+    this.setPeopleCache(cacheKey, data);
+    return data;
+  }
+
+  async getPersonMovies(personId: string, page = 1): Promise<any> {
+    if (!/^\d+$/.test(personId)) throw new BadRequestException('ID diễn viên không hợp lệ');
+    const safePage = Math.max(1, Math.floor(Number(page) || 1));
+    const cacheKey = `credits:${personId}:${safePage}`;
+    const cached = this.peopleCache.get(cacheKey);
+    if (cached && cached.expiry > Date.now()) return cached.data;
+
+    const settings = await this.settingsService.getSettings();
+    const apiKey = settings.tmdbApiKey || '591c025bb1641315ae087330271132bc';
+    const [personResponse, creditsResponse] = await Promise.all([
+      this.safeFetchTmdb(`https://api.themoviedb.org/3/person/${personId}?api_key=${apiKey}&language=vi-VN`),
+      this.safeFetchTmdb(`https://api.themoviedb.org/3/person/${personId}/combined_credits?api_key=${apiKey}&language=vi-VN`),
+    ]);
+    if (!personResponse?.ok) throw new NotFoundException('Không tìm thấy diễn viên');
+    const person = await personResponse.json();
+    const creditsPayload = creditsResponse?.ok ? await creditsResponse.json() : { cast: [] };
+
+    const uniqueCredits = Array.from(
+      new Map(
+        (creditsPayload.cast || [])
+          .filter((credit: any) => credit.media_type === 'movie' || credit.media_type === 'tv')
+          .map((credit: any) => [`${credit.media_type}:${credit.id}`, credit]),
+      ).values(),
+    ).sort((left: any, right: any) => {
+      const leftDate = left.release_date || left.first_air_date || '';
+      const rightDate = right.release_date || right.first_air_date || '';
+      return (Number(right.popularity) - Number(left.popularity)) || rightDate.localeCompare(leftDate);
+    });
+
+    const perPage = 16;
+    const pageCredits = uniqueCredits.slice((safePage - 1) * perPage, safePage * perPage);
+    const resolved: any[] = new Array(pageCredits.length);
+    let cursor = 0;
+    await Promise.all(Array.from({ length: Math.min(4, pageCredits.length) }, async () => {
+      while (cursor < pageCredits.length) {
+        const index = cursor++;
+        const credit: any = pageCredits[index];
+        const title = credit.title || credit.name || credit.original_title || credit.original_name || '';
+        const originTitle = credit.original_title || credit.original_name || title;
+        try {
+          const normalize = (value: unknown) => this.generateSlug(String(value || '')).replace(/-/g, '');
+          const expectedTmdbId = String(credit.id);
+          const year = Number(String(credit.release_date || credit.first_air_date || '').slice(0, 4));
+          const findMatch = (candidates: any[]) => candidates
+            .map((movie: any) => {
+              let score = 0;
+              const movieTmdbId = String(movie?.tmdb?.id || movie?.tmdb || '');
+              if (movieTmdbId && movieTmdbId === expectedTmdbId) score += 100;
+              if (normalize(movie.origin_name) === normalize(originTitle)) score += 70;
+              if (normalize(movie.name) === normalize(title)) score += 60;
+              if (year && Number(movie.year) === year) score += 15;
+              return { movie, score };
+            })
+            .filter(({ movie, score }: any) => movie?.slug && score >= 60)
+            .sort((a: any, b: any) => b.score - a.score)[0]?.movie;
+
+          let match: any = null;
+          for (const source of ['active', 'fallback']) {
+            const search = await this.fetchOphimProxy(
+              `/v1/api/tim-kiem?keyword=${encodeURIComponent(originTitle || title)}&limit=12`,
+              source,
+            );
+            match = findMatch(search?.data?.items || search?.items || []);
+            if (match) break;
+          }
+          if (match) resolved[index] = match;
+        } catch {
+          // Một phim không có trong nguồn hiện tại không làm hỏng toàn bộ danh sách.
+        }
+      }
+    }));
+
+    const data = {
+      person: {
+        id: String(person.id),
+        name: person.name,
+        biography: person.biography || '',
+        birthday: person.birthday || '',
+        placeOfBirth: person.place_of_birth || '',
+        profileUrl: person.profile_path ? `https://image.tmdb.org/t/p/h632${person.profile_path}` : null,
+      },
+      items: resolved.filter(Boolean),
+      page: safePage,
+      totalPages: Math.max(1, Math.ceil(uniqueCredits.length / perPage)),
+      totalItems: uniqueCredits.length,
+      availableItems: resolved.filter(Boolean).length,
+    };
+    this.setPeopleCache(cacheKey, data);
+    return data;
   }
 
   async getUpcomingMovies(page = 1): Promise<any> {

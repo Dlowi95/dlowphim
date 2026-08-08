@@ -29,6 +29,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { useAuth } from "@/context/AuthContext";
+import { hasAdminPermission, type AdminPermission } from "@/utils/adminPermissions";
 
 type TabId =
   | "dashboard"
@@ -147,6 +149,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export default function DashboardView({ stats, loading, setActiveTab, onRefresh }: DashboardViewProps) {
+  const { user } = useAuth();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -189,17 +192,18 @@ export default function DashboardView({ stats, loading, setActiveTab, onRefresh 
     };
   };
 
-  const cards = [
-    { title: "Người dùng", value: stats.totals.users, icon: Users, accent: "#3b82f6", trend: trendInfo("users"), tab: "users" as TabId },
-    { title: "Phim đang xem dở", value: stats.totals.views, icon: Eye, accent: "#ec4899", trend: trendInfo("views"), tab: "movies" as TabId },
-    { title: "Bình luận", value: stats.totals.comments, icon: MessageSquare, accent: "#8b5cf6", trend: trendInfo("comments"), tab: "comments" as TabId },
+  const cards: Array<{ title: string; value: number; icon: typeof Users; accent: string; trend: ReturnType<typeof trendInfo>; tab: TabId; permission: AdminPermission }> = [
+    { title: "Người dùng", value: stats.totals.users, icon: Users, accent: "#3b82f6", trend: trendInfo("users"), tab: "users", permission: "users.read" },
+    { title: "Phim đang xem dở", value: stats.totals.views, icon: Eye, accent: "#ec4899", trend: trendInfo("views"), tab: "movies", permission: "movies.manage" },
+    { title: "Bình luận", value: stats.totals.comments, icon: MessageSquare, accent: "#8b5cf6", trend: trendInfo("comments"), tab: "comments", permission: "comments.moderate" },
     {
       title: "Việc chờ xử lý",
       value: stats.moderationQueue.total,
       icon: ShieldAlert,
       accent: "#f59e0b",
       trend: { label: stats.moderationQueue.total ? "Cần quản trị viên kiểm tra" : "Không còn việc tồn đọng", positive: stats.moderationQueue.total === 0 },
-      tab: "reports" as TabId,
+      tab: "reports",
+      permission: "reports.manage",
     },
   ];
 
@@ -219,7 +223,7 @@ export default function DashboardView({ stats, loading, setActiveTab, onRefresh 
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {cards.map((card) => {
+        {cards.filter((card) => hasAdminPermission(user?.role, card.permission)).map((card) => {
           const Icon = card.icon;
           const TrendIcon = card.trend.positive ? TrendingUp : TrendingDown;
           return (
@@ -279,7 +283,7 @@ export default function DashboardView({ stats, loading, setActiveTab, onRefresh 
               <Gauge size={14} className="text-cyan-400" />
               <h2 className="text-[11px] font-black uppercase tracking-wider text-zinc-300">Nguồn dữ liệu phim</h2>
             </div>
-            <button type="button" onClick={() => setActiveTab?.("settings")} className="text-[9px] font-black uppercase tracking-widest text-zinc-600 transition-colors hover:text-pink-400">Cấu hình</button>
+            {hasAdminPermission(user?.role, "settings.manage") && <button type="button" onClick={() => setActiveTab?.("settings")} className="text-[9px] font-black uppercase tracking-widest text-zinc-600 transition-colors hover:text-pink-400">Cấu hình</button>}
           </div>
           <div className="space-y-2.5">
             {stats.movieSources.map((source) => {
@@ -317,7 +321,7 @@ export default function DashboardView({ stats, loading, setActiveTab, onRefresh 
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <section className="rounded-2xl border border-white/[0.05] bg-white/[0.025] p-5">
+        {(hasAdminPermission(user?.role, "comments.moderate") || hasAdminPermission(user?.role, "reports.manage")) && <section className="rounded-2xl border border-white/[0.05] bg-white/[0.025] p-5">
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <ShieldAlert size={14} className="text-amber-400" />
@@ -329,18 +333,18 @@ export default function DashboardView({ stats, loading, setActiveTab, onRefresh 
             <span className="rounded-full bg-amber-500/10 px-2 py-1 text-[9px] font-black text-amber-400">{stats.moderationQueue.total} việc</span>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <button type="button" onClick={() => setActiveTab?.("comments")} className="rounded-xl border border-white/[0.05] bg-white/[0.025] p-3 text-left transition-colors hover:bg-white/[0.05]">
+            {hasAdminPermission(user?.role, "comments.moderate") && <button type="button" onClick={() => setActiveTab?.("comments")} className="rounded-xl border border-white/[0.05] bg-white/[0.025] p-3 text-left transition-colors hover:bg-white/[0.05]">
               <MessageSquare size={14} className="text-violet-400" />
               <p className="mt-3 text-xl font-black text-zinc-100">{stats.moderationQueue.commentReports}</p>
               <p className="mt-0.5 text-[9px] font-bold text-zinc-500">Bình luận bị báo xấu</p>
-            </button>
-            <button type="button" onClick={() => setActiveTab?.("reports")} className="rounded-xl border border-white/[0.05] bg-white/[0.025] p-3 text-left transition-colors hover:bg-white/[0.05]">
+            </button>}
+            {hasAdminPermission(user?.role, "reports.manage") && <button type="button" onClick={() => setActiveTab?.("reports")} className="rounded-xl border border-white/[0.05] bg-white/[0.025] p-3 text-left transition-colors hover:bg-white/[0.05]">
               <Film size={14} className="text-amber-400" />
               <p className="mt-3 text-xl font-black text-zinc-100">{stats.moderationQueue.movieReports}</p>
               <p className="mt-0.5 text-[9px] font-bold text-zinc-500">Báo lỗi phim</p>
-            </button>
+            </button>}
           </div>
-          {stats.moderationQueue.latestMovieReports.length > 0 && (
+          {hasAdminPermission(user?.role, "reports.manage") && stats.moderationQueue.latestMovieReports.length > 0 && (
             <div className="mt-3 space-y-1.5 border-t border-white/[0.05] pt-3">
               {stats.moderationQueue.latestMovieReports.slice(0, 3).map((report) => (
                 <button key={report._id} type="button" onClick={() => setActiveTab?.("reports")} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/[0.035]">
@@ -351,9 +355,9 @@ export default function DashboardView({ stats, loading, setActiveTab, onRefresh 
               ))}
             </div>
           )}
-        </section>
+        </section>}
 
-        <section className="rounded-2xl border border-white/[0.05] bg-white/[0.025] p-5">
+        {hasAdminPermission(user?.role, "playback.read") && <section className="rounded-2xl border border-white/[0.05] bg-white/[0.025] p-5">
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <WifiOff size={14} className="text-red-400" />
@@ -388,7 +392,7 @@ export default function DashboardView({ stats, loading, setActiveTab, onRefresh 
               </div>
             )}
           </div>
-        </section>
+        </section>}
       </div>
     </div>
   );

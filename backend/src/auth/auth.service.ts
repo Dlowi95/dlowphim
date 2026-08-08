@@ -58,19 +58,48 @@ export class AuthService implements OnModuleInit {
   private async ensureSingleSuperAdmin() {
     const configuredEmail = String(this.configService.get<string>('SUPER_ADMIN_EMAIL') || '').trim().toLowerCase();
     const current = await this.userModel.findOne({ role: 'super_admin', isDeleted: { $ne: true } }).sort({ createdAt: 1 });
-    if (!current) {
+
+    // SUPER_ADMIN_EMAIL is the only supported ownership-transfer mechanism.
+    // Validate the target before touching the current owner so a typo can never leave the system ownerless.
+    if (current && configuredEmail && current.email !== configuredEmail) {
+      const candidate = await this.userModel.findOne({ email: configuredEmail, isDeleted: { $ne: true } });
+      if (!candidate) {
+        this.logger.error(`SUPER_ADMIN_EMAIL=${configuredEmail} does not match an active account; keeping ${current.email} as owner.`);
+      } else {
+        const previousTokenVersion = current.tokenVersion || 0;
+        current.role = 'content_admin';
+        current.tokenVersion = previousTokenVersion + 1;
+        await current.save();
+        try {
+          candidate.role = 'super_admin';
+          candidate.isActive = true;
+          candidate.tokenVersion = (candidate.tokenVersion || 0) + 1;
+          await candidate.save();
+          this.logger.log(`Super Admin ownership transferred from ${current.email} to ${candidate.email}`);
+        } catch (error) {
+          current.role = 'super_admin';
+          current.tokenVersion = previousTokenVersion + 2;
+          await current.save();
+          this.logger.error('Super Admin transfer failed and previous ownership was restored.', error);
+          throw error;
+        }
+      }
+    } else if (!current) {
       const candidate = configuredEmail
         ? await this.userModel.findOne({ email: configuredEmail, isDeleted: { $ne: true } })
         : await this.userModel.findOne({ role: 'admin', isDeleted: { $ne: true } }).sort({ createdAt: 1 });
       if (candidate) {
         candidate.role = 'super_admin';
         candidate.isActive = true;
+        candidate.tokenVersion = (candidate.tokenVersion || 0) + 1;
         await candidate.save();
         this.logger.log(`Super Admin owner initialized: ${candidate.email}`);
       } else {
         this.logger.warn('No Super Admin owner found. Set SUPER_ADMIN_EMAIL or keep one legacy admin account.');
       }
     }
+
+    // Migrate any remaining legacy 'admin' roles to content_admin
     await this.userModel.updateMany(
       { role: 'admin' },
       { $set: { role: 'content_admin' }, $inc: { tokenVersion: 1 } },

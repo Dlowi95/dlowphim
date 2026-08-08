@@ -1,220 +1,159 @@
 "use client";
 
-import React, { useEffect, useState, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react"; 
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { Film, Loader2, Search, UserRound } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 import MovieCard from "@/components/MovieCard";
-import { cleanSlug } from "@/utils/movieUtils";
 import Pagination from "@/components/Pagination";
-import { getProxyUrl, MOVIE_API_DOMAIN, MovieSourcePreference } from "@/utils/api";
+import PersonCard from "@/components/discovery/PersonCard";
+import { cleanSlug } from "@/utils/movieUtils";
 import { searchMovies } from "@/utils/movieSearch";
+import { searchPeople, type PersonResult } from "@/utils/people";
+import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
+
+type ResultTab = "all" | "movies" | "people";
 
 function SearchContent() {
-  const searchParams = useSearchParams();
+  const params = useSearchParams();
   const router = useRouter();
-  
-  const keyword = searchParams.get("keyword") || "";
-  const type = searchParams.get("type") || "";
-  const genre = searchParams.get("genre") || "";
-  const country = searchParams.get("country") || "";
-  const pageUrl = parseInt(searchParams.get("page") || "1", 10);
-
+  const keyword = params.get("keyword")?.trim() || "";
+  const type = params.get("type") || "";
+  const page = Math.max(1, Number(params.get("page")) || 1);
+  const [tab, setTab] = useState<ResultTab>("all");
   const [movies, setMovies] = useState<any[]>([]);
+  const [people, setPeople] = useState<PersonResult[]>([]);
+  const [moviePages, setMoviePages] = useState(1);
+  const [peoplePages, setPeoplePages] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [totalPages, setTotalPages] = useState(1);
-  const [apiTitle, setApiTitle] = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    async function fetchSearchData() {
+    const controller = new AbortController();
+    const load = async () => {
+      setLoading(true);
+      setError("");
       try {
-        setLoading(true);
-        const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-        let url = "";
-        let sourcePreference: MovieSourcePreference = "active";
-        
         if (keyword) {
-          url = `${MOVIE_API_DOMAIN}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&page=${pageUrl}`;
-        } else if (genre) {
-          if (genre === "hoat-hinh" || genre === "phim-chieu-rap") {
-            url = `${MOVIE_API_DOMAIN}/v1/api/danh-sach/${genre}?page=${pageUrl}`;
-          } else {
-            url = `${MOVIE_API_DOMAIN}/v1/api/the-loai/${genre}?page=${pageUrl}`;
-          }
-        } else if (country) {
-          url = `${MOVIE_API_DOMAIN}/v1/api/quoc-gia/${country}?page=${pageUrl}`;
-        } else if (type) {
-          if (type === "phim-sap-chieu") {
-            url = `${API_URL}/movies/upcoming?page=${pageUrl}`;
-          } else {
-            url = `${MOVIE_API_DOMAIN}/v1/api/danh-sach/${type}?page=${pageUrl}`;
-          }
-        } else {
-          url = `${MOVIE_API_DOMAIN}/v1/api/danh-sach/phim-moi-cap-nhat?page=${pageUrl}`;
-        }
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => {
-          console.warn("Search API timeout. Aborting request.");
-          controller.abort();
-        }, keyword ? 8000 : 6000);
-
-        let data: any = null;
-        let fetchSuccess = false;
-
-        try {
-          if (keyword) {
-            const searchResult = await searchMovies(keyword, pageUrl, {
-              signal: controller.signal,
-              timeoutMs: 3500,
-            });
-            data = searchResult.data;
-            fetchSuccess = searchResult.items.length > 0;
-          } else {
-            const requestUrl = type === "phim-sap-chieu" ? url : getProxyUrl(url, sourcePreference);
-            const res = await fetch(requestUrl, { signal: controller.signal });
-            if (res.ok) {
-              data = await res.json();
-              if (data.status === "success" || data.status === true) {
-                const items = data.items || data.data?.items || [];
-                if (items.length > 0) {
-                  fetchSuccess = true;
-                }
-              }
-            }
-          }
-        } catch (e) {}
-
-        clearTimeout(timeoutId);
-
-        if (fetchSuccess && data) {
-          const items = data.items || data.data?.items || [];
-          
-          // Deduplicate based on base slug to avoid showing duplicate seasons/parts of the same series
+          const [movieResult, peopleResult] = await Promise.allSettled([
+            searchMovies(keyword, page, { signal: controller.signal, timeoutMs: 5000 }),
+            searchPeople(keyword, page, controller.signal),
+          ]);
+          if (controller.signal.aborted) return;
+          const rawMovies = movieResult.status === "fulfilled" ? movieResult.value.items : [];
+          const movieData = movieResult.status === "fulfilled" ? movieResult.value.data : null;
           const seen = new Set<string>();
-          const uniqueItems = items.filter((item: any) => {
-            const baseSlug = cleanSlug(item.slug);
-            if (seen.has(baseSlug)) return false;
-            seen.add(baseSlug);
+          setMovies(rawMovies.filter((movie: any) => {
+            const key = cleanSlug(movie.slug);
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
             return true;
-          });
-          setMovies(uniqueItems);
-
-          const title = data.data?.titlePage || data.titlePage || "";
-          setApiTitle(title);
-
-          const pagination = data.data?.params?.pagination;
-          if (pagination) {
-            const total = pagination.totalItems;
-            const perPage = pagination.totalItemsPerPage;
-            setTotalPages(Math.ceil(total / perPage) || 1);
-          } else if (data.totalPages) {
-            setTotalPages(Number(data.totalPages) || 1);
+          }));
+          const pagination = movieData?.data?.params?.pagination;
+          setMoviePages(pagination
+            ? Math.max(1, Math.ceil(Number(pagination.totalItems) / Number(pagination.totalItemsPerPage)))
+            : Math.max(1, Number(movieData?.totalPages) || 1));
+          if (peopleResult.status === "fulfilled") {
+            setPeople(peopleResult.value.items);
+            setPeoplePages(peopleResult.value.totalPages || 1);
           } else {
-            setTotalPages(1);
+            setPeople([]);
+            setPeoplePages(1);
+          }
+          if (movieResult.status === "rejected" && peopleResult.status === "rejected") {
+            throw new Error("Không thể kết nối dịch vụ tìm kiếm");
           }
         } else {
-          setMovies([]);
-          setTotalPages(1);
-          setApiTitle("");
+          setPeople([]);
+          const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+          const path = `/v1/api/danh-sach/${type || "phim-moi-cap-nhat"}?page=${page}`;
+          const requestUrl = type === "phim-sap-chieu"
+            ? `${API_URL}/movies/upcoming?page=${page}`
+            : getProxyUrl(`${MOVIE_API_DOMAIN}${path}`);
+          const response = await fetch(requestUrl, { signal: controller.signal });
+          if (!response.ok) throw new Error("Không thể tải danh sách phim");
+          const data = await response.json();
+          setMovies(data.data?.items || data.items || []);
+          const pagination = data.data?.params?.pagination;
+          setMoviePages(pagination
+            ? Math.max(1, Math.ceil(Number(pagination.totalItems) / Number(pagination.totalItemsPerPage)))
+            : Math.max(1, Number(data.totalPages) || 1));
         }
-      } catch (error) {
-        console.error("Lỗi gọi API tìm kiếm OPhim:", error);
-        setMovies([]);
-        setApiTitle("");
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setMovies([]);
+          setPeople([]);
+          setError(loadError instanceof Error ? loadError.message : "Tìm kiếm tạm thời gián đoạn");
+        }
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
-    }
+    };
+    void load();
+    return () => controller.abort();
+  }, [keyword, page, type]);
 
-    fetchSearchData();
-  }, [keyword, type, genre, country, pageUrl]);
+  const visibleMovies = tab !== "people";
+  const visiblePeople = keyword && tab !== "movies";
+  const totalPages = tab === "people" ? peoplePages : moviePages;
+  const title = useMemo(() => {
+    if (keyword) return `Kết quả cho “${keyword}”`;
+    if (type === "phim-le") return "Phim lẻ mới nhất";
+    if (type === "phim-bo") return "Phim bộ mới nhất";
+    return "Khám phá phim";
+  }, [keyword, type]);
 
-  const handlePageChange = (newPage: number) => {
-    if (newPage < 1 || newPage > totalPages) return;
-    
-    let targetUrl = `/search?page=${newPage}`;
-    if (keyword) targetUrl += `&keyword=${encodeURIComponent(keyword)}`;
-    if (genre) targetUrl += `&genre=${genre}`;
-    if (country) targetUrl += `&country=${country}`;
-    if (type) targetUrl += `&type=${type}`;
-    
-    router.push(targetUrl);
+  const changePage = (nextPage: number) => {
+    const next = new URLSearchParams(params.toString());
+    next.set("page", String(nextPage));
+    router.push(`/search?${next.toString()}`);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const getPageTitle = () => {
-    if (keyword) return `Kết quả tìm kiếm cho: "${keyword}"`;
-    if (type === "top-imdb") return "Bảng Xếp Hạng Phim Top IMDb";
-    if (type === "phim-thuyet-minh") return "Danh Sách Phim Thuyết Minh";
-    if (type === "phim-sap-chieu") return "Danh Sách Phim Sắp Chiếu / Phim Hot";
-    if (type === "phim-4k") return "Danh Sách Phim 4K Siêu Nét";
-    if (apiTitle) return apiTitle;
-    if (genre) return `Thể Loại: ${genre}`;
-    if (country) return `Quốc Gia: ${country}`;
-    if (type === "phim-le") return "Danh Sách Phim Lẻ Mới Nhất";
-    if (type === "phim-bo") return "Danh Sách Phim Bộ Lồng Tiếng / Vietsub";
-    if (type === "hoat-hinh") return "Kho Phim Hoạt Hình / Anime Đặc Sắc";
-    return "Danh Sách Phim Hệ Thống";
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 bg-black text-white">
-        <Loader2 className="animate-spin text-pink-500" size={40} />
-        <p className="text-sm font-medium text-zinc-500">Đang lục tìm kho lưu trữ phim...</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="w-full flex-grow flex flex-col bg-black text-white pt-28 pb-16 px-6">
-      <div className="container mx-auto max-w-7xl space-y-8">
-        
-        {/* Tiêu đề trang */}
-        <div className="border-b border-zinc-900 pb-4">
-          <h1 className="text-xl md:text-3xl font-black tracking-tight text-white uppercase">
-            {getPageTitle()}
-          </h1>
-          <p className="text-xs md:text-sm text-zinc-500 font-medium mt-1">
-            Trang {pageUrl} / {totalPages}
-          </p>
-        </div>
+    <main className="min-h-screen bg-black px-5 pb-20 pt-28 text-white">
+      <div className="mx-auto max-w-7xl">
+        <header className="mb-7 border-b border-zinc-900 pb-5">
+          <p className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-[0.22em] text-pink-500"><Search size={14} /> Tìm kiếm DlowPhim</p>
+          <h1 className="text-2xl font-black md:text-4xl">{title}</h1>
+          {!loading && keyword && <p className="mt-2 text-sm text-zinc-500">Tìm thấy {movies.length} phim và {people.length} diễn viên trên trang này</p>}
+        </header>
 
-        {/* Khối hiển thị khi trống kết quả */}
-        {movies.length === 0 ? (
-          <div className="text-center py-20 bg-zinc-950 rounded-2xl border border-zinc-900/50 space-y-2">
-            <p className="text-lg font-bold text-zinc-400">Rất tiếc, không tìm thấy phim phù hợp!</p>
-            <p className="text-xs text-zinc-600">Bồ thử tìm bằng từ khóa khác hoặc kiểm tra lại chính tả xem sao nhé.</p>
-          </div>
-        ) : (
-          /* Grid danh sách phim tìm kiếm */
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-4">
-            {movies.map((movie) => (
-              <MovieCard key={movie._id} movie={movie} aspect="portrait" />
+        {keyword && (
+          <div className="mb-8 flex gap-2 overflow-x-auto">
+            {(["all", "movies", "people"] as ResultTab[]).map((value) => (
+              <button key={value} onClick={() => setTab(value)} className={`whitespace-nowrap rounded-full px-5 py-2 text-sm font-bold transition ${tab === value ? "bg-pink-500 text-white" : "border border-zinc-800 bg-zinc-950 text-zinc-400 hover:text-white"}`}>
+                {value === "all" ? "Tất cả" : value === "movies" ? `Phim (${movies.length})` : `Diễn viên (${people.length})`}
+              </button>
             ))}
           </div>
         )}
 
-        {/* Thanh chuyển trang màu hồng */}
-        <Pagination
-          currentPage={pageUrl}
-          totalPages={totalPages}
-          onPageChange={handlePageChange}
-        />
-
+        {loading ? (
+          <div className="flex min-h-[45vh] flex-col items-center justify-center gap-3 text-zinc-500"><Loader2 className="animate-spin text-pink-500" size={40} /><p>Đang tìm trong kho phim...</p></div>
+        ) : error ? (
+          <div className="rounded-3xl border border-zinc-900 bg-zinc-950 py-20 text-center"><p className="font-bold">{error}</p><p className="mt-2 text-sm text-zinc-500">Bạn thử lại sau một chút nhé.</p></div>
+        ) : (
+          <div className="space-y-12">
+            {visiblePeople && (
+              <section>
+                <div className="mb-5 flex items-center gap-2"><UserRound className="text-pink-500" size={21} /><h2 className="text-xl font-black uppercase">Diễn viên</h2></div>
+                {people.length ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{people.map((person) => <PersonCard key={person.id} person={person} />)}</div> : <p className="rounded-2xl border border-zinc-900 bg-zinc-950 p-7 text-sm text-zinc-500">Không tìm thấy diễn viên phù hợp.</p>}
+              </section>
+            )}
+            {visibleMovies && (
+              <section>
+                <div className="mb-5 flex items-center gap-2"><Film className="text-pink-500" size={21} /><h2 className="text-xl font-black uppercase">Phim</h2></div>
+                {movies.length ? <div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7">{movies.map((movie) => <MovieCard key={movie._id || movie.slug} movie={movie} aspect="portrait" />)}</div> : <p className="rounded-2xl border border-zinc-900 bg-zinc-950 p-7 text-sm text-zinc-500">Không tìm thấy phim phù hợp. Bạn thử tên gốc hoặc kiểm tra lại chính tả nhé.</p>}
+              </section>
+            )}
+          </div>
+        )}
+        {!loading && !error && <Pagination currentPage={page} totalPages={totalPages} onPageChange={changePage} />}
       </div>
-    </div>
+    </main>
   );
 }
 
 export default function SearchPage() {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-black text-white flex items-center justify-center">
-        <Loader2 className="animate-spin text-pink-500" size={40} />
-      </div>
-    }>
-      <SearchContent />
-    </Suspense>
-  );
+  return <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-black"><Loader2 className="animate-spin text-pink-500" size={40} /></div>}><SearchContent /></Suspense>;
 }

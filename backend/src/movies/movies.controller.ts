@@ -76,6 +76,22 @@ export class MoviesController {
     return this.moviesService.getMovieCredits(slug, title, tmdbId, tmdbType);
   }
 
+  @Get('people/search')
+  async searchPeople(
+    @Query('query') query = '',
+    @Query('page') page = '1',
+  ) {
+    return this.moviesService.searchPeople(query, Number(page));
+  }
+
+  @Get('people/:personId/movies')
+  async getPersonMovies(
+    @Param('personId') personId: string,
+    @Query('page') page = '1',
+  ) {
+    return this.moviesService.getPersonMovies(personId, Number(page));
+  }
+
   @Get('schedule/:slug')
   async getMovieSchedule(
     @Param('slug') slug: string,

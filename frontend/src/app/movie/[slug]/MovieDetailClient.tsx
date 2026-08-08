@@ -904,7 +904,7 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
               {movie.category.map((cat) => (
                 <button
                   key={cat.slug}
-                  onClick={() => router.push(`/search?genre=${cat.slug}`)}
+                  onClick={() => router.push(`/the-loai/${cat.slug}`)}
                   className="bg-zinc-900/40 border border-zinc-800 hover:border-pink-500 hover:text-pink-400 text-zinc-400 text-[10px] font-bold px-2.5 py-0.5 rounded-full transition-all duration-200 cursor-pointer"
                 >
                   {cat.name}

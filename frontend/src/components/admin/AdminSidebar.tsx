@@ -13,10 +13,9 @@ import {
   Bell,
   Home,
   Settings,
-  Clapperboard,
-  Sword,
   Activity,
   ScrollText,
+  X,
 } from "lucide-react";
 import { ADMIN_ROLE_LABELS, hasAdminPermission, normalizeAdminRole, type AdminPermission } from "@/utils/adminPermissions";
 
@@ -53,7 +52,11 @@ export default function AdminSidebar({
 }: AdminSidebarProps) {
   const { user } = useAuth();
   const router = useRouter();
-  const [expanded, setExpanded] = useState(false);
+  const [desktopExpanded, setDesktopExpanded] = useState(false);
+
+  // On mobile: always show full labels when sidebar is open
+  // On desktop: show labels only on hover
+  const showLabels = sidebarOpen || desktopExpanded;
 
   const getCount = (countKey?: string) => {
     if (!countKey) return 0;
@@ -70,7 +73,7 @@ export default function AdminSidebar({
 
   return (
     <>
-      {/* Mobile overlay */}
+      {/* Mobile overlay backdrop */}
       {sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
@@ -79,8 +82,8 @@ export default function AdminSidebar({
       )}
 
       <aside
-        onMouseEnter={() => setExpanded(true)}
-        onMouseLeave={() => setExpanded(false)}
+        onMouseEnter={() => setDesktopExpanded(true)}
+        onMouseLeave={() => setDesktopExpanded(false)}
         className={`
           fixed inset-y-0 left-0 z-50 flex flex-col
           bg-[#09090f]/95 backdrop-blur-xl
@@ -88,27 +91,39 @@ export default function AdminSidebar({
           transition-all duration-300 ease-in-out
           shadow-[4px_0_40px_rgba(0,0,0,0.6)]
           lg:relative lg:translate-x-0
-          ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
-          ${expanded ? "w-[220px]" : "w-[68px]"}
+          ${sidebarOpen ? "translate-x-0 w-[260px]" : "-translate-x-full lg:translate-x-0"}
+          ${!sidebarOpen ? (desktopExpanded ? "lg:w-[220px]" : "lg:w-[68px]") : ""}
         `}
       >
-        {/* Top: Logo */}
+        {/* Top: Logo + Mobile close button */}
         <div className="h-16 flex items-center gap-3 px-[18px] border-b border-white/[0.04] select-none shrink-0 overflow-hidden">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-pink-500 via-rose-500 to-red-600 flex items-center justify-center shadow-lg shadow-pink-500/30 shrink-0">
-            <Clapperboard size={15} className="text-white" />
-          </div>
+          <img
+            src="/images/logo.png"
+            alt="DlowPhim"
+            className="w-8 h-8 rounded-xl object-cover shrink-0"
+          />
           <div
-            className={`flex flex-col leading-tight transition-all duration-200 overflow-hidden whitespace-nowrap ${
-              expanded ? "opacity-100 max-w-[160px]" : "opacity-0 max-w-0"
+            className={`flex flex-col leading-tight transition-all duration-200 overflow-hidden whitespace-nowrap flex-1 ${
+              showLabels ? "opacity-100 max-w-[160px]" : "opacity-0 max-w-0"
             }`}
           >
             <span className="text-sm font-black text-white tracking-tight">DlowPhim</span>
-            <span className="text-[9px] font-black text-pink-500 uppercase tracking-[0.2em]">Admin Portal</span>
+            <span className="text-[9px] font-semibold text-zinc-500 uppercase tracking-[0.15em]">Quản trị</span>
           </div>
+
+          {/* Mobile close button */}
+          {sidebarOpen && (
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="lg:hidden w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 hover:text-white border-none cursor-pointer flex items-center justify-center transition-all shrink-0 ml-auto"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
 
         {/* Nav items */}
-        <nav className="flex-1 py-3 flex flex-col gap-1 px-2 overflow-hidden">
+        <nav className="flex-1 py-3 flex flex-col gap-1 px-2 overflow-y-auto overflow-x-hidden custom-scrollbar">
           {NAV_ITEMS.filter((item) => hasAdminPermission(user?.role, item.permission)).map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -121,7 +136,7 @@ export default function AdminSidebar({
                   setActiveTab(item.id);
                   setSidebarOpen(false);
                 }}
-                title={!expanded ? item.label : undefined}
+                title={!showLabels ? item.label : undefined}
                 className={`
                   relative w-full flex items-center gap-3 px-[11px] py-2.5 rounded-xl
                   font-bold text-[12.5px] transition-all duration-200 cursor-pointer border-none
@@ -141,7 +156,7 @@ export default function AdminSidebar({
 
                 <span
                   className={`transition-all duration-200 flex-1 text-left ${
-                    expanded ? "opacity-100" : "opacity-0 w-0"
+                    showLabels ? "opacity-100" : "opacity-0 w-0"
                   }`}
                 >
                   {item.label}
@@ -151,13 +166,13 @@ export default function AdminSidebar({
                 {count > 0 && (
                   <span
                     className={`shrink-0 min-w-[17px] h-[17px] rounded-full bg-red-500 text-white text-[8px] font-black flex items-center justify-center px-1 shadow-[0_0_8px_rgba(239,68,68,0.5)] transition-all ${
-                      expanded ? "opacity-100" : "opacity-0"
+                      showLabels ? "opacity-100" : "opacity-0"
                     }`}
                   >
                     {count}
                   </span>
                 )}
-                {count > 0 && !expanded && (
+                {count > 0 && !showLabels && (
                   <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.8)]" />
                 )}
               </button>
@@ -187,7 +202,7 @@ export default function AdminSidebar({
             {/* Name + role (visible when expanded) */}
             <div
               className={`flex flex-col leading-tight transition-all duration-200 flex-1 min-w-0 ${
-                expanded ? "opacity-100 max-w-[120px]" : "opacity-0 max-w-0"
+                showLabels ? "opacity-100 max-w-[120px]" : "opacity-0 max-w-0"
               }`}
             >
               <span className="text-[11px] font-bold text-zinc-200 truncate">{user?.displayName || "Admin"}</span>
@@ -195,7 +210,7 @@ export default function AdminSidebar({
             </div>
 
             {/* Action icons (visible when expanded) */}
-            {expanded && (
+            {showLabels && (
               <div className="flex items-center gap-1 ml-auto shrink-0">
                 {hasAdminPermission(user?.role, "settings.manage") && <button
                   onClick={() => { setActiveTab("settings"); setSidebarOpen(false); }}

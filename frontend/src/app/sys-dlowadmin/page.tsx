@@ -263,14 +263,6 @@ export default function AdminDashboardPage() {
         setSidebarOpen={setSidebarOpen}
       />
 
-      {/* Sidebar background overlay for mobile view */}
-      {sidebarOpen && (
-        <div
-          onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden cursor-default"
-        />
-      )}
-
       {/* ─── MAIN PANEL ─── */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
         <AdminHeader

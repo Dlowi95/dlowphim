@@ -9,6 +9,8 @@ import AuthModal from "./AuthModal";
 import { useAuth } from "@/context/AuthContext";
 import { cleanMovieName, cleanSlug, getImageUrl } from "@/utils/movieUtils";
 import { searchMovies } from "@/utils/movieSearch";
+import { searchPeople, type PersonResult } from "@/utils/people";
+import { COUNTRIES, GENRES } from "@/constants/discovery";
 
 export default function NavbarComponent() {
   const pathname = usePathname();
@@ -18,6 +20,7 @@ export default function NavbarComponent() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isScrolled, setIsScrolled] = useState(false);
   const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [personSuggestions, setPersonSuggestions] = useState<PersonResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
 
@@ -93,6 +96,7 @@ export default function NavbarComponent() {
   useEffect(() => {
     if (!searchQuery.trim()) {
       setSuggestions([]);
+      setPersonSuggestions([]);
       setIsSearching(false);
       return;
     }
@@ -101,10 +105,11 @@ export default function NavbarComponent() {
     const delayDebounce = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const { items } = await searchMovies(searchQuery.trim(), 1, {
-          signal: controller.signal,
-          timeoutMs: 3500,
-        });
+        const [movieResult, peopleResult] = await Promise.allSettled([
+          searchMovies(searchQuery.trim(), 1, { signal: controller.signal, timeoutMs: 3500 }),
+          searchPeople(searchQuery.trim(), 1, controller.signal),
+        ]);
+        const items = movieResult.status === "fulfilled" ? movieResult.value.items : [];
         const seen = new Set<string>();
         const uniqueItems = items.filter((item: any) => {
           const baseSlug = cleanSlug(item.slug);
@@ -113,10 +118,12 @@ export default function NavbarComponent() {
           return true;
         });
         setSuggestions(uniqueItems.slice(0, 4));
+        setPersonSuggestions(peopleResult.status === "fulfilled" ? peopleResult.value.items.slice(0, 3) : []);
       } catch (error) {
         if (!controller.signal.aborted) {
           console.error("Lỗi lấy gợi ý nhanh:", error);
           setSuggestions([]);
+          setPersonSuggestions([]);
         }
       } finally {
         if (!controller.signal.aborted) setIsSearching(false);
@@ -157,51 +164,17 @@ export default function NavbarComponent() {
     router.push(`/movie/${movieUrl}`);
   };
 
+  const handleSelectPerson = (personId: string) => {
+    setShowDropdown(false);
+    setSearchQuery("");
+    router.push(`/dien-vien/${personId}`);
+  };
+
   // Thể loại danh mục (4 cột giống hệt screenshot)
-  const genres = [
-    [
-      { name: "Chính kịch", slug: "chinh-kich" },
-      { name: "Tâm Lý", slug: "tam-ly" },
-      { name: "Hài Hước", slug: "hai-huoc" },
-      { name: "Tài Liệu", slug: "tai-lieu" },
-    ],
-    [
-      { name: "Khoa Học", slug: "khoa-hoc" },
-      { name: "Bí Ẩn", slug: "bi-an" },
-      { name: "Phiêu Lưu", slug: "phieu-luu" },
-      { name: "Gia Đình", slug: "gia-dinh" },
-    ],
-    [
-      { name: "Tình Cảm", slug: "tinh-cam" },
-      { name: "Hành Động", slug: "hanh-dong" },
-      { name: "Võ Thuật", slug: "vo-thuat" },
-      { name: "Hoạt Hình", slug: "hoat-hinh" },
-    ],
-    [
-      { name: "Cổ Trang", slug: "co-trang" },
-      { name: "Hình Sự", slug: "hinh-su" },
-      { name: "Kinh Dị", slug: "kinh-di" },
-      { name: "Chiếu Rạp", slug: "phim-chieu-rap" },
-    ]
-  ];
+  const genres = [GENRES.slice(0, 4), GENRES.slice(4, 8), GENRES.slice(8, 12), GENRES.slice(12, 16)];
 
   // Quốc gia danh mục (2 cột)
-  const countries = [
-    [
-      { name: "Trung Quốc", slug: "trung-quoc" },
-      { name: "Hàn Quốc", slug: "han-quoc" },
-      { name: "Nhật Bản", slug: "nhat-ban" },
-      { name: "Thái Lan", slug: "thai-lan" },
-      { name: "Việt Nam", slug: "viet-nam" },
-    ],
-    [
-      { name: "Âu Mỹ", slug: "au-my" },
-      { name: "Mỹ", slug: "my" },
-      { name: "Ấn Độ", slug: "an-do" },
-      { name: "Hồng Kông", slug: "hong-kong" },
-      { name: "Đài Loan", slug: "tai-wan" },
-    ]
-  ];
+  const countries = [COUNTRIES.slice(0, 5), COUNTRIES.slice(5, 10)];
 
   return (
     <>
@@ -311,17 +284,21 @@ export default function NavbarComponent() {
                   <p className="text-zinc-500 text-[11px] font-bold uppercase tracking-wider mb-3">
                     Danh sách diễn viên
                   </p>
-                  <div className="flex items-center gap-3 p-1.5 rounded-xl hover:bg-zinc-900/80 cursor-pointer transition-all">
-                    <div className="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-500 border border-zinc-700 font-bold text-xs">
-                      {searchQuery.slice(0, 2).toUpperCase()}
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-zinc-200">
-                        {searchQuery.trim()} Actor
-                      </h4>
-                      <p className="text-zinc-500 text-[11px]">Diễn viên liên quan</p>
-                    </div>
-                  </div>
+                  {personSuggestions.length ? personSuggestions.map((person) => (
+                    <button key={person.id} type="button" onClick={() => handleSelectPerson(person.id)} className="flex w-full items-center gap-3 rounded-xl p-1.5 text-left transition-all hover:bg-zinc-900/80">
+                      {person.profileUrl ? (
+                        <img src={person.profileUrl} alt={person.name} className="h-10 w-10 rounded-full object-cover" loading="lazy" />
+                      ) : (
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full border border-zinc-700 bg-zinc-800 text-xs font-bold text-zinc-500">{person.name.slice(0, 2).toUpperCase()}</div>
+                      )}
+                      <div className="min-w-0">
+                        <h4 className="truncate text-sm font-bold text-zinc-200">{person.name}</h4>
+                        <p className="truncate text-[11px] text-zinc-500">{person.knownFor.join(" • ") || "Xem phim đã tham gia"}</p>
+                      </div>
+                    </button>
+                  )) : !isSearching && (
+                    <p className="py-1 text-xs italic text-zinc-500">Không tìm thấy diễn viên phù hợp...</p>
+                  )}
                 </div>
 
                 {/* NÚT TOÀN BỘ KẾT QUẢ */}
@@ -373,7 +350,7 @@ export default function NavbarComponent() {
                     {col.map((item) => (
                       <Link
                         key={item.slug}
-                        href={`/search?genre=${item.slug}`}
+                        href={`/the-loai/${item.slug}`}
                         onClick={() => setIsGenreOpen(false)}
                         className="text-[13px] font-semibold text-zinc-300 hover:text-pink-500 transition-colors duration-150 py-0.5"
                       >
@@ -438,7 +415,7 @@ export default function NavbarComponent() {
                     {col.map((item) => (
                       <Link
                         key={item.slug}
-                        href={`/search?country=${item.slug}`}
+                        href={`/quoc-gia/${item.slug}`}
                         onClick={() => setIsCountryOpen(false)}
                         className="text-[13px] font-semibold text-zinc-300 hover:text-pink-500 transition-colors duration-150 py-0.5"
                       >
