@@ -366,7 +366,7 @@ export default function NavbarComponent() {
           {/* PHIM LẺ */}
           <NavbarItem>
             <Link
-              href="/search?type=phim-le"
+              href="/phim-le"
               className="text-zinc-300 hover:text-pink-500 font-bold tracking-wide transition-colors duration-200"
             >
               Phim Lẻ
@@ -376,7 +376,7 @@ export default function NavbarComponent() {
           {/* PHIM BỘ */}
           <NavbarItem>
             <Link
-              href="/search?type=phim-bo"
+              href="/phim-bo"
               className="text-zinc-300 hover:text-pink-500 font-bold tracking-wide transition-colors duration-200"
             >
               Phim Bộ

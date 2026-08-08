@@ -84,6 +84,27 @@ export class MoviesController {
     return this.moviesService.searchPeople(query, Number(page));
   }
 
+  @Get('catalog')
+  async getMovieCatalog(
+    @Query('type') type = 'phim-le',
+    @Query('page') page = '1',
+    @Query('limit') limit = '24',
+    @Query('year') year = '',
+    @Query('genre') genre = '',
+    @Query('status') status = '',
+    @Query('sort') sort = 'updated',
+  ) {
+    return this.moviesService.getMovieCatalog({
+      type,
+      page: Number(page),
+      limit: Number(limit),
+      year,
+      genre,
+      status,
+      sort,
+    });
+  }
+
   @Get('people/:personId/movies')
   async getPersonMovies(
     @Param('personId') personId: string,

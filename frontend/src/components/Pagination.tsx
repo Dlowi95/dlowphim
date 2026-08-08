@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface PaginationProps {
@@ -10,7 +10,33 @@ interface PaginationProps {
 }
 
 export default function Pagination({ currentPage, totalPages, onPageChange }: PaginationProps) {
+  const [jumpPage, setJumpPage] = useState(String(currentPage));
+
+  useEffect(() => setJumpPage(String(currentPage)), [currentPage]);
+
   if (totalPages <= 1) return null;
+
+  const submitJump = (event: React.FormEvent) => {
+    event.preventDefault();
+    const target = Math.min(totalPages, Math.max(1, Math.floor(Number(jumpPage) || currentPage)));
+    setJumpPage(String(target));
+    if (target !== currentPage) onPageChange(target);
+  };
+
+  if (totalPages > 12) {
+    return (
+      <div className="mt-10 flex flex-wrap items-center justify-center gap-2 border-t border-zinc-900 pt-8 select-none">
+        <button onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1} className="flex h-11 items-center gap-1 rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm font-bold text-zinc-400 transition hover:border-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"><ChevronLeft size={16} /> Trước</button>
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-2.5 text-sm font-bold text-zinc-300">Trang <span className="text-pink-500">{currentPage}</span> / {totalPages}</div>
+        <form onSubmit={submitJump} className="flex items-center overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 focus-within:border-pink-500">
+          <label htmlFor="pagination-jump" className="pl-3 text-xs font-semibold text-zinc-500">Đi đến</label>
+          <input id="pagination-jump" inputMode="numeric" pattern="[0-9]*" value={jumpPage} onChange={(event) => setJumpPage(event.target.value.replace(/\D/g, "").slice(0, 6))} className="h-10 w-16 bg-transparent px-2 text-center text-sm font-black text-white outline-none" aria-label="Nhập số trang" />
+          <button type="submit" className="h-10 border-l border-zinc-800 px-3 text-xs font-black text-pink-400 transition hover:bg-pink-500 hover:text-white">Đi</button>
+        </form>
+        <button onClick={() => onPageChange(currentPage + 1)} disabled={currentPage === totalPages} className="flex h-11 items-center gap-1 rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm font-bold text-zinc-400 transition hover:border-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-30">Sau <ChevronRight size={16} /></button>
+      </div>
+    );
+  }
 
   const generatePageNumbers = () => {
     const pages: (number | string)[] = [];

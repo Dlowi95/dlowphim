@@ -4,6 +4,7 @@ import {
   NotFoundException,
   BadRequestException,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -19,10 +20,13 @@ import { NotificationsService } from '../notifications/notifications.service';
 export class MoviesService {
   private readonly upcomingCache = new Map<string, { data: any; expiry: number }>();
   private readonly peopleCache = new Map<string, { data: any; expiry: number }>();
+  private readonly catalogCache = new Map<string, { data: any; expiry: number }>();
   private readonly upcomingCacheTtlMs = 6 * 60 * 60 * 1000;
   private readonly upcomingCacheMaxEntries = 200;
   private readonly peopleCacheTtlMs = 60 * 60 * 1000;
   private readonly peopleCacheMaxEntries = 200;
+  private readonly catalogCacheTtlMs = 10 * 60 * 1000;
+  private readonly catalogCacheMaxEntries = 300;
 
   constructor(
     @InjectModel(BlockedMovie.name) private blockedModel: Model<BlockedMovieDocument>,
@@ -315,6 +319,201 @@ export class MoviesService {
       this.peopleCache.delete(oldestKey);
     }
     this.peopleCache.set(key, { data, expiry: now + this.peopleCacheTtlMs });
+  }
+
+  private setCatalogCache(key: string, data: any, ttlMs = this.catalogCacheTtlMs): void {
+    const now = Date.now();
+    for (const [cacheKey, entry] of this.catalogCache) {
+      if (entry.expiry <= now) this.catalogCache.delete(cacheKey);
+    }
+    while (this.catalogCache.size >= this.catalogCacheMaxEntries) {
+      const oldestKey = this.catalogCache.keys().next().value;
+      if (!oldestKey) break;
+      this.catalogCache.delete(oldestKey);
+    }
+    this.catalogCache.set(key, { data, expiry: now + ttlMs });
+  }
+
+  private getCatalogItems(payload: any): any[] {
+    const items = payload?.data?.items || payload?.items;
+    return Array.isArray(items) ? items : [];
+  }
+
+  private isCatalogPayloadSuccessful(payload: any): boolean {
+    if (!payload || payload.status === false) return false;
+    return payload.status === true || payload.status === 'success' || Array.isArray(payload?.data?.items) || Array.isArray(payload?.items);
+  }
+
+  private normalizeCatalogImage(value: unknown, imageBase: string, sourceId: string): string {
+    const image = String(value || '').trim();
+    if (!image) return '';
+    if (/^https?:\/\//i.test(image)) return image;
+    const path = image.replace(/^\/+/, '');
+    if (imageBase) return `${imageBase.replace(/\/+$/, '')}/${path}`;
+    if (sourceId === 'ophim') return `https://img.ophim.live/uploads/movies/${path}`;
+    return `https://phimimg.com/${path}`;
+  }
+
+  private normalizeCatalogNamedItems(value: unknown): Array<{ name: string; slug: string }> {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((item: any) => ({
+        name: this.cleanText(typeof item === 'string' ? item : item?.name, 100),
+        slug: this.cleanText(typeof item === 'string' ? this.generateSlug(item) : item?.slug, 100),
+      }))
+      .filter((item) => item.name);
+  }
+
+  private normalizeCatalogMovie(movie: any, payload: any, sourceId: string): any | null {
+    const slug = this.cleanText(movie?.slug, 180).toLowerCase();
+    const name = this.cleanText(movie?.name || movie?.title, 250);
+    if (!slug || !name || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return null;
+    const imageBase = this.cleanText(
+      payload?.data?.APP_DOMAIN_CDN_IMAGE || payload?.APP_DOMAIN_CDN_IMAGE || payload?.data?.appDomainCdnImage,
+      500,
+    );
+    const year = Number(movie?.year);
+    return {
+      ...movie,
+      _id: String(movie?._id || movie?.id || `${sourceId}-${slug}`),
+      slug,
+      name,
+      origin_name: this.cleanText(movie?.origin_name || movie?.original_name || movie?.originName, 250),
+      thumb_url: this.normalizeCatalogImage(movie?.thumb_url || movie?.thumbnail, imageBase, sourceId),
+      poster_url: this.normalizeCatalogImage(movie?.poster_url || movie?.poster, imageBase, sourceId),
+      year: Number.isInteger(year) && year > 1800 ? year : undefined,
+      quality: this.cleanText(movie?.quality, 50) || 'HD',
+      lang: this.cleanText(movie?.lang || movie?.language, 100) || 'Vietsub',
+      status: this.cleanText(movie?.status, 50),
+      episode_current: this.cleanText(movie?.episode_current || movie?.episodeCurrent, 100),
+      episode_total: this.cleanText(movie?.episode_total || movie?.episodeTotal, 100),
+      category: this.normalizeCatalogNamedItems(movie?.category || movie?.categories),
+      country: this.normalizeCatalogNamedItems(movie?.country || movie?.countries),
+    };
+  }
+
+  private normalizeCatalogPagination(payload: any, page: number, limit: number, itemCount: number) {
+    const pagination = payload?.data?.params?.pagination || payload?.pagination || payload?.data?.pagination || {};
+    const currentPage = Math.max(1, Number(pagination.currentPage || pagination.current_page || page) || page);
+    const totalItemsPerPage = Math.max(1, Number(pagination.totalItemsPerPage || pagination.itemsPerPage || pagination.limit || limit) || limit);
+    const totalItems = Math.max(0, Number(pagination.totalItems || pagination.total_items || pagination.total || itemCount) || itemCount);
+    const totalPages = Math.max(1, Number(pagination.totalPages || pagination.total_pages) || Math.ceil(totalItems / totalItemsPerPage));
+    return { currentPage, totalItems, totalItemsPerPage, totalPages };
+  }
+
+  async getMovieCatalog(input: {
+    type?: string;
+    page?: number;
+    limit?: number;
+    year?: string;
+    genre?: string;
+    status?: string;
+    sort?: string;
+  }): Promise<any> {
+    const type = input.type === 'phim-bo' ? 'phim-bo' : 'phim-le';
+    const page = Math.min(500, Math.max(1, Math.floor(Number(input.page) || 1)));
+    const limit = Math.min(48, Math.max(12, Math.floor(Number(input.limit) || 24)));
+    const currentYear = new Date().getFullYear() + 1;
+    const numericYear = Number(input.year);
+    const year = Number.isInteger(numericYear) && numericYear >= 1900 && numericYear <= currentYear
+      ? String(numericYear)
+      : '';
+    const genre = /^[a-z0-9-]{1,60}$/.test(String(input.genre || '')) ? String(input.genre) : '';
+    const status = ['completed', 'ongoing'].includes(String(input.status)) ? String(input.status) : '';
+    const sort = ['updated', 'year-desc', 'year-asc'].includes(String(input.sort))
+      ? String(input.sort)
+      : 'updated';
+    const sortField = sort === 'updated' ? 'modified.time' : 'year';
+    const sortType = sort === 'year-asc' ? 'asc' : 'desc';
+    const settings = await this.settingsService.getSettings();
+    const activeSourceId = settings?.activeMovieSourceId || 'phimapi';
+    const cacheKey = [activeSourceId, type, page, limit, year, genre, status, sort].join(':');
+    const cached = this.catalogCache.get(cacheKey);
+    if (cached && cached.expiry > Date.now()) {
+      return { ...cached.data, cache: { hit: true, ttlSeconds: 600 } };
+    }
+
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(limit),
+      sort_field: sortField,
+      sort_type: sortType,
+    });
+    if (year) params.set('year', year);
+    if (genre) params.set('category', genre);
+    if (status) params.set('status', status);
+
+    const path = `/v1/api/danh-sach/${type}?${params.toString()}`;
+    let payload: any = null;
+    let firstEmptyPayload: any = null;
+    let activeFailure = false;
+    let fallbackUsed = false;
+    let fallbackReason: 'source-error' | 'empty-result' | null = null;
+
+    for (const sourcePreference of ['active', 'fallback']) {
+      try {
+        const candidate = await this.fetchOphimProxy(path, sourcePreference);
+        if (!this.isCatalogPayloadSuccessful(candidate)) {
+          if (sourcePreference === 'active') activeFailure = true;
+          continue;
+        }
+        const candidateItems = this.getCatalogItems(candidate);
+        if (candidateItems.length > 0) {
+          payload = candidate;
+          fallbackUsed = sourcePreference === 'fallback';
+          fallbackReason = fallbackUsed ? (activeFailure ? 'source-error' : 'empty-result') : null;
+          break;
+        }
+        firstEmptyPayload ??= candidate;
+      } catch {
+        if (sourcePreference === 'active') activeFailure = true;
+      }
+    }
+
+    payload ??= firstEmptyPayload;
+    if (!payload) {
+      throw new ServiceUnavailableException('Cả hai máy chủ phim đang tạm gián đoạn. Vui lòng thử lại sau ít phút.');
+    }
+
+    const sourceId = payload?._sourceId || activeSourceId;
+    const rawItems = this.getCatalogItems(payload);
+    const statusMatches = (movie: any) => {
+      if (!status) return true;
+      const value = `${movie?.status || ''} ${movie?.episode_current || ''}`
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      const completed = /completed|complete|hoan tat|full/.test(value);
+      return status === 'completed' ? completed : !completed;
+    };
+    const seen = new Set<string>();
+    const items = rawItems
+      .filter(statusMatches)
+      .map((movie: any) => this.normalizeCatalogMovie(movie, payload, sourceId))
+      .filter((movie: any) => {
+        if (!movie?.slug || seen.has(movie.slug)) return false;
+        seen.add(movie.slug);
+        return true;
+      });
+    const pagination = this.normalizeCatalogPagination(payload, page, limit, items.length);
+    const availability = items.length > 0 ? 'ready' : 'empty';
+    const ttlSeconds = availability === 'empty' ? 60 : 600;
+    const data = {
+      status: true,
+      availability,
+      source: sourceId,
+      items,
+      titlePage: payload?.data?.titlePage || payload?.titlePage || '',
+      pagination,
+      filters: { type, year, genre, status, sort },
+      fallback: {
+        used: fallbackUsed,
+        reason: fallbackReason,
+      },
+      cache: { hit: false, ttlSeconds },
+    };
+    this.setCatalogCache(cacheKey, data, ttlSeconds * 1000);
+    return data;
   }
 
   async searchPeople(query: string, page = 1): Promise<any> {
