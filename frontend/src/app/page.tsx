@@ -15,6 +15,7 @@ import HalftoneOverlay from "@/components/HalftoneOverlay";
 import ProgressiveImage from "@/components/ProgressiveImage";
 import { useAuth } from "@/context/AuthContext";
 import { useResolvedHeroBanners } from "@/hooks/useResolvedHeroBanners";
+import ContinueWatchingRow from "@/components/ContinueWatchingRow";
 
 const FALLBACK_CANDIDATES = [
   {
@@ -427,6 +428,9 @@ export default function HomePage() {
 
       {/* 2. KHÚC ĐỆM BỔ SUNG: "BẠN ĐANG QUAN TÂM GÌ?" Y HỆT COBEPHIM */}
       <Interests />
+
+      {/* Tiến trình cá nhân: chỉ hiển thị khi người dùng có lịch sử xem. */}
+      <ContinueWatchingRow />
 
       {/* 2.5. HÀNH LANG PHIM THEO QUỐC GIA (MỚI THEO COBEPHIM) */}
       <div className="container mx-auto px-6 mt-12 max-w-7xl">
