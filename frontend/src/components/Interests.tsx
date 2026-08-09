@@ -1,65 +1,122 @@
-"use client";
-
-import React from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
-export const themes = [
-  { name: "Top IMDb", query: "/search?type=top-imdb", gradient: "from-[#f19a1a] to-[#e65c40]" },
-  { name: "Thuyết Minh", query: "/search?type=phim-thuyet-minh", gradient: "from-[#50c9c3] to-[#96deda]" },
-  { name: "Phim 4K", query: "/search?type=phim-4k", gradient: "from-[#a1c4fd] to-[#c2e9fb]" },
-  { name: "Lồng Tiếng Cực Mạnh", query: "/search?keyword=lồng%20tiếng", gradient: "from-[#cd9cf2] to-[#f6f3ff]" },
-  { name: "Netflix", query: "/search?keyword=netflix", gradient: "from-[#f857a6] to-[#ff5858]" },
-  { name: "TVB", query: "/search?keyword=TVB", gradient: "from-[#11998e] to-[#38ef7d]" },
-  { name: "Cổ Trang", query: "/the-loai/co-trang", gradient: "from-[#ba5370] to-[#f4e2d8]" },
-  { name: "Chữa lành", query: "/the-loai/tam-ly", gradient: "from-[#ff9a9e] via-[#fecfef] to-[#fecfef]" },
-  { name: "Marvel Studios", query: "/search?keyword=marvel", gradient: "from-[#2193b0] to-[#6dd5ed]" },
-  { name: "Ngày Giải Phóng Miền...", query: "/search?keyword=lịch%20sử", gradient: "from-[#f12711] to-[#f5af19]" }
+export type InterestTheme = {
+  name: string;
+  description: string;
+  href: string;
+  gradient: string;
+};
+
+// Chỉ dùng các danh sách/thể loại mà discovery backend hỗ trợ thật sự.
+export const themes: InterestTheme[] = [
+  {
+    name: "Phim mới cập nhật",
+    description: "Nội dung vừa được bổ sung",
+    href: "/search?type=phim-moi-cap-nhat",
+    gradient: "from-[#f59e0b] via-[#f97316] to-[#ef4444]",
+  },
+  {
+    name: "Phim chiếu rạp",
+    description: "Điện ảnh mới và nổi bật",
+    href: "/search?type=phim-chieu-rap",
+    gradient: "from-[#06b6d4] via-[#14b8a6] to-[#22c55e]",
+  },
+  {
+    name: "Phim bộ đang cập nhật",
+    description: "Theo dõi tập mới mỗi ngày",
+    href: "/phim-bo?status=ongoing",
+    gradient: "from-[#3b82f6] via-[#6366f1] to-[#8b5cf6]",
+  },
+  {
+    name: "Hoạt hình & Anime",
+    description: "Thế giới hoạt hình đặc sắc",
+    href: "/search?type=hoat-hinh",
+    gradient: "from-[#a855f7] via-[#d946ef] to-[#ec4899]",
+  },
+  {
+    name: "Cổ trang",
+    description: "Kiếm hiệp và cung đấu",
+    href: "/the-loai/co-trang",
+    gradient: "from-[#f43f5e] via-[#ec4899] to-[#be123c]",
+  },
+  {
+    name: "Hành động",
+    description: "Kịch tính đến phút cuối",
+    href: "/the-loai/hanh-dong",
+    gradient: "from-[#10b981] via-[#14b8a6] to-[#0891b2]",
+  },
+  {
+    name: "Phim lẻ",
+    description: "Thưởng thức trọn vẹn một lần",
+    href: "/phim-le",
+    gradient: "from-[#fb7185] via-[#f472b6] to-[#c084fc]",
+  },
+  {
+    name: "Phim bộ hoàn tất",
+    description: "Xem liền mạch đến tập cuối",
+    href: "/phim-bo?status=completed",
+    gradient: "from-[#22c55e] via-[#10b981] to-[#0f766e]",
+  },
+  {
+    name: "Tâm lý",
+    description: "Câu chuyện nhiều cảm xúc",
+    href: "/the-loai/tam-ly",
+    gradient: "from-[#f472b6] via-[#e879f9] to-[#a78bfa]",
+  },
+  {
+    name: "Kinh dị",
+    description: "Dành cho người thích hồi hộp",
+    href: "/the-loai/kinh-di",
+    gradient: "from-[#475569] via-[#334155] to-[#18181b]",
+  },
 ];
 
-export default function Interests() {
-  const router = useRouter();
+export function InterestCard({ theme, compact = false }: { theme: InterestTheme; compact?: boolean }) {
+  return (
+    <Link
+      href={theme.href}
+      className={`group relative isolate flex shrink-0 snap-start flex-col justify-end overflow-hidden rounded-2xl bg-gradient-to-br ${theme.gradient} p-4 text-white shadow-[0_14px_35px_rgba(0,0,0,0.18)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(0,0,0,0.3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black ${compact ? "h-32 w-[72vw] max-w-[280px] sm:w-auto sm:max-w-none md:h-36" : "h-36 w-full"}`}
+      aria-label={`Khám phá chủ đề ${theme.name}`}
+    >
+      <span className="absolute -right-7 -top-8 h-28 w-28 rounded-full bg-white/10 transition-transform duration-500 group-hover:scale-125" />
+      <span className="absolute -bottom-12 -left-9 h-28 w-28 rounded-full bg-black/10" />
 
-  // Trang chủ chỉ hiển thị 6 chủ đề đầu tiên
+      <span className="relative block min-w-0">
+        <strong className="block text-base font-black leading-tight tracking-tight md:text-lg">{theme.name}</strong>
+        <span className="mt-1 block truncate text-[11px] font-semibold text-white/75">{theme.description}</span>
+        <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-black text-white/90">
+          Khám phá <ArrowRight size={12} className="transition-transform group-hover:translate-x-1" />
+        </span>
+      </span>
+    </Link>
+  );
+}
+
+export default function Interests() {
   const visibleThemes = themes.slice(0, 6);
 
   return (
-    <div className="container mx-auto px-6 mt-8 max-w-7xl space-y-4">
-      <h3 className="text-lg md:text-xl font-black tracking-tight text-zinc-100 uppercase select-none">
-        Bạn đang quan tâm gì?
-      </h3>
-      
-      {/* Grid 6 chủ đề đầu tiên */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4 w-full">
-        {visibleThemes.map((cat, idx) => (
-          <div
-            key={idx}
-            onClick={() => router.push(cat.query)}
-            className={`w-full h-28 rounded-2xl bg-gradient-to-br ${cat.gradient} p-4 flex flex-col justify-between cursor-pointer transition-transform duration-200 ease-out hover:-translate-y-1.5 select-none shadow-md group`}
-          >
-            <div></div> {/* Spacer */}
-            <div className="space-y-1">
-              <span className="block font-black text-base md:text-lg text-white tracking-wide leading-tight">
-                {cat.name}
-              </span>
-              <span className="flex items-center gap-0.5 text-[11px] font-bold text-white/80 group-hover:text-white transition-colors">
-                Xem chủ đề <ChevronRight size={10} className="shrink-0" />
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Nút +4 chủ đề nằm ở dòng dưới, canh trái */}
-      <div className="flex justify-start pt-1">
-        <Link
-          href="/chu-de"
-          className="w-36 h-12 flex items-center justify-center bg-[#1c1c1e] hover:bg-[#25252b] border border-zinc-800/60 rounded-2xl transition-all duration-200 text-sm font-extrabold text-zinc-300 hover:text-white hover:-translate-y-0.5 select-none shadow-md"
-        >
-          +4 chủ đề
+    <section className="container mx-auto mt-8 max-w-7xl space-y-4 px-6" aria-labelledby="interest-heading">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <p className="mb-1 text-[10px] font-black uppercase tracking-[0.24em] text-pink-500">Chọn nhanh nội dung</p>
+          <h2 id="interest-heading" className="text-xl font-black tracking-tight text-zinc-100 md:text-2xl">
+            Khám phá theo sở thích
+          </h2>
+        </div>
+        <Link href="/chu-de" className="group hidden items-center gap-1 text-xs font-black text-zinc-500 transition hover:text-pink-400 sm:inline-flex">
+          Xem tất cả chủ đề <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
         </Link>
       </div>
-    </div>
+
+      <div className="-mx-6 flex snap-x snap-mandatory gap-4 overflow-x-auto px-6 pb-3 scrollbar-none sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3 xl:grid-cols-6">
+        {visibleThemes.map((theme) => <InterestCard key={theme.href} theme={theme} compact />)}
+      </div>
+
+      <Link href="/chu-de" className="flex h-11 w-full items-center justify-center gap-1 rounded-xl border border-zinc-800 bg-zinc-950 text-xs font-black text-zinc-400 transition hover:border-pink-500/40 hover:text-pink-400 sm:hidden">
+        Xem tất cả chủ đề <ArrowRight size={14} />
+      </Link>
+    </section>
   );
 }
