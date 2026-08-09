@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { cleanMovieName, getImageUrl, getBestMovieImage } from "@/utils/movieUtils";
 import MovieHoverPopup from "./MovieHoverPopup";
 import ProgressiveImage from "./ProgressiveImage";
-import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 
 interface Movie {
   _id: string;
@@ -87,11 +86,7 @@ export default function MovieCard({ movie, aspect = "landscape" }: MovieCardProp
   const handleMouseEnter = (e: React.MouseEvent) => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     
-    // Tải trước dữ liệu phim ngầm (Prefetching)
-    const prefetchUrl = getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${movie.slug}`);
-    fetch(prefetchUrl).catch(() => {});
-
-    // Immediately mount the popup component (so it starts fetching details)
+    // Popup owns the single detail request for this hover.
     setShowPopup(true);
 
     if (isHovered) return;

@@ -96,7 +96,7 @@ export default function CinemaRow() {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
         const data = await fetchMovieDiscovery(
-          { kind: "list", slug: "phim-chieu-rap", page: 1, limit: 24 },
+          { kind: "list", slug: "phim-chieu-rap", page: 1, limit: 12 },
           { signal: controller.signal, timeoutMs: 6000 },
         );
         clearTimeout(timeoutId);

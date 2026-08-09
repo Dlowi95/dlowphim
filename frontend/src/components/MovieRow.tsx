@@ -25,6 +25,8 @@ interface MovieRowProps {
   countrySlug: string;
 }
 
+const MOVIE_ROW_PAGE_SIZE = 12;
+
 export default function MovieRow({ title, accentText, countrySlug }: MovieRowProps) {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,11 +80,11 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
     async function fetchMovies() {
       try {
         setLoading(true);
-        const data = await fetchMovieDiscovery({ kind: "country", slug: countrySlug, page: 1, limit: 24 });
+        const data = await fetchMovieDiscovery({ kind: "country", slug: countrySlug, page: 1, limit: MOVIE_ROW_PAGE_SIZE });
         if (data.status === true) {
           const items = data.items || [];
           setMovies(getUniqueMovies(items));
-          setHasMore(items.length > 0);
+          setHasMore(items.length >= MOVIE_ROW_PAGE_SIZE);
           setSourceMode(data.stale?.used ? "stale" : data.fallback?.used ? "fallback" : null);
         }
       } catch (err) {
@@ -100,12 +102,13 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
     try {
       setLoadingMore(true);
       const nextPage = page + 1;
-      const data = await fetchMovieDiscovery({ kind: "country", slug: countrySlug, page: nextPage, limit: 24 });
+      const data = await fetchMovieDiscovery({ kind: "country", slug: countrySlug, page: nextPage, limit: MOVIE_ROW_PAGE_SIZE });
       if (data.status === true) {
         const items = data.items || [];
         if (items.length > 0) {
           setMovies((prev) => getUniqueMovies([...prev, ...items]));
           setPage(nextPage);
+          setHasMore(items.length >= MOVIE_ROW_PAGE_SIZE);
         } else {
           setHasMore(false);
         }

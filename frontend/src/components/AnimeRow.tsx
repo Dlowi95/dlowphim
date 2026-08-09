@@ -261,7 +261,7 @@ export default function AnimeRow() {
         const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
 
         const data = await fetchMovieDiscovery(
-          { kind: "list", slug: "hoat-hinh", page: 1, limit: 24 },
+          { kind: "list", slug: "hoat-hinh", page: 1, limit: 18 },
           { signal: controller.signal, timeoutMs: 6000 },
         );
         clearTimeout(timeoutId);

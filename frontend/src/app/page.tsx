@@ -1,21 +1,60 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { type ReactNode, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { Play, Flame, Film, Heart, Info, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Interests from "@/components/Interests";
 import MovieRow from "@/components/MovieRow";
 import MovieCard from "@/components/MovieCard";
 import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
-import Top10Row from "@/components/Top10Row";
-import UpcomingRow from "@/components/UpcomingRow";
-import CinemaRow from "@/components/CinemaRow";
-import AnimeRow from "@/components/AnimeRow";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 import ProgressiveImage from "@/components/ProgressiveImage";
 import { useAuth } from "@/context/AuthContext";
 import { useResolvedHeroBanners } from "@/hooks/useResolvedHeroBanners";
 import ContinueWatchingRow from "@/components/ContinueWatchingRow";
+
+const Top10Row = dynamic(() => import("@/components/Top10Row"), { ssr: false });
+const UpcomingRow = dynamic(() => import("@/components/UpcomingRow"), { ssr: false });
+const CinemaRow = dynamic(() => import("@/components/CinemaRow"), { ssr: false });
+const AnimeRow = dynamic(() => import("@/components/AnimeRow"), { ssr: false });
+
+function DeferredHomeSection({
+  children,
+  minHeightClass = "min-h-[360px]",
+}: {
+  children: ReactNode;
+  minHeightClass?: string;
+}) {
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const [shouldRender, setShouldRender] = useState(false);
+
+  useEffect(() => {
+    const section = sectionRef.current;
+    if (!section || shouldRender) return;
+    if (!("IntersectionObserver" in window)) {
+      setShouldRender(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        setShouldRender(true);
+        observer.disconnect();
+      },
+      { rootMargin: "900px 0px" },
+    );
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, [shouldRender]);
+
+  return (
+    <div ref={sectionRef} className={shouldRender ? undefined : minHeightClass}>
+      {shouldRender ? children : null}
+    </div>
+  );
+}
 
 const FALLBACK_CANDIDATES = [
   {
@@ -433,25 +472,35 @@ export default function HomePage() {
       <ContinueWatchingRow />
 
       {/* 2.5. HÀNH LANG PHIM THEO QUỐC GIA (MỚI THEO COBEPHIM) */}
-      <div className="container mx-auto px-6 mt-12 max-w-7xl">
-        <div className="p-6 rounded-[1.25rem] bg-gradient-to-b from-[#282b3a]/28 to-[#282b3a] border border-[#282b3a]/60 flex flex-col">
-          <MovieRow title="Phim Hàn Quốc mới" accentText="Hàn Quốc" countrySlug="han-quoc" />
-          <MovieRow title="Phim Việt Nam mới" accentText="Việt Nam" countrySlug="viet-nam" />
-          <MovieRow title="Phim US-UK mới" accentText="US-UK" countrySlug="au-my" />
+      <DeferredHomeSection minHeightClass="min-h-[680px]">
+        <div className="container mx-auto px-6 mt-12 max-w-7xl">
+          <div className="p-6 rounded-[1.25rem] bg-gradient-to-b from-[#282b3a]/28 to-[#282b3a] border border-[#282b3a]/60 flex flex-col">
+            <MovieRow title="Phim Hàn Quốc mới" accentText="Hàn Quốc" countrySlug="han-quoc" />
+            <MovieRow title="Phim Việt Nam mới" accentText="Việt Nam" countrySlug="viet-nam" />
+            <MovieRow title="Phim US-UK mới" accentText="US-UK" countrySlug="au-my" />
+          </div>
         </div>
-      </div>
+      </DeferredHomeSection>
 
       {/* 2.6. BẢNG XẾP HẠNG TOP 10 PHIM BỘ HÔM NAY (MỚI THEO COBEPHIM) */}
-      <Top10Row />
+      <DeferredHomeSection minHeightClass="min-h-[620px]">
+        <Top10Row />
+      </DeferredHomeSection>
 
       {/* 2.7. PHIM SẮP TỚI TRÊN RỔ (TRAILERS) */}
-      <UpcomingRow />
+      <DeferredHomeSection minHeightClass="min-h-[360px]">
+        <UpcomingRow />
+      </DeferredHomeSection>
 
       {/* 2.8. MÃN NHÃN VỚI PHIM CHIẾU RẠP */}
-      <CinemaRow />
+      <DeferredHomeSection minHeightClass="min-h-[560px]">
+        <CinemaRow />
+      </DeferredHomeSection>
 
       {/* 2.9. KHO TÀNG ANIME MỚI NHẤT */}
-      <AnimeRow />
+      <DeferredHomeSection minHeightClass="min-h-[680px]">
+        <AnimeRow />
+      </DeferredHomeSection>
 
       {/* 3. MAIN CONTENT - GRID DANH SÁCH PHIM MỚI NHẤT */}
       <div className="container mx-auto px-6 mt-10 max-w-7xl space-y-6">
