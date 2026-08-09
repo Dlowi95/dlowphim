@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { cleanMovieName, getImageUrl, getBestMovieImage } from "@/utils/movieUtils";
 import MovieHoverPopup from "./MovieHoverPopup";
 import ProgressiveImage from "./ProgressiveImage";
+import MovieLanguageBadges from "./MovieLanguageBadges";
 
 interface Movie {
   _id: string;
@@ -37,25 +38,6 @@ export default function MovieCard({ movie, aspect = "landscape", variant = "defa
 
   const cleanedName = cleanMovieName(movie.name);
   const cleanedOriginName = cleanMovieName(movie.origin_name);
-  const countryLanguageBadges = (() => {
-    const language = (movie.lang || "Vietsub").toLocaleLowerCase("vi");
-    const badges: Array<{ label: string; className: string }> = [];
-
-    if (/vietsub|phụ đề|phu de/.test(language)) {
-      badges.push({ label: "P.Đề", className: "bg-zinc-600/90" });
-    }
-    if (/thuyết minh|thuyet minh/.test(language)) {
-      badges.push({ label: "T.Minh", className: "bg-emerald-500/90" });
-    }
-    if (/lồng tiếng|long tieng/.test(language)) {
-      badges.push({ label: "L.Tiếng", className: "bg-blue-500/90" });
-    }
-
-    return badges.length > 0
-      ? badges
-      : [{ label: movie.lang || "P.Đề", className: "bg-zinc-600/90" }];
-  })();
-
   useEffect(() => {
     setMounted(true);
     return () => {
@@ -184,16 +166,10 @@ export default function MovieCard({ movie, aspect = "landscape", variant = "defa
           
           {/* Badge phụ đề góc trái */}
           {variant === "country-row" ? (
-            <div className="absolute bottom-1.5 left-1.5 z-10 flex flex-col items-start gap-0.5">
-              {countryLanguageBadges.map((badge) => (
-                <span
-                  key={badge.label}
-                  className={`rounded-md px-1.5 py-0.5 text-[9px] font-black leading-tight text-white shadow-sm backdrop-blur-md ${badge.className}`}
-                >
-                  {badge.label}
-                </span>
-              ))}
-            </div>
+            <MovieLanguageBadges
+              lang={movie.lang}
+              className="absolute bottom-1.5 left-1.5 z-10 flex flex-col items-start gap-0.5"
+            />
           ) : (
             <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1">
               <span className="rounded border border-zinc-800/50 bg-black/60 px-1.5 py-0.5 text-[9px] font-black uppercase text-pink-400 backdrop-blur-md">

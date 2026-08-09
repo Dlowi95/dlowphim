@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import MovieHoverPopup from "@/components/MovieHoverPopup";
 import ProgressiveImage from "@/components/ProgressiveImage";
+import MovieLanguageBadges from "@/components/MovieLanguageBadges";
 import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
 import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
 
@@ -117,16 +118,16 @@ export default function Top10Row() {
   if (!loading && !error && movies.length === 0) return null;
 
   return (
-    <section className="relative mt-14 overflow-hidden bg-[#191b24] py-10 md:py-12" aria-labelledby="top-series-title">
-      <div className="mx-auto max-w-[1920px] px-5 md:px-8">
-        <h2 id="top-series-title" className="mb-6 text-[26px] font-semibold tracking-tight text-white md:mb-7 md:text-[32px]">
+    <section className="relative mt-10 overflow-hidden bg-[#191b24] py-7 sm:mt-14 sm:py-10 md:py-12" aria-labelledby="top-series-title">
+      <div className="mx-auto max-w-[1920px] px-4 sm:px-5 md:px-8">
+        <h2 id="top-series-title" className="mb-5 text-[22px] font-semibold tracking-tight text-white sm:mb-6 sm:text-[26px] md:mb-7 md:text-[32px]">
           Top 10 phim bộ hôm nay
         </h2>
 
       {loading ? (
-        <div className="flex gap-4 overflow-hidden pb-10 pt-1">
+        <div className="flex gap-2.5 overflow-hidden pb-7 pt-1 md:gap-4 md:pb-10">
           {Array.from({ length: 6 }).map((_, index) => (
-            <div key={index} className="w-full shrink-0 min-[420px]:w-[calc((100%_-_8px)/2)] md:w-[calc((100%_-_32px)/3)] min-[1025px]:w-[calc((100%_-_48px)/4)] xl:w-[calc((100%_-_64px)/5)] min-[1600px]:w-[calc((100%_-_80px)/6)]">
+            <div key={index} className="w-[calc((100%_-_10px)/2)] shrink-0 md:w-[calc((100%_-_32px)/3)] min-[1025px]:w-[calc((100%_-_48px)/4)] xl:w-[calc((100%_-_64px)/5)] min-[1600px]:w-[calc((100%_-_80px)/6)]">
               <div className="aspect-[2/3] animate-pulse bg-white/5" />
               <div className="mt-4 h-6 w-4/5 animate-pulse rounded bg-zinc-900" />
             </div>
@@ -147,32 +148,30 @@ export default function Top10Row() {
         <div className="relative">
           <div
             ref={rowRef}
-            className="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-2 no-scrollbar md:gap-4"
+            className="flex snap-x snap-mandatory gap-2.5 overflow-x-auto pb-2 no-scrollbar md:gap-4"
           >
             {movies.map((movie, index) => (
               <Top10MovieCard key={movie._id || movie.slug} movie={movie} index={index} />
             ))}
           </div>
-          {canScrollLeft && (
-            <button
-              type="button"
-              onClick={() => scroll(-1)}
-              aria-label="Xem các phim phía trước"
-              className="absolute -left-2 top-[40%] z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-[#191b24] text-zinc-300 shadow-[0_0_20px_5px_rgba(0,0,0,0.2)] transition hover:border-white/40 hover:text-white"
-            >
-              <ChevronLeft size={20} strokeWidth={1.8} />
-            </button>
-          )}
-          {canScrollRight && (
-            <button
-              type="button"
-              onClick={() => scroll(1)}
-              aria-label="Xem các phim tiếp theo"
-              className="absolute -right-2 top-[40%] z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-[#191b24] text-zinc-300 shadow-[0_0_20px_5px_rgba(0,0,0,0.2)] transition hover:border-white/40 hover:text-white"
-            >
-              <ChevronRight size={20} strokeWidth={1.8} />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => scroll(-1)}
+            disabled={!canScrollLeft}
+            aria-label="Xem các phim phía trước"
+            className="absolute -left-1.5 top-[38%] z-20 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-[#191b24]/95 text-zinc-200 shadow-[0_0_18px_4px_rgba(0,0,0,0.28)] transition hover:border-white/40 hover:text-white disabled:pointer-events-none disabled:opacity-30 sm:-left-2 sm:top-[40%] sm:h-10 sm:w-10"
+          >
+            <ChevronLeft size={20} strokeWidth={1.8} />
+          </button>
+          <button
+            type="button"
+            onClick={() => scroll(1)}
+            disabled={!canScrollRight}
+            aria-label="Xem các phim tiếp theo"
+            className="absolute -right-1.5 top-[38%] z-20 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-[#191b24]/95 text-zinc-200 shadow-[0_0_18px_4px_rgba(0,0,0,0.28)] transition hover:border-white/40 hover:text-white disabled:pointer-events-none disabled:opacity-30 sm:-right-2 sm:top-[40%] sm:h-10 sm:w-10"
+          >
+            <ChevronRight size={20} strokeWidth={1.8} />
+          </button>
         </div>
       )}
       </div>
@@ -199,6 +198,7 @@ function Top10MovieCard({ movie, index }: { movie: Movie; index: number }) {
   }, [movie.slug, movie.poster_url, movie.thumb_url]);
 
   const openPopup = () => {
+    if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
     if (closeTimer.current) clearTimeout(closeTimer.current);
     hoverTimer.current = setTimeout(() => {
       const rect = cardRef.current?.getBoundingClientRect();
@@ -234,7 +234,7 @@ function Top10MovieCard({ movie, index }: { movie: Movie; index: number }) {
       onMouseEnter={openPopup}
       onMouseLeave={closePopup}
       onClick={() => router.push(`/movie/${movie.slug}`)}
-      className="group relative w-full shrink-0 snap-start cursor-pointer min-[420px]:w-[calc((100%_-_8px)/2)] md:w-[calc((100%_-_32px)/3)] min-[1025px]:w-[calc((100%_-_48px)/4)] xl:w-[calc((100%_-_64px)/5)] min-[1600px]:w-[calc((100%_-_80px)/6)]"
+      className="group relative w-[calc((100%_-_10px)/2)] shrink-0 snap-start cursor-pointer md:w-[calc((100%_-_32px)/3)] min-[1025px]:w-[calc((100%_-_48px)/4)] xl:w-[calc((100%_-_64px)/5)] min-[1600px]:w-[calc((100%_-_80px)/6)]"
     >
       <div
         className="relative aspect-[2/3] overflow-hidden bg-white/5 shadow-[0_0_10px_5px_rgba(0,0,0,0.1)] transition-colors duration-300 group-hover:bg-pink-500"
@@ -255,30 +255,23 @@ function Top10MovieCard({ movie, index }: { movie: Movie; index: number }) {
           />
         </div>
         <div className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-black/20 via-transparent to-black/5" />
-        <div className="absolute bottom-0 right-3 z-[2] flex max-w-[90%] overflow-hidden rounded-t-md shadow-lg">
-          {movie.quality && (
-            <span className="bg-white px-2.5 py-1.5 text-[10px] font-black uppercase text-zinc-950">
-              {movie.quality}
-            </span>
-          )}
-          {movie.lang && (
-            <span className="max-w-[145px] truncate bg-pink-500 px-2.5 py-1.5 text-[10px] font-black uppercase text-white">
-              {movie.lang}
-            </span>
-          )}
-        </div>
+        <MovieLanguageBadges
+          lang={movie.lang}
+          className="absolute bottom-2 right-2 z-[2] flex max-w-[92%] flex-wrap justify-end gap-1 sm:bottom-3 sm:right-3"
+          badgeClassName="px-2 py-1 text-[9px] sm:text-[10px]"
+        />
       </div>
 
-      <div className="relative mt-3 min-h-[88px] pl-[66px] text-left">
-        <span className="absolute left-0 top-0 w-[50px] bg-gradient-to-tr from-[#fecf59] to-[#fff1cc] bg-clip-text text-center text-[4.2em] font-extrabold italic leading-none text-transparent">
+      <div className="relative mt-2.5 min-h-[76px] pl-[47px] text-left sm:mt-3 sm:min-h-[88px] sm:pl-[62px]">
+        <span className="absolute -left-0.5 -top-0.5 w-[40px] bg-gradient-to-tr from-[#fecf59] to-[#fff1cc] bg-clip-text text-center text-[3.25rem] font-extrabold italic leading-none text-transparent sm:left-0 sm:top-0 sm:w-[48px] sm:text-[4rem]">
           {index + 1}
         </span>
         <div className="min-w-0 pt-0.5">
-          <h3 className="truncate text-[14px] font-semibold text-white transition group-hover:text-[#ffdc7b] md:text-[15px]">
+          <h3 className="truncate text-[13px] font-semibold leading-5 text-white transition group-hover:text-[#ffdc7b] sm:text-[14px] md:text-[15px]">
             {cleanMovieName(movie.name)}
           </h3>
-          <p className="mt-1 truncate text-[12px] text-zinc-400">{cleanMovieName(movie.origin_name || "")}</p>
-          {metadata && <p className="mt-2 truncate text-[12px] font-semibold text-zinc-200">{metadata}</p>}
+          <p className="mt-0.5 truncate text-[11px] leading-4 text-zinc-400 sm:mt-1 sm:text-[12px]">{cleanMovieName(movie.origin_name || "")}</p>
+          {metadata && <p className="mt-1.5 truncate text-[11px] font-semibold leading-4 text-zinc-200 sm:mt-2 sm:text-[12px]">{metadata}</p>}
         </div>
       </div>
 
