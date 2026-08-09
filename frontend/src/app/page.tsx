@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import Interests from "@/components/Interests";
 import MovieRow from "@/components/MovieRow";
 import MovieCard from "@/components/MovieCard";
-import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
+import { cleanMovieName, getBestMovieImage, getImageUrl } from "@/utils/movieUtils";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 import ProgressiveImage from "@/components/ProgressiveImage";
 import { useAuth } from "@/context/AuthContext";
@@ -162,7 +162,9 @@ export default function HomePage() {
   const [detailsCache, setDetailsCache] = useState<Record<string, any>>({});
   const [logoCache, setLogoCache] = useState<Record<string, string | null>>({});
   const [backdropCache, setBackdropCache] = useState<Record<string, string | null>>({});
+  const [posterCache, setPosterCache] = useState<Record<string, string | null>>({});
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const mobileTouchStartX = useRef<number | null>(null);
 
   const [movieList, setMovieList] = useState<any[]>([]);
   const router = useRouter();
@@ -205,11 +207,13 @@ export default function HomePage() {
       const preloadedDetails: Record<string, any> = {};
       const preloadedLogos: Record<string, string | null> = {};
       const preloadedBackdrops: Record<string, string | null> = {};
+      const preloadedPosters: Record<string, string | null> = {};
 
       for (const slot of resolvedHeroSlots) {
         const slug = slot.movie.slug;
         if (slot.detail) preloadedDetails[slug] = slot.detail;
         if (slot.tmdbData?.logoUrl) preloadedLogos[slug] = slot.tmdbData.logoUrl;
+        if (slot.tmdbData?.posterUrl) preloadedPosters[slug] = slot.tmdbData.posterUrl;
         if (slot.isCustomBanner) {
           preloadedBackdrops[slug] = slot.movie.poster_url || slot.movie.thumb_url;
         } else if (slot.tmdbData?.backdropUrl) {
@@ -220,6 +224,7 @@ export default function HomePage() {
       setDetailsCache((previous) => ({ ...previous, ...preloadedDetails }));
       setLogoCache((previous) => ({ ...previous, ...preloadedLogos }));
       setBackdropCache((previous) => ({ ...previous, ...preloadedBackdrops }));
+      setPosterCache((previous) => ({ ...previous, ...preloadedPosters }));
       setHeroCandidates(resolvedHeroSlots.map((slot) => slot.movie));
       setActiveHeroIndex(0);
     } else {
@@ -276,6 +281,26 @@ export default function HomePage() {
     await toggleFavorite(movieObj.slug);
   };
 
+  const getMobileHeroPosition = (index: number) => {
+    const total = heroCandidates.length;
+    if (total < 2) return 0;
+    let position = index - activeHeroIndex;
+    if (position > total / 2) position -= total;
+    if (position < -total / 2) position += total;
+    return position;
+  };
+
+  const handleMobileHeroTouchEnd = (clientX: number) => {
+    if (mobileTouchStartX.current === null || heroCandidates.length < 2) return;
+    const distance = clientX - mobileTouchStartX.current;
+    mobileTouchStartX.current = null;
+    if (Math.abs(distance) < 42) return;
+    const nextIndex = distance < 0
+      ? (activeHeroIndex + 1) % heroCandidates.length
+      : (activeHeroIndex - 1 + heroCandidates.length) % heroCandidates.length;
+    handleThumbnailClick(nextIndex);
+  };
+
   const activeMovie = heroCandidates[activeHeroIndex];
   const heroDetail = activeMovie ? detailsCache[activeMovie.slug] : null;
   const heroScore = Number(heroDetail?.tmdb?.vote_average || heroDetail?.imdb?.vote_average || 0);
@@ -301,7 +326,117 @@ export default function HomePage() {
         </div>
       )}
       {activeMovie && (
-        <div className="relative w-full h-[75vh] md:h-[88vh] flex items-end overflow-hidden border-b border-zinc-900/60">
+        <>
+          <section className="relative overflow-hidden border-b border-zinc-900/70 bg-[#09090b] pb-5 pt-20 md:hidden">
+            <div
+              className="pointer-events-none absolute inset-x-0 top-12 h-[420px] scale-110 bg-cover bg-center opacity-20 blur-3xl"
+              style={{ backgroundImage: `url(${heroBackdropSrc})` }}
+              aria-hidden="true"
+            />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/25 via-black/45 to-[#09090b]" />
+
+            <nav aria-label="Danh mục nội dung" className="relative z-20 flex gap-2 overflow-x-auto px-4 pb-3 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <button className="shrink-0 rounded-full bg-white px-4 py-2 text-xs font-extrabold text-black" onClick={() => router.push("/")}>Đề xuất</button>
+              <button className="shrink-0 rounded-full border border-white/25 bg-zinc-900/70 px-4 py-2 text-xs font-bold text-zinc-200 backdrop-blur-md" onClick={() => router.push("/phim-bo")}>Phim bộ</button>
+              <button className="shrink-0 rounded-full border border-white/25 bg-zinc-900/70 px-4 py-2 text-xs font-bold text-zinc-200 backdrop-blur-md" onClick={() => router.push("/phim-le")}>Phim lẻ</button>
+              <button className="shrink-0 rounded-full border border-white/25 bg-zinc-900/70 px-4 py-2 text-xs font-bold text-zinc-200 backdrop-blur-md" onClick={() => router.push("/the-loai")}>Thể loại</button>
+            </nav>
+
+            <div
+              className="relative z-10 h-[338px] w-full touch-pan-y select-none overflow-hidden [perspective:1000px]"
+              onTouchStart={(event) => { mobileTouchStartX.current = event.touches[0]?.clientX ?? null; }}
+              onTouchEnd={(event) => handleMobileHeroTouchEnd(event.changedTouches[0]?.clientX ?? 0)}
+            >
+              {heroCandidates.map((movie, index) => {
+                const position = getMobileHeroPosition(index);
+                if (Math.abs(position) > 2) return null;
+                const isActive = position === 0;
+                const posterSrc = posterCache[movie.slug]
+                  || getBestMovieImage(detailsCache[movie.slug] || movie, "poster");
+                return (
+                  <button
+                    key={movie.slug}
+                    type="button"
+                    aria-label={`Chọn ${cleanMovieName(movie.name)}`}
+                    aria-current={isActive ? "true" : undefined}
+                    onClick={() => isActive ? router.push(`/movie/${movie.slug}`) : handleThumbnailClick(index)}
+                    className="absolute left-1/2 top-0 h-[330px] w-[56vw] min-w-[198px] max-w-[224px] overflow-hidden rounded-[20px] border bg-zinc-900 shadow-2xl transition-[transform,opacity,filter] duration-500 ease-out"
+                    style={{
+                      transform: `translateX(calc(-50% + ${position * 42}vw)) rotateY(${position * -8}deg) scale(${isActive ? 1 : 0.9})`,
+                      transformStyle: "preserve-3d",
+                      zIndex: 20 - Math.abs(position),
+                      opacity: Math.abs(position) === 2 ? 0.28 : isActive ? 1 : 0.62,
+                      filter: isActive ? "none" : "brightness(0.58)",
+                      borderColor: isActive ? "rgba(244,63,145,.55)" : "rgba(255,255,255,.08)",
+                    }}
+                  >
+                    <ProgressiveImage
+                      src={posterSrc}
+                      alt={cleanMovieName(movie.name)}
+                      priority={isActive}
+                      className="h-full w-full object-cover"
+                      onError={(event) => {
+                        const fallback = backdropCache[movie.slug] || getImageUrl(movie.thumb_url || movie.poster_url);
+                        if ((event.currentTarget as HTMLImageElement).src !== fallback) {
+                          (event.currentTarget as HTMLImageElement).src = fallback;
+                        }
+                      }}
+                    />
+                    <span className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/55 to-transparent" />
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className={`relative z-20 px-4 text-center transition-all duration-300 ${isTransitioning ? "translate-y-1 opacity-0" : "translate-y-0 opacity-100"}`}>
+              <h1 className="mx-auto line-clamp-1 max-w-[94%] text-[17px] font-black leading-tight text-white">
+                {cleanMovieName(heroDetail?.name || activeMovie?.name)}
+              </h1>
+              <p className="mt-1 line-clamp-1 text-xs font-medium text-zinc-500">
+                {cleanMovieName(heroDetail?.origin_name || activeMovie?.origin_name)}
+              </p>
+
+              <div className="mt-2.5 flex items-center justify-center gap-2 text-[10px] font-extrabold">
+                {heroScore > 0 && (
+                  <span className="rounded-md border border-amber-400/70 bg-amber-400/10 px-2 py-1 text-amber-300">IMDb {heroScore.toFixed(1)}</span>
+                )}
+                {activeMovie.year && <span className="rounded-md border border-white/20 bg-black/35 px-2 py-1 text-zinc-200">{activeMovie.year}</span>}
+                {heroDetail?.season && <span className="rounded-md border border-white/20 bg-black/35 px-2 py-1 text-zinc-200">Phần {heroDetail.season}</span>}
+                <span className="max-w-[100px] truncate rounded-md border border-white/20 bg-black/35 px-2 py-1 text-zinc-200">{heroDetail?.episode_current || "Hoàn tất"}</span>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => router.push(`/watch/${activeMovie.slug}`)}
+                  className="flex h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 text-sm font-black text-white shadow-lg shadow-pink-500/20 active:scale-[0.98]"
+                >
+                  <Play size={15} className="fill-current" /> Xem phim
+                </button>
+                <button
+                  onClick={() => router.push(`/movie/${activeMovie.slug}`)}
+                  className="flex h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 text-sm font-black text-white backdrop-blur-md active:scale-[0.98]"
+                >
+                  <Info size={15} /> Thông tin
+                </button>
+              </div>
+
+              <div className="mt-3 flex h-2 items-center justify-center gap-1.5" role="tablist" aria-label="Chọn phim nổi bật">
+                {heroCandidates.map((movie, index) => (
+                  <button
+                    key={movie.slug}
+                    type="button"
+                    role="tab"
+                    aria-selected={index === activeHeroIndex}
+                    aria-label={cleanMovieName(movie.name)}
+                    onClick={() => handleThumbnailClick(index)}
+                    className={`h-1.5 rounded-full transition-all duration-300 ${index === activeHeroIndex ? "w-7 bg-pink-400" : "w-1.5 bg-zinc-600"}`}
+                  />
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <div className="relative hidden w-full h-[88vh] items-end overflow-hidden border-b border-zinc-900/60 md:flex">
 
           {/* Ảnh nền Full-width trong suốt và sáng đẹp giống hệt mockup */}
           <div className="absolute inset-0 z-0 select-none bg-black">
@@ -462,7 +597,8 @@ export default function HomePage() {
             })}
           </div>
 
-        </div>
+          </div>
+        </>
       )}
 
       {/* 2. KHÚC ĐỆM BỔ SUNG: "BẠN ĐANG QUAN TÂM GÌ?" Y HỆT COBEPHIM */}
