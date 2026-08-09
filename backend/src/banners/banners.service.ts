@@ -10,8 +10,11 @@ import { Banner, BannerDocument } from './schemas/banner.schema';
 import { MoviesService } from '../movies/movies.service';
 
 const HERO_SLOT_COUNT = 5;
-const HERO_CANDIDATE_LIMIT = 18;
-const HERO_TMDB_CANDIDATE_LIMIT = 12;
+const HERO_CANDIDATE_LIMIT = 24;
+const HERO_TMDB_INITIAL_CANDIDATE_LIMIT = 12;
+const HERO_TMDB_CANDIDATE_LIMIT = 24;
+const HERO_TMDB_EXPANSION_BATCH_SIZE = 4;
+const HERO_VALID_CANDIDATE_TARGET = 8;
 const HERO_DETAIL_CONCURRENCY = 4;
 
 interface ProcessedHeroMovie {
@@ -98,28 +101,61 @@ export class BannersService {
         !this.isAnimeOrAnimation(movie, detail)
       );
     });
-    const tmdbCandidates = heroCandidatesOnly
-      ? eligibleMovies.slice(0, HERO_TMDB_CANDIDATE_LIMIT)
-      : eligibleMovies;
+    const resolveTmdbBatch = (items: Array<{ movie: any; detail: any }>) =>
+      this.mapWithConcurrency(
+        items,
+        HERO_DETAIL_CONCURRENCY,
+        async ({ movie, detail }): Promise<ProcessedHeroMovie> => {
+          try {
+            const tmdbData = await this.moviesService.getMovieLogo(
+              movie.slug,
+              detail.name || movie.name,
+              detail.tmdb?.id ? String(detail.tmdb.id) : undefined,
+              detail.tmdb?.type || 'movie',
+              detail.origin_name || movie.origin_name,
+            );
+            return { movie, detail, tmdbData };
+          } catch {
+            return { movie, detail, tmdbData: null };
+          }
+        },
+      );
 
-    return this.mapWithConcurrency(
-      tmdbCandidates,
-      HERO_DETAIL_CONCURRENCY,
-      async ({ movie, detail }): Promise<ProcessedHeroMovie> => {
-        try {
-          const tmdbData = await this.moviesService.getMovieLogo(
-            movie.slug,
-            detail.name || movie.name,
-            detail.tmdb?.id ? String(detail.tmdb.id) : undefined,
-            detail.tmdb?.type || 'movie',
-            detail.origin_name || movie.origin_name,
-          );
-          return { movie, detail, tmdbData };
-        } catch {
-          return { movie, detail, tmdbData: null };
-        }
-      },
+    if (!heroCandidatesOnly) {
+      return resolveTmdbBatch(eligibleMovies);
+    }
+
+    const tmdbCandidates = eligibleMovies.slice(
+      0,
+      HERO_TMDB_CANDIDATE_LIMIT,
     );
+    const processed: ProcessedHeroMovie[] = [];
+
+    // Keep cold starts bounded: try the original 12 candidates first and only
+    // expand in small batches when TMDB has not produced enough valid heroes.
+    let cursor = 0;
+    while (cursor < tmdbCandidates.length) {
+      const batchSize =
+        cursor === 0
+          ? HERO_TMDB_INITIAL_CANDIDATE_LIMIT
+          : HERO_TMDB_EXPANSION_BATCH_SIZE;
+      const batch = tmdbCandidates.slice(cursor, cursor + batchSize);
+      if (batch.length === 0) break;
+      processed.push(...(await resolveTmdbBatch(batch)));
+      cursor += batch.length;
+
+      const validCount = processed.filter(
+        ({ tmdbData }) => tmdbData?.backdropUrl && tmdbData?.tmdbTitle,
+      ).length;
+      if (
+        cursor >= HERO_TMDB_INITIAL_CANDIDATE_LIMIT &&
+        validCount >= HERO_VALID_CANDIDATE_TARGET
+      ) {
+        break;
+      }
+    }
+
+    return processed;
   }
 
   private cleanMovieName(name = ''): string {

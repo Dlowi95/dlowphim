@@ -21,9 +21,10 @@ interface Movie {
 interface MovieCardProps {
   movie: Movie;
   aspect?: "landscape" | "portrait";
+  variant?: "default" | "country-row";
 }
 
-export default function MovieCard({ movie, aspect = "landscape" }: MovieCardProps) {
+export default function MovieCard({ movie, aspect = "landscape", variant = "default" }: MovieCardProps) {
   const [mounted, setMounted] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [showPopup, setShowPopup] = useState(false);
@@ -36,6 +37,24 @@ export default function MovieCard({ movie, aspect = "landscape" }: MovieCardProp
 
   const cleanedName = cleanMovieName(movie.name);
   const cleanedOriginName = cleanMovieName(movie.origin_name);
+  const countryLanguageBadges = (() => {
+    const language = (movie.lang || "Vietsub").toLocaleLowerCase("vi");
+    const badges: Array<{ label: string; className: string }> = [];
+
+    if (/vietsub|phụ đề|phu de/.test(language)) {
+      badges.push({ label: "P.Đề", className: "bg-zinc-600/90" });
+    }
+    if (/thuyết minh|thuyet minh/.test(language)) {
+      badges.push({ label: "T.Minh", className: "bg-emerald-500/90" });
+    }
+    if (/lồng tiếng|long tieng/.test(language)) {
+      badges.push({ label: "L.Tiếng", className: "bg-blue-500/90" });
+    }
+
+    return badges.length > 0
+      ? badges
+      : [{ label: movie.lang || "P.Đề", className: "bg-zinc-600/90" }];
+  })();
 
   useEffect(() => {
     setMounted(true);
@@ -164,22 +183,35 @@ export default function MovieCard({ movie, aspect = "landscape" }: MovieCardProp
 
           
           {/* Badge phụ đề góc trái */}
-          <div className="absolute bottom-2 left-2 flex items-center gap-1 z-10">
-            <span className="bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded text-[9px] font-black text-pink-400 border border-zinc-800/50 uppercase">
-              {movie.quality || "HD"}
-            </span>
-            <span className="bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded text-[9px] font-black text-white border border-zinc-800/50 uppercase">
-              {movie.lang || "Vietsub"}
-            </span>
-          </div>
+          {variant === "country-row" ? (
+            <div className="absolute bottom-1.5 left-1.5 z-10 flex flex-col items-start gap-0.5">
+              {countryLanguageBadges.map((badge) => (
+                <span
+                  key={badge.label}
+                  className={`rounded-md px-1.5 py-0.5 text-[9px] font-black leading-tight text-white shadow-sm backdrop-blur-md ${badge.className}`}
+                >
+                  {badge.label}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1">
+              <span className="rounded border border-zinc-800/50 bg-black/60 px-1.5 py-0.5 text-[9px] font-black uppercase text-pink-400 backdrop-blur-md">
+                {movie.quality || "HD"}
+              </span>
+              <span className="min-w-0 truncate rounded border border-zinc-800/50 bg-black/60 px-1.5 py-0.5 text-[9px] font-black uppercase text-white backdrop-blur-md">
+                {movie.lang || "Vietsub"}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Text descriptions underneath (Flat Style) */}
         <div className="pt-2.5 space-y-0.5 text-left select-text">
-          <h4 className="font-bold text-xs md:text-sm text-zinc-100 truncate group-hover/card:text-pink-500 transition-colors">
+          <h4 className={`truncate font-bold leading-snug text-zinc-100 transition-colors group-hover/card:text-pink-500 ${variant === "country-row" ? "text-[13px] sm:text-sm" : "text-xs md:text-sm"}`}>
             {cleanedName}
           </h4>
-          <p className="text-[10px] text-zinc-500 truncate font-semibold">
+          <p className={`truncate font-semibold leading-snug text-zinc-500 ${variant === "country-row" ? "text-[11px] sm:text-xs" : "text-[10px]"}`}>
             {cleanedOriginName}
           </p>
         </div>

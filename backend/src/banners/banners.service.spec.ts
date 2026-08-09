@@ -93,6 +93,66 @@ describe('BannersService resolved Hero batch', () => {
     );
   });
 
+  it('progressively expands TMDB candidates until all five automatic slots are filled', async () => {
+    const bannerModel = {
+      find: jest.fn().mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue([]),
+        }),
+      }),
+    };
+    const latestMovies = Array.from({ length: 16 }, (_, index) => ({
+      slug: `movie-${index}`,
+      name: `Movie ${index}`,
+    }));
+    const moviesService = {
+      fetchOphimProxy: jest.fn().mockImplementation(async (path: string) => {
+        if (path.startsWith('/danh-sach/')) {
+          return {
+            status: true,
+            _sourceId: 'phimapi',
+            items: latestMovies,
+          };
+        }
+        const slug = path.split('/').pop() as string;
+        return {
+          status: true,
+          movie: {
+            slug,
+            name: slug,
+            category: [],
+            episode_current: 'Full',
+          },
+        };
+      }),
+      getMovieLogo: jest.fn().mockImplementation(async (slug: string) => {
+        const index = Number(slug.split('-').pop());
+        const hasValidTmdbMatch = index < 4 || index >= 12;
+        return {
+          logoUrl: '',
+          backdropUrl: hasValidTmdbMatch
+            ? `https://image.tmdb.org/${slug}-backdrop.jpg`
+            : '',
+          posterUrl: '',
+          tmdbTitle: hasValidTmdbMatch ? `TMDB ${slug}` : '',
+          tmdbOriginalTitle: hasValidTmdbMatch ? `Original ${slug}` : '',
+        };
+      }),
+    };
+
+    const service = new BannersService(
+      bannerModel as any,
+      moviesService as any,
+    );
+    const result = await service.getResolvedHero(false);
+
+    expect(result.slots).toHaveLength(5);
+    expect(result.slots.map((slot: any) => slot.order)).toEqual([
+      1, 2, 3, 4, 5,
+    ]);
+    expect(moviesService.getMovieLogo).toHaveBeenCalledTimes(16);
+  });
+
   it('rejects invalid slots and duplicate hero positions', async () => {
     const BannerModel: any = jest.fn((payload: any) => ({
       save: jest.fn().mockResolvedValue(payload),

@@ -608,9 +608,9 @@ export default function HomePage() {
       <ContinueWatchingRow />
 
       {/* 2.5. HÀNH LANG PHIM THEO QUỐC GIA (MỚI THEO COBEPHIM) */}
-      <DeferredHomeSection minHeightClass="min-h-[680px]">
-        <div className="container mx-auto px-6 mt-12 max-w-7xl">
-          <div className="p-6 rounded-[1.25rem] bg-gradient-to-b from-[#282b3a]/28 to-[#282b3a] border border-[#282b3a]/60 flex flex-col">
+      <DeferredHomeSection minHeightClass="min-h-[570px] sm:min-h-[680px]">
+        <div className="container mx-auto mt-8 max-w-7xl px-4 sm:mt-12 sm:px-6">
+          <div className="flex flex-col rounded-2xl border border-[#282b3a]/60 bg-gradient-to-b from-[#282b3a]/28 to-[#282b3a] p-4 sm:rounded-[1.25rem] sm:p-6">
             <MovieRow title="Phim Hàn Quốc mới" accentText="Hàn Quốc" countrySlug="han-quoc" />
             <MovieRow title="Phim Việt Nam mới" accentText="Việt Nam" countrySlug="viet-nam" />
             <MovieRow title="Phim US-UK mới" accentText="US-UK" countrySlug="au-my" />

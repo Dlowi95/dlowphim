@@ -76,16 +76,16 @@ export function InterestCard({ theme, compact = false }: { theme: InterestTheme;
   return (
     <Link
       href={theme.href}
-      className={`group relative isolate flex shrink-0 snap-start flex-col justify-end overflow-hidden rounded-2xl bg-gradient-to-br ${theme.gradient} p-4 text-white shadow-[0_14px_35px_rgba(0,0,0,0.18)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(0,0,0,0.3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black ${compact ? "h-32 w-[72vw] max-w-[280px] sm:w-auto sm:max-w-none md:h-36" : "h-36 w-full"}`}
+      className={`group relative isolate flex shrink-0 snap-start flex-col justify-center overflow-hidden rounded-xl bg-gradient-to-br ${theme.gradient} p-3 text-white shadow-[0_10px_24px_rgba(0,0,0,0.16)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(0,0,0,0.3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:justify-end sm:rounded-2xl sm:p-4 ${compact ? "h-[72px] w-[calc((100vw-48px)/3)] min-w-[88px] max-w-[132px] min-[360px]:h-[76px] sm:h-32 sm:w-auto sm:min-w-0 sm:max-w-none md:h-36" : "h-36 w-full"}`}
       aria-label={`Khám phá chủ đề ${theme.name}`}
     >
-      <span className="absolute -right-7 -top-8 h-28 w-28 rounded-full bg-white/10 transition-transform duration-500 group-hover:scale-125" />
-      <span className="absolute -bottom-12 -left-9 h-28 w-28 rounded-full bg-black/10" />
+      <span className="absolute -right-5 -top-7 h-16 w-16 rounded-full bg-white/10 transition-transform duration-500 group-hover:scale-125 sm:-right-7 sm:-top-8 sm:h-28 sm:w-28" />
+      <span className="absolute -bottom-8 -left-6 h-16 w-16 rounded-full bg-black/10 sm:-bottom-12 sm:-left-9 sm:h-28 sm:w-28" />
 
       <span className="relative block min-w-0">
-        <strong className="block text-base font-black leading-tight tracking-tight md:text-lg">{theme.name}</strong>
-        <span className="mt-1 block truncate text-[11px] font-semibold text-white/75">{theme.description}</span>
-        <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-black text-white/90">
+        <strong className="line-clamp-2 block text-[13px] font-black leading-[1.15] tracking-tight sm:text-base md:text-lg">{theme.name}</strong>
+        <span className="mt-1 hidden truncate text-[11px] font-semibold text-white/75 sm:block">{theme.description}</span>
+        <span className="mt-2 hidden items-center gap-1 text-[11px] font-black text-white/90 sm:inline-flex">
           Khám phá <ArrowRight size={12} className="transition-transform group-hover:translate-x-1" />
         </span>
       </span>
@@ -97,11 +97,11 @@ export default function Interests() {
   const visibleThemes = themes.slice(0, 6);
 
   return (
-    <section className="container mx-auto mt-8 max-w-7xl space-y-4 px-6" aria-labelledby="interest-heading">
+    <section className="container mx-auto mt-6 max-w-7xl space-y-3 px-4 sm:mt-8 sm:space-y-4 sm:px-6" aria-labelledby="interest-heading">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <p className="mb-1 text-[10px] font-black uppercase tracking-[0.24em] text-pink-500">Chọn nhanh nội dung</p>
-          <h2 id="interest-heading" className="text-xl font-black tracking-tight text-zinc-100 md:text-2xl">
+          <p className="mb-1 hidden text-[10px] font-black uppercase tracking-[0.24em] text-pink-500 sm:block">Chọn nhanh nội dung</p>
+          <h2 id="interest-heading" className="text-base font-black tracking-tight text-zinc-100 sm:text-xl md:text-2xl">
             Khám phá theo sở thích
           </h2>
         </div>
@@ -110,11 +110,11 @@ export default function Interests() {
         </Link>
       </div>
 
-      <div className="-mx-6 flex snap-x snap-mandatory gap-4 overflow-x-auto px-6 pb-3 scrollbar-none sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="-mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1 scrollbar-none sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3 xl:grid-cols-6">
         {visibleThemes.map((theme) => <InterestCard key={theme.href} theme={theme} compact />)}
       </div>
 
-      <Link href="/chu-de" className="flex h-11 w-full items-center justify-center gap-1 rounded-xl border border-zinc-800 bg-zinc-950 text-xs font-black text-zinc-400 transition hover:border-pink-500/40 hover:text-pink-400 sm:hidden">
+      <Link href="/chu-de" className="flex h-10 w-full items-center justify-center gap-1 rounded-xl border border-zinc-800 bg-zinc-950 text-[11px] font-black text-zinc-400 transition hover:border-pink-500/40 hover:text-pink-400 sm:hidden">
         Xem tất cả chủ đề <ArrowRight size={14} />
       </Link>
     </section>

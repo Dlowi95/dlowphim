@@ -25,7 +25,7 @@ interface MovieRowProps {
   countrySlug: string;
 }
 
-const MOVIE_ROW_PAGE_SIZE = 12;
+const MOVIE_ROW_PAGE_SIZE = 8;
 
 export default function MovieRow({ title, accentText, countrySlug }: MovieRowProps) {
   const [movies, setMovies] = useState<Movie[]>([]);
@@ -149,14 +149,14 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
 
   if (loading) {
     return (
-      <div className="flex flex-col md:flex-row gap-6 items-center py-6 border-t border-zinc-800/40 first:border-t-0 first:pt-2 first:mt-0 min-h-[200px] w-full">
+      <div className="flex min-h-[170px] w-full flex-col items-start gap-3 border-t border-zinc-800/40 py-5 first:mt-0 first:border-t-0 first:pt-1 md:min-h-[200px] md:flex-row md:items-center md:gap-6 md:py-6">
         <div className="w-full md:w-[180px] shrink-0 text-left space-y-2">
           <div className="h-6 w-28 bg-zinc-800 rounded animate-pulse" />
           <div className="h-4 w-20 bg-zinc-800/60 rounded animate-pulse" />
         </div>
-        <div className="flex-grow flex gap-4 overflow-hidden w-full">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="w-[220px] aspect-[16/10] shrink-0 bg-zinc-900 border border-zinc-800/80 rounded-xl animate-pulse" />
+        <div className="flex w-full flex-grow gap-3 overflow-hidden sm:gap-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="aspect-[16/10] w-[calc((100vw-100px)/2)] min-w-[138px] max-w-[190px] shrink-0 animate-pulse rounded-xl border border-zinc-800/80 bg-zinc-900 md:w-[220px] md:max-w-none" />
           ))}
         </div>
       </div>
@@ -166,7 +166,7 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
   if (movies.length === 0) return null;
 
   return (
-    <div className="relative flex flex-col md:flex-row gap-6 py-6 border-t border-zinc-800/40 first:border-t-0 first:pt-2 first:mt-0 items-start select-none w-full">
+    <div className="relative flex w-full select-none flex-col items-start gap-3 border-t border-zinc-800/40 py-5 first:mt-0 first:border-t-0 first:pt-1 md:flex-row md:gap-6 md:py-6">
       <style>{`
         .no-scrollbar::-webkit-scrollbar {
           display: none;
@@ -178,9 +178,9 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
       `}</style>
 
       {/* CỘT TRÁI: TIÊU ĐỀ HÀNH LANG (DỌC TRÊN PC, NGANG TRÊN MB) */}
-      <div className="w-full md:w-[180px] shrink-0 flex md:flex-col justify-between md:justify-start items-center md:items-start md:gap-3 md:pt-2">
+      <div className="flex w-full shrink-0 items-center justify-between md:w-[180px] md:flex-col md:items-start md:justify-start md:gap-3 md:pt-2">
         <div className="text-left select-none">
-          <h3 className="text-xl md:text-2xl font-black tracking-tight leading-tight uppercase flex flex-wrap gap-x-1.5 md:flex-col md:gap-x-0">
+          <h3 className="flex flex-wrap gap-x-1.5 text-[21px] font-black uppercase leading-none tracking-[-0.035em] text-zinc-100 sm:text-[22px] md:flex-col md:gap-x-0 md:text-2xl">
             <span>{prefix}</span>
             <span className={getGradientStyle(countrySlug)}>{accentText}</span>
             <span>{suffix}</span>
@@ -189,7 +189,7 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
         </div>
         <Link 
           href={`/quoc-gia/${countrySlug}`}
-          className="text-xs font-bold text-zinc-500 hover:text-pink-500 transition-colors duration-200 uppercase tracking-wider md:mt-2"
+          className="shrink-0 text-[11px] font-black uppercase tracking-[0.04em] text-zinc-500 transition-colors duration-200 hover:text-pink-500 sm:text-xs md:mt-2"
         >
           Xem toàn bộ &gt;
         </Link>
@@ -202,7 +202,8 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
         {showLeftArrow && (
           <button
             onClick={() => scroll("left")}
-            className="absolute left-2 top-[35%] -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/95 text-black flex items-center justify-center shadow-lg hover:scale-110 active:scale-95 transition-all duration-200 cursor-pointer"
+            className="absolute left-2 top-[35%] z-20 hidden h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/95 text-black shadow-lg transition-all duration-200 hover:scale-110 active:scale-95 md:flex"
+            aria-label={`Cuộn ${title} sang trái`}
           >
             <ChevronLeft size={18} className="stroke-[2.5]" />
           </button>
@@ -212,7 +213,8 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
         {movies.length > 3 && (
           <button
             onClick={() => scroll("right")}
-            className="absolute right-2 top-[35%] -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/95 text-black flex items-center justify-center shadow-lg hover:scale-110 active:scale-95 transition-all duration-200 cursor-pointer"
+            className="absolute right-2 top-[35%] z-20 hidden h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/95 text-black shadow-lg transition-all duration-200 hover:scale-110 active:scale-95 md:flex"
+            aria-label={`Cuộn ${title} sang phải`}
           >
             {loadingMore ? (
               <Loader2 className="animate-spin text-black" size={14} />
@@ -226,14 +228,14 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
         <div
           ref={scrollContainerRef}
           onScroll={handleScrollEvent}
-          className="flex gap-4 overflow-x-auto no-scrollbar scroll-smooth w-full pb-2"
+          className="no-scrollbar flex w-full snap-x snap-mandatory gap-3 overflow-x-auto pb-1 scroll-smooth sm:gap-4 sm:pb-2 md:snap-none"
         >
           {movies.map((movie) => (
             <div
               key={movie._id}
-              className="w-[200px] md:w-[220px] shrink-0"
+              className="w-[calc((100vw-100px)/2)] min-w-[138px] max-w-[190px] shrink-0 snap-start md:w-[220px] md:max-w-none"
             >
-              <MovieCard movie={movie} aspect="landscape" />
+              <MovieCard movie={movie} aspect="landscape" variant="country-row" />
             </div>
           ))}
           
