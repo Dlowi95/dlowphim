@@ -8,6 +8,7 @@ import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
+import MovieQualityBadge from "./MovieQualityBadge";
 
 interface Movie {
   _id: string;
@@ -182,9 +183,7 @@ export default function MovieHoverPopup({
           
           {/* Badge on backdrop */}
           <div className="absolute bottom-2 left-3 flex items-center gap-1 z-10">
-            <span className="bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded text-[9px] font-black text-pink-400 border border-zinc-800/50 uppercase">
-              {details?.quality || movie.quality || "HD"}
-            </span>
+            <MovieQualityBadge quality={details?.quality || movie.quality} />
             <span className="bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded text-[9px] font-black text-white border border-zinc-800/50 uppercase">
               {details?.lang || movie.lang || "Vietsub"}
             </span>

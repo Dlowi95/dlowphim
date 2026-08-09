@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { cleanMovieName, cleanSlug, getImageUrl } from "@/utils/movieUtils";
 import MovieHoverPopup from "./MovieHoverPopup";
+import MovieQualityBadge from "./MovieQualityBadge";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
 
@@ -170,13 +171,13 @@ export default function CinemaRow() {
 
   if (loading) {
     return (
-      <div className="container mx-auto px-6 mt-12 max-w-7xl select-none text-left">
-        <div className="h-6 w-56 bg-zinc-800 rounded animate-pulse mb-6" />
-        <div className="flex gap-6 overflow-hidden pb-6">
+      <div className="container mx-auto mt-10 max-w-7xl select-none px-4 text-left sm:mt-12 sm:px-6">
+        <div className="mb-4 h-6 w-56 animate-pulse rounded bg-zinc-800 sm:mb-6" />
+        <div className="flex gap-3 overflow-hidden pb-5 sm:gap-6 sm:pb-6">
           {[1, 2, 3].map((i) => (
             <div
               key={i}
-              className="w-[280px] sm:w-[320px] md:w-[360px] aspect-[16/9] shrink-0 bg-zinc-900 border border-zinc-800 rounded-2xl animate-pulse"
+              className="aspect-[16/9] w-[calc((100%_-_0.75rem)/2)] shrink-0 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900 sm:w-[280px] sm:rounded-2xl md:w-[350px]"
             />
           ))}
         </div>
@@ -187,10 +188,10 @@ export default function CinemaRow() {
   if (movies.length === 0) return null;
 
   return (
-    <div className="container mx-auto px-6 mt-12 max-w-7xl select-none text-left">
+    <section className="container mx-auto mt-10 max-w-7xl select-none px-4 text-left sm:mt-12 sm:px-6">
       {/* Tiêu đề & Nút Xem thêm */}
-      <div className="flex items-center gap-2 mb-6">
-        <h3 className="text-xl md:text-2xl font-black text-zinc-100 uppercase tracking-tight">
+      <div className="mb-4 flex items-center gap-2 sm:mb-6">
+        <h3 className="text-[20px] font-black uppercase leading-tight tracking-tight text-zinc-100 min-[390px]:text-[22px] md:text-2xl">
           Mãn Nhãn với Phim Chiếu Rạp
         </h3>
         
@@ -198,11 +199,12 @@ export default function CinemaRow() {
         <div className="relative group/tooltip">
           <Link
             href="/the-loai/phim-chieu-rap"
-            className="w-8 h-8 rounded-full border border-zinc-800 bg-zinc-900/60 hover:border-pink-500 hover:text-pink-500 flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer"
+            className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border border-zinc-800 bg-zinc-900/60 transition-all duration-300 hover:border-pink-500 hover:text-pink-500 active:scale-95 sm:h-8 sm:w-8"
+            aria-label="Xem tất cả phim chiếu rạp"
           >
             <ChevronRight size={16} className="ml-0.5" />
           </Link>
-          <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 px-2.5 py-1 bg-zinc-900 border border-zinc-800 text-zinc-100 text-[10px] font-bold rounded-lg opacity-0 pointer-events-none group-hover/tooltip:opacity-100 transition-opacity duration-200 z-30 shadow-xl whitespace-nowrap">
+          <div className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-[10px] font-bold text-zinc-100 opacity-0 shadow-xl transition-opacity duration-200 group-hover/tooltip:opacity-100 sm:block">
             Xem thêm
           </div>
         </div>
@@ -215,7 +217,7 @@ export default function CinemaRow() {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUpOrLeave}
         onMouseLeave={handleMouseUpOrLeave}
-        className={`flex overflow-x-auto no-scrollbar w-full pb-8 gap-6 select-none ${
+        className={`no-scrollbar flex w-full snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto pb-6 select-none sm:gap-6 sm:pb-8 ${
           isDragging ? "cursor-grabbing" : "cursor-grab"
         }`}
         style={{
@@ -231,7 +233,7 @@ export default function CinemaRow() {
           />
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -250,6 +252,10 @@ function CinemaMovieCard({ movie, wasDraggingRef }: CinemaMovieCardProps) {
   const hoverTimer = useRef<NodeJS.Timeout | null>(null);
   const closeTimer = useRef<NodeJS.Timeout | null>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const cleanedName = cleanMovieName(movie.name);
   const cleanedOriginName = cleanMovieName(movie.origin_name);
@@ -375,7 +381,8 @@ function CinemaMovieCard({ movie, wasDraggingRef }: CinemaMovieCardProps) {
     router.push(`/movie/${movie.slug}`);
   };
 
-  const cardWidthClass = "w-[280px] sm:w-[320px] md:w-[350px] shrink-0";
+  const cardWidthClass =
+    "w-[calc((100%_-_0.75rem)/2)] min-w-0 shrink-0 sm:w-[280px] md:w-[350px]";
   const zIndexStyle = isHovered ? 999 : 10;
 
   // Custom movie length display or default
@@ -387,13 +394,13 @@ function CinemaMovieCard({ movie, wasDraggingRef }: CinemaMovieCardProps) {
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onClick={handleClick}
-      className={`${cardWidthClass} cursor-pointer select-none relative group/cinema flex flex-col`}
+      className={`${cardWidthClass} group/cinema relative flex snap-start cursor-pointer select-none flex-col`}
       style={{ zIndex: zIndexStyle }}
     >
       <div className="relative flex flex-col w-full h-full">
         {/* Landscape backdrop banner (16:9 ratio) */}
         <div 
-          className="relative overflow-hidden w-full aspect-[16/9] bg-zinc-900 border border-zinc-800/40 rounded-2xl transition-all duration-300 ease-out origin-center group-hover/cinema:border-pink-500/40 shadow-lg"
+          className="relative aspect-[16/9] w-full origin-center overflow-hidden rounded-xl border border-zinc-800/40 bg-zinc-900 shadow-lg transition-all duration-300 ease-out group-hover/cinema:border-pink-500/40 sm:rounded-2xl"
           style={{
             WebkitMaskImage: "-webkit-radial-gradient(white, black)",
             maskImage: "radial-gradient(white, black)"
@@ -405,25 +412,24 @@ function CinemaMovieCard({ movie, wasDraggingRef }: CinemaMovieCardProps) {
             alt={cleanedName}
             onError={handleBannerImgError}
             referrerPolicy="no-referrer"
-            className="w-full h-full object-cover rounded-2xl transition-transform duration-500"
+            className="h-full w-full rounded-xl object-cover transition-transform duration-500 sm:rounded-2xl"
             loading="lazy"
             decoding="async"
           />
 
 
-          {/* 4K badge at top-right of landscape poster */}
-          {movie.quality === "4K" && (
-            <div className="absolute top-2 right-2 bg-pink-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow z-10">
-              4K
-            </div>
-          )}
+          {/* Shared HD/FHD/4K quality badge */}
+          <MovieQualityBadge
+            quality={movie.quality}
+            className="absolute right-1.5 top-1.5 z-10 text-[8px] sm:right-2 sm:top-2 sm:px-2 sm:text-[9px]"
+          />
         </div>
 
         {/* Info row underneath with small overlapping vertical poster */}
-        <div className="flex gap-3 px-1.5 pt-3 items-start w-full relative">
+        <div className="relative flex w-full items-start gap-2 px-0.5 pt-2 sm:gap-3 sm:px-1.5 sm:pt-3">
           {/* Small vertical poster overlapping bottom-left of landscape banner */}
           <div 
-            className="relative w-14 md:w-16 aspect-[2/3] shrink-0 -mt-8 md:-mt-10 z-20 bg-zinc-900 border-2 border-zinc-800 rounded-lg overflow-hidden shadow-lg transition-transform duration-300"
+            className="relative z-20 -mt-5 aspect-[2/3] w-10 shrink-0 overflow-hidden rounded-md border border-zinc-800 bg-zinc-900 shadow-lg transition-transform duration-300 min-[390px]:-mt-6 min-[390px]:w-11 sm:-mt-8 sm:w-14 sm:rounded-lg sm:border-2 md:-mt-10 md:w-16"
             style={{
               WebkitMaskImage: "-webkit-radial-gradient(white, black)",
               maskImage: "radial-gradient(white, black)"
@@ -435,25 +441,25 @@ function CinemaMovieCard({ movie, wasDraggingRef }: CinemaMovieCardProps) {
               alt={cleanedName}
               onError={handleThumbImgError}
               referrerPolicy="no-referrer"
-              className="w-full h-full object-cover rounded-lg"
+              className="h-full w-full rounded-md object-cover sm:rounded-lg"
               loading="lazy"
               decoding="async"
             />
             {/* Small badge inside vertical poster bottom */}
-            <div className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur px-1.5 py-0.2 rounded text-[7px] font-bold text-zinc-300 border border-zinc-800 shadow">
+            <div className="absolute bottom-0.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-zinc-800 bg-black/70 px-1 py-px text-[6px] font-bold text-zinc-300 shadow backdrop-blur sm:bottom-1 sm:px-1.5 sm:text-[7px]">
               P.Đề
             </div>
           </div>
 
           {/* Titles & metadata aligned next to the poster */}
-          <div className="flex-1 min-w-0 text-left pt-0.5">
-            <h4 className="font-extrabold text-xs md:text-sm text-zinc-100 truncate group-hover/cinema:text-pink-500 transition-colors">
+          <div className="min-w-0 flex-1 pt-0 text-left sm:pt-0.5">
+            <h4 className="truncate text-[10px] font-extrabold leading-tight text-zinc-100 transition-colors group-hover/cinema:text-pink-500 min-[390px]:text-[11px] sm:text-xs md:text-sm">
               {cleanedName}
             </h4>
-            <p className="text-[10px] text-zinc-500 truncate font-bold mt-0.5">
+            <p className="mt-0.5 truncate text-[8px] font-bold leading-tight text-zinc-500 min-[390px]:text-[9px] sm:text-[10px]">
               {cleanedOriginName}
             </p>
-            <p className="text-[10px] text-zinc-400 font-semibold mt-1 truncate">
+            <p className="mt-1 hidden truncate text-[8px] font-semibold leading-tight text-zinc-400 min-[390px]:block sm:text-[10px]">
               {ageRating} <span className="text-zinc-650">•</span> {movie.year || 2026} <span className="text-zinc-650">•</span> {durationText}
             </p>
           </div>

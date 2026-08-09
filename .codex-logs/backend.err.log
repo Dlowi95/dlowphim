@@ -1,0 +1,3 @@
+(node:18344) [MONGOOSE] Warning: mongoose: Duplicate schema index on {"expiresAt":1} for model "AdminAuditLog". This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:18344) [MONGOOSE] Warning: mongoose: Duplicate schema index on {"expiresAt":1} for model "AdminJob". This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.

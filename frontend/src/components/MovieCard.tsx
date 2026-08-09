@@ -6,6 +6,7 @@ import { cleanMovieName, getImageUrl, getBestMovieImage } from "@/utils/movieUti
 import MovieHoverPopup from "./MovieHoverPopup";
 import ProgressiveImage from "./ProgressiveImage";
 import MovieLanguageBadges from "./MovieLanguageBadges";
+import MovieQualityBadge from "./MovieQualityBadge";
 
 interface Movie {
   _id: string;
@@ -172,9 +173,7 @@ export default function MovieCard({ movie, aspect = "landscape", variant = "defa
             />
           ) : (
             <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1">
-              <span className="rounded border border-zinc-800/50 bg-black/60 px-1.5 py-0.5 text-[9px] font-black uppercase text-pink-400 backdrop-blur-md">
-                {movie.quality || "HD"}
-              </span>
+              <MovieQualityBadge quality={movie.quality} />
               <span className="min-w-0 truncate rounded border border-zinc-800/50 bg-black/60 px-1.5 py-0.5 text-[9px] font-black uppercase text-white backdrop-blur-md">
                 {movie.lang || "Vietsub"}
               </span>
