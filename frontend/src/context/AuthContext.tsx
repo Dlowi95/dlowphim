@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import Cookies from "js-cookie";
 import { io } from "socket.io-client";
+import { getResilientSocketOptions } from "@/lib/socket-options";
 
 interface User {
   id: string;
@@ -678,9 +679,8 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
       }
 
       const socket = io(`${socketHost}/notifications`, {
+        ...getResilientSocketOptions(),
         auth: { token },
-        transports: ["websocket", "polling"],
-        reconnection: true,
       });
 
       const notifyUi = (detail?: unknown) => {

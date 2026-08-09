@@ -15,6 +15,7 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { io } from "socket.io-client";
+import { getResilientSocketOptions } from "@/lib/socket-options";
 import { ReactionsSummary, ReactTriggerButton } from "./comment/CommentReactions";
 import { hasAdminPermission, normalizeAdminRole } from "@/utils/adminPermissions";
 
@@ -157,13 +158,7 @@ export default function CommentRatingSection({
         return API_URL;
       }
     })();
-    const socket = io(socketHost, {
-      reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 500,
-      reconnectionDelayMax: 5000,
-      timeout: 10000,
-    });
+    const socket = io(socketHost, getResilientSocketOptions());
 
     const clearFallback = () => {
       if (fallbackInterval) clearInterval(fallbackInterval);

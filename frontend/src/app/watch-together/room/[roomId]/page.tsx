@@ -13,6 +13,7 @@ import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import EpisodeSelector from "@/components/EpisodeSelector";
 import EmbedCompatibilityPlayer from "@/components/EmbedCompatibilityPlayer";
 import { io } from "socket.io-client";
+import { getResilientSocketOptions } from "@/lib/socket-options";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 import { destroyHlsInstance, loadHlsLibrary, WATCH_TOGETHER_HLS_CONFIG } from "@/utils/hlsLoader";
 
@@ -583,16 +584,13 @@ export default function RoomPage() {
       // Keep the configured value when it is already a socket-compatible URL.
     }
     const socket = io(socketHost, {
+      ...getResilientSocketOptions(),
       auth: {
         token: Cookies.get("token"),
       },
-      reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 500,
-      reconnectionDelayMax: 5000,
-      timeout: 10000,
     });
     socketRef.current = socket;
+    let failedConnectionAttempts = 0;
 
     const authenticatedUserId = user ? (user.id || (user as any)._id) : "";
     let guestId = "";
@@ -623,6 +621,7 @@ export default function RoomPage() {
 
     socket.on("connect", () => {
       console.log("[Socket] Connected successfully!");
+      failedConnectionAttempts = 0;
       setSocketError(null);
       // A reconnect creates a new server-side socket, so it must rejoin room.
       socket.emit("join_room", joinPayload, () => {
@@ -632,7 +631,12 @@ export default function RoomPage() {
 
     socket.on("connect_error", (err) => {
       console.error("[Socket] Connection error:", err.message);
-      setSocketError(`Mất kết nối máy chủ chat: ${err.message}`);
+      failedConnectionAttempts += 1;
+      setSocketError(
+        failedConnectionAttempts < 3
+          ? "Máy chủ phòng đang khởi động, đang tự kết nối lại..."
+          : `Chưa thể kết nối máy chủ phòng: ${err.message}. Hệ thống vẫn đang tự thử lại.`,
+      );
     });
 
     socket.on("disconnect", (reason) => {

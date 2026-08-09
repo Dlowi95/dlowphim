@@ -2,6 +2,11 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import * as dns from 'node:dns';
 import * as express from 'express';
+import {
+  AppSocketIoAdapter,
+  getAllowedBrowserOrigins,
+  isAllowedBrowserOrigin,
+} from './socket-io.adapter';
 
 // Force DNS lookup using Google public DNS to bypass querySrv resolver issues on local network
 dns.setServers(['8.8.8.8', '8.8.4.4']);
@@ -13,23 +18,13 @@ async function bootstrap() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-  const localOrigins = [
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://localhost:3001',
-    'http://127.0.0.1:3001',
-  ];
-  const productionOrigins = (process.env.FRONTEND_URL || '')
-    .split(',')
-    .map((origin) => origin.trim().replace(/\/$/, ''))
-    .filter(Boolean);
-  const allowedOrigins = new Set([...localOrigins, ...productionOrigins]);
+  const allowedOrigins = getAllowedBrowserOrigins();
 
   // Browser requests are restricted to local development and the exact
   // production/preview origins configured in FRONTEND_URL.
   app.enableCors({
     origin(origin, callback) {
-      if (!origin || allowedOrigins.has(origin.replace(/\/$/, ''))) {
+      if (isAllowedBrowserOrigin(origin, allowedOrigins)) {
         callback(null, true);
         return;
       }
@@ -37,6 +32,7 @@ async function bootstrap() {
     },
     credentials: true,
   });
+  app.useWebSocketAdapter(new AppSocketIoAdapter(app, allowedOrigins));
 
   const port = process.env.PORT || 5000;
   await app.listen(port, '0.0.0.0');

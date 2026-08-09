@@ -8,6 +8,7 @@ import { Plus, Users, Radio, Clock, X, Film, ChevronRight, Search, Bell, VideoOf
 import { useAuth } from "@/context/AuthContext";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 import { io } from "socket.io-client";
+import { getResilientSocketOptions } from "@/lib/socket-options";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -141,13 +142,7 @@ export default function WatchTogetherPage() {
       // Giữ nguyên URL đã cấu hình nếu đây đã là socket endpoint hợp lệ.
     }
 
-    const socket = io(socketHost, {
-      reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 500,
-      reconnectionDelayMax: 5000,
-      timeout: 10000,
-    });
+    const socket = io(socketHost, getResilientSocketOptions());
     let hasConnected = false;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 

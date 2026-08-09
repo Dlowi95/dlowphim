@@ -13,11 +13,7 @@ import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { RoomsService } from './rooms.service';
 
-@WebSocketGateway({
-  cors: {
-    origin: '*', // Hỗ trợ CORS kết nối client-side
-  },
-})
+@WebSocketGateway()
 export class RoomsGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
 {
