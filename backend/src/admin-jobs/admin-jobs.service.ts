@@ -5,7 +5,7 @@ import { MoviesService } from '../movies/movies.service';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { AdminJob, AdminJobDocument } from './schemas/admin-job.schema';
 
-const JOB_TYPES = ['upcoming_reminder_scan', 'source_health_check'] as const;
+const JOB_TYPES = ['movie_metadata_sync', 'movie_availability_scan', 'upcoming_reminder_scan', 'source_health_check'] as const;
 type JobType = (typeof JOB_TYPES)[number];
 
 @Injectable()
@@ -39,7 +39,9 @@ export class AdminJobsService implements OnModuleInit, OnModuleDestroy {
   async enqueue(type: string, payload: Record<string, unknown> = {}, createdBy?: string, dedupeKey?: string) {
     if (!JOB_TYPES.includes(type as JobType)) throw new BadRequestException('Loại tác vụ nền không hợp lệ');
     if (dedupeKey) {
-      const existing = await this.jobModel.findOne({ dedupeKey, status: { $in: ['pending', 'processing'] } }).lean();
+      // dedupeKey đã chứa cửa sổ thời gian; giữ cả job hoàn tất để lịch chạy
+      // mỗi phút không nhân bản cùng một tác vụ trong cửa sổ 30 phút/6 giờ.
+      const existing = await this.jobModel.findOne({ dedupeKey }).lean();
       if (existing) return existing;
     }
     return this.jobModel.create({
@@ -75,8 +77,12 @@ export class AdminJobsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async enqueueScheduledJobs() {
-    const windowKey = Math.floor(Date.now() / (30 * 60_000));
-    await this.enqueue('upcoming_reminder_scan', {}, undefined, `upcoming:${windowKey}`);
+    const availabilityWindow = Math.floor(Date.now() / (30 * 60_000));
+    const metadataWindow = Math.floor(Date.now() / (6 * 60 * 60_000));
+    // Tạo theo đúng thứ tự pipeline để lần chạy đầu không dò trên collection rỗng.
+    await this.enqueue('movie_metadata_sync', {}, undefined, `movie-metadata:${metadataWindow}`);
+    await this.enqueue('movie_availability_scan', {}, undefined, `movie-availability:${availabilityWindow}`);
+    await this.enqueue('upcoming_reminder_scan', {}, undefined, `upcoming:${availabilityWindow}`);
   }
 
   private async processNext() {
@@ -115,6 +121,8 @@ export class AdminJobsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async execute(type: JobType): Promise<Record<string, unknown>> {
+    if (type === 'movie_metadata_sync') return this.moviesService.syncMovieReleaseMetadata();
+    if (type === 'movie_availability_scan') return this.moviesService.scanMovieReleaseAvailability();
     if (type === 'upcoming_reminder_scan') return this.moviesService.scanUpcomingReminders();
     const [phimapi, ophim] = await Promise.all([
       this.settingsService.testMovieSource('phimapi'),

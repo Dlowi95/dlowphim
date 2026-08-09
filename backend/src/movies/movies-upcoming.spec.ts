@@ -171,4 +171,75 @@ describe('MoviesService upcoming movies', () => {
       expect.objectContaining({ type: 'movie_available', link: '/movie/ten-viet' }),
     );
   });
+
+  it('persists TMDB metadata without marking a movie as playable', async () => {
+    const bulkWrite = jest.fn().mockResolvedValue({ upsertedCount: 1, modifiedCount: 0 });
+    const releaseModel = { bulkWrite };
+    const service = new MoviesService(
+      {} as any, {} as any, {} as any, {} as any,
+      { getSettings: jest.fn().mockResolvedValue({ tmdbApiKey: 'test-key' }) } as any,
+      undefined, undefined, releaseModel as any,
+    );
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [{
+        id: 99,
+        title: 'Phim Rạp Mới',
+        original_title: 'New Theatrical Movie',
+        release_date: '2026-12-20',
+        poster_path: '/poster.jpg',
+      }] }),
+    } as Response);
+
+    const result = await service.syncMovieReleaseMetadata(1);
+
+    expect(result).toEqual({ fetched: 1, stored: 1 });
+    expect(bulkWrite).toHaveBeenCalledWith([
+      expect.objectContaining({ updateOne: expect.objectContaining({
+        filter: { tmdbId: '99' },
+        update: expect.objectContaining({
+          $set: expect.objectContaining({ name: 'Phim Rạp Mới' }),
+          $setOnInsert: expect.objectContaining({ playbackStatus: 'unavailable' }),
+        }),
+      }) }),
+    ], { ordered: false });
+  });
+
+  it('marks availability only after a provider returns a playable episode', async () => {
+    const updateOne = jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue({ modifiedCount: 1 }) });
+    const releaseModel = {
+      find: jest.fn().mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          limit: jest.fn().mockReturnValue({ lean: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue([{
+            _id: 'release-1', tmdbId: '99', slug: 'tmdb-99-new-theatrical-movie',
+            name: 'Phim Rạp Mới', originName: 'New Theatrical Movie', year: 2026,
+            releaseDate: '2026-12-20',
+          }]) }) }),
+        }),
+      }),
+      updateOne,
+    };
+    const service = new MoviesService(
+      {} as any, {} as any, {} as any, {} as any,
+      { getSettings: jest.fn() } as any,
+      undefined, undefined, releaseModel as any,
+    );
+    jest.spyOn(service, 'resolveMovieDetailAcrossSources').mockResolvedValue({
+      _resolvedSlug: 'phim-rap-moi',
+      movie: { tmdb: { id: '99' } },
+      episodes: [{ server_data: [{ link_m3u8: 'https://cdn.test/movie.m3u8' }] }],
+    });
+
+    const result = await service.scanMovieReleaseAvailability(10);
+
+    expect(result).toEqual({ checked: 1, matched: 1, pending: 0 });
+    expect(updateOne).toHaveBeenCalledWith({ _id: 'release-1' }, expect.objectContaining({
+      $set: expect.objectContaining({
+        playbackStatus: 'available',
+        providerSource: 'phimapi',
+        providerSlug: 'phim-rap-moi',
+        matchMethod: 'tmdb_id',
+      }),
+    }));
+  });
 });

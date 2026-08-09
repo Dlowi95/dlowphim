@@ -15,6 +15,7 @@ import { MovieOverride, MovieOverrideDocument } from './schemas/movie-override.s
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { User, UserDocument } from '../auth/schemas/user.schema';
 import { NotificationsService } from '../notifications/notifications.service';
+import { MovieRelease, MovieReleaseDocument } from './schemas/movie-release.schema';
 
 @Injectable()
 export class MoviesService {
@@ -50,6 +51,7 @@ export class MoviesService {
     private readonly settingsService: SystemSettingsService,
     @Optional() @InjectModel(User.name) private readonly userModel?: Model<UserDocument>,
     @Optional() private readonly notificationsService?: NotificationsService,
+    @Optional() @InjectModel(MovieRelease.name) private readonly movieReleaseModel?: Model<MovieReleaseDocument>,
   ) {}
 
   // ─── BLOCKED MOVIES ───
@@ -910,6 +912,163 @@ export class MoviesService {
     return data;
   }
 
+  private mapTmdbReleaseItem(item: any) {
+    const releaseDate = String(item?.release_date || '').slice(0, 10);
+    const name = item?.title || item?.original_title || 'Phim chưa đặt tên';
+    const originName = item?.original_title || item?.title || name;
+    return {
+      tmdbId: String(item.id),
+      tmdbType: 'movie',
+      slug: `tmdb-${item.id}-${this.generateSlug(originName || name || 'movie')}`,
+      name,
+      originName,
+      overview: item?.overview || '',
+      posterUrl: item?.poster_path ? `https://image.tmdb.org/t/p/w780${item.poster_path}` : '',
+      backdropUrl: item?.backdrop_path
+        ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}`
+        : (item?.poster_path ? `https://image.tmdb.org/t/p/w780${item.poster_path}` : ''),
+      releaseDate,
+      year: Number(releaseDate.slice(0, 4)) || undefined,
+      genres: (item?.genres || []).map((genre: any) => ({
+        id: Number(genre?.id) || undefined,
+        name: String(genre?.name || ''),
+        slug: this.generateSlug(genre?.name || ''),
+      })).filter((genre: any) => genre.name),
+      voteAverage: Number(item?.vote_average) || 0,
+      releaseStatus: releaseDate && releaseDate <= new Date().toISOString().slice(0, 10) ? 'released' : 'scheduled',
+      metadataUpdatedAt: new Date(),
+    };
+  }
+
+  private toReleaseAvailability(record?: any) {
+    const available = record?.playbackStatus === 'available' && Boolean(record?.providerSlug);
+    return {
+      status: available ? 'available' : 'unavailable',
+      label: available ? 'Đã có bản phát' : 'Chưa có bản xem',
+      source: available ? record.providerSource : undefined,
+      resolvedSlug: available ? record.providerSlug : undefined,
+      matchedAt: available ? record.matchedAt : undefined,
+    };
+  }
+
+  /** Đồng bộ hồ sơ phát hành từ TMDB. TMDB chỉ cấp metadata, không được coi là nguồn phát. */
+  async syncMovieReleaseMetadata(pageLimit = 2): Promise<{ fetched: number; stored: number }> {
+    if (!this.movieReleaseModel) return { fetched: 0, stored: 0 };
+    const settings = await this.settingsService.getSettings();
+    const apiKey = settings.tmdbApiKey || '591c025bb1641315ae087330271132bc';
+    const safePageLimit = Math.min(5, Math.max(1, Math.floor(Number(pageLimit) || 2)));
+    const feeds = ['upcoming', 'now_playing'];
+    const payloads = await Promise.all(
+      feeds.flatMap((feed) => Array.from({ length: safePageLimit }, (_, index) =>
+        this.safeFetchTmdb(
+          `https://api.themoviedb.org/3/movie/${feed}?api_key=${apiKey}&language=vi-VN&region=VN&page=${index + 1}`,
+        ).then(async (response) => response?.ok ? response.json() : ({ results: [] })),
+      )),
+    );
+    const unique = new Map<string, any>();
+    for (const payload of payloads) {
+      for (const item of payload?.results || []) {
+        if (item?.id && (item.poster_path || item.backdrop_path)) unique.set(String(item.id), item);
+      }
+    }
+    if (unique.size === 0) return { fetched: 0, stored: 0 };
+    const operations = Array.from(unique.values()).map((item) => {
+      const metadata = this.mapTmdbReleaseItem(item);
+      return {
+        updateOne: {
+          filter: { tmdbId: metadata.tmdbId },
+          update: {
+            $set: metadata,
+            $setOnInsert: {
+              playbackStatus: 'unavailable',
+              providerSource: '',
+              providerSlug: '',
+              matchMethod: '',
+              nextCheckAt: new Date(),
+              checkAttempts: 0,
+            },
+          },
+          upsert: true,
+        },
+      };
+    });
+    const result = await this.movieReleaseModel.bulkWrite(operations, { ordered: false });
+    this.upcomingCache.clear();
+    return { fetched: unique.size, stored: result.upsertedCount + result.modifiedCount };
+  }
+
+  /** Tự dò bản phát thật trên cả PhimAPI và OPhim, ưu tiên TMDB ID rồi mới title + year. */
+  async scanMovieReleaseAvailability(limit = 30): Promise<{ checked: number; matched: number; pending: number }> {
+    if (!this.movieReleaseModel) return { checked: 0, matched: 0, pending: 0 };
+    const safeLimit = Math.min(100, Math.max(1, Math.floor(Number(limit) || 30)));
+    const now = new Date();
+    const records = await this.movieReleaseModel.find({
+      playbackStatus: { $ne: 'available' },
+      nextCheckAt: { $lte: now },
+    }).sort({ releaseDate: 1, lastCheckedAt: 1 }).limit(safeLimit).lean().exec();
+    let matched = 0;
+    let cursor = 0;
+    const processRecord = async (record: any) => {
+      let detail: any = null;
+      let providerSource = '';
+      for (const source of ['phimapi', 'ophim']) {
+        try {
+          const candidate = await this.resolveMovieDetailAcrossSources(
+            record.slug,
+            source,
+            record.name,
+            record.originName,
+            record.year,
+            record.tmdbId,
+          );
+          const playable = (candidate?.episodes || []).some((server: any) =>
+            (server?.server_data || []).some((episode: any) => episode?.link_m3u8 || episode?.link_embed),
+          );
+          if (playable && candidate?._resolvedSlug) {
+            detail = candidate;
+            providerSource = source;
+            break;
+          }
+        } catch {
+          // Nguồn lỗi hoặc chưa có phim: nguồn còn lại và vòng quét sau vẫn tiếp tục.
+        }
+      }
+      if (detail?._resolvedSlug) {
+        const item = detail?.movie || detail?.data?.item || {};
+        const matchedByTmdbId = String(item?.tmdb?.id || item?.tmdb || '') === String(record.tmdbId);
+        await this.movieReleaseModel!.updateOne({ _id: record._id }, {
+          $set: {
+            playbackStatus: 'available',
+            providerSource,
+            providerSlug: detail._resolvedSlug,
+            matchMethod: matchedByTmdbId ? 'tmdb_id' : 'title_year',
+            matchedAt: now,
+            lastCheckedAt: now,
+            nextCheckAt: new Date(now.getTime() + 7 * 24 * 60 * 60_000),
+          },
+          $inc: { checkAttempts: 1 },
+        }).exec();
+        matched += 1;
+        return;
+      }
+      const releaseTime = record.releaseDate ? new Date(`${record.releaseDate}T00:00:00+07:00`).getTime() : now.getTime();
+      const nearRelease = releaseTime <= now.getTime() + 30 * 24 * 60 * 60_000;
+      await this.movieReleaseModel!.updateOne({ _id: record._id }, {
+        $set: {
+          lastCheckedAt: now,
+          nextCheckAt: new Date(now.getTime() + (nearRelease ? 30 * 60_000 : 6 * 60 * 60_000)),
+        },
+        $inc: { checkAttempts: 1 },
+      }).exec();
+    };
+    const workers = Array.from({ length: Math.min(3, records.length) }, async () => {
+      while (cursor < records.length) await processRecord(records[cursor++]);
+    });
+    await Promise.all(workers);
+    this.upcomingCache.clear();
+    return { checked: records.length, matched, pending: records.length - matched };
+  }
+
   async getUpcomingMovies(page = 1): Promise<any> {
     const safePage = Math.min(20, Math.max(1, Math.floor(Number(page) || 1)));
     const cacheKey = `list:${safePage}`;
@@ -927,9 +1086,13 @@ export class MoviesService {
     }
 
     const payload = await response.json();
-    const items = (payload.results || [])
+    const rawItems = (payload.results || [])
       .filter((item: any) => item?.id && (item.poster_path || item.backdrop_path))
-      .map((item: any) => ({
+    const releaseRecords = this.movieReleaseModel && rawItems.length > 0
+      ? await this.movieReleaseModel.find({ tmdbId: { $in: rawItems.map((item: any) => String(item.id)) } }).lean().exec()
+      : [];
+    const releaseMap = new Map(releaseRecords.map((record: any) => [String(record.tmdbId), record]));
+    const items = rawItems.map((item: any) => ({
         _id: `tmdb-${item.id}`,
         name: item.title || item.original_title,
         origin_name: item.original_title || item.title,
@@ -945,7 +1108,15 @@ export class MoviesService {
         quality: 'HD',
         lang: 'Trailer',
         tmdb: { id: String(item.id), type: 'movie', vote_average: item.vote_average || 0 },
+        availability: this.toReleaseAvailability(releaseMap.get(String(item.id))),
       }));
+    if (this.movieReleaseModel && rawItems.length > 0) {
+      const operations = rawItems.map((item: any) => {
+        const metadata = this.mapTmdbReleaseItem(item);
+        return { updateOne: { filter: { tmdbId: metadata.tmdbId }, update: { $set: metadata, $setOnInsert: { playbackStatus: 'unavailable', nextCheckAt: new Date() } }, upsert: true } };
+      });
+      void this.movieReleaseModel.bulkWrite(operations, { ordered: false }).catch(() => undefined);
+    }
     const data = {
       status: true,
       source: 'tmdb',
@@ -965,6 +1136,37 @@ export class MoviesService {
     const cached = this.upcomingCache.get(cacheKey);
     if (cached && cached.expiry > Date.now()) return cached.data;
 
+    const releaseRecord = this.movieReleaseModel
+      ? await this.movieReleaseModel.findOne({ tmdbId }).lean().exec()
+      : null;
+    if (releaseRecord?.playbackStatus === 'available' && releaseRecord.providerSlug) {
+      try {
+        const providerDetail = await this.fetchOphimProxy(
+          `/phim/${releaseRecord.providerSlug}`,
+          releaseRecord.providerSource || 'phimapi',
+        );
+        const movie = providerDetail?.movie || providerDetail?.data?.item;
+        const episodes = providerDetail?.episodes || movie?.episodes || [];
+        const playable = episodes.some((server: any) =>
+          (server?.server_data || []).some((episode: any) => episode?.link_m3u8 || episode?.link_embed),
+        );
+        if (playable) {
+          const data = {
+            ...providerDetail,
+            movie,
+            episodes,
+            source: releaseRecord.providerSource,
+            redirectSlug: releaseRecord.providerSlug,
+            availability: this.toReleaseAvailability(releaseRecord),
+          };
+          this.setUpcomingCache(cacheKey, data);
+          return data;
+        }
+      } catch {
+        // Bản đã ghép tạm lỗi: dò lại cả hai nguồn ở nhánh dưới.
+      }
+    }
+
     const settings = await this.settingsService.getSettings();
     const apiKey = settings.tmdbApiKey || '591c025bb1641315ae087330271132bc';
     const [response, englishVideosResponse] = await Promise.all([
@@ -980,7 +1182,7 @@ export class MoviesService {
     const releaseDate = this.resolveTmdbReleaseDate(item);
 
     // Khi PhimAPI/OPhim đã có bản phát thật, đổi từ trang lịch chiếu sang slug có tập xem.
-    for (const source of ['active', 'ophim']) {
+    for (const source of ['phimapi', 'ophim']) {
       try {
         const providerDetail = await this.resolveMovieDetailAcrossSources(
           `tmdb-${tmdbId}`,
@@ -994,7 +1196,29 @@ export class MoviesService {
           (server?.server_data || []).some((episode: any) => episode?.link_m3u8 || episode?.link_embed),
         );
         if (hasPlayableEpisode && providerDetail?._resolvedSlug) {
-          const providerResult = { ...providerDetail, source, redirectSlug: providerDetail._resolvedSlug };
+          if (this.movieReleaseModel) {
+            const providerMovie = providerDetail?.movie || providerDetail?.data?.item || {};
+            const matchMethod = String(providerMovie?.tmdb?.id || providerMovie?.tmdb || '') === tmdbId
+              ? 'tmdb_id'
+              : 'title_year';
+            await this.movieReleaseModel.updateOne({ tmdbId }, {
+              $set: {
+                playbackStatus: 'available', providerSource: source,
+                providerSlug: providerDetail._resolvedSlug, matchMethod,
+                matchedAt: new Date(), lastCheckedAt: new Date(),
+                nextCheckAt: new Date(Date.now() + 7 * 24 * 60 * 60_000),
+              },
+            }).exec();
+          }
+          const providerResult = {
+            ...providerDetail,
+            source,
+            redirectSlug: providerDetail._resolvedSlug,
+            availability: {
+              status: 'available', label: 'Đã có bản phát', source,
+              resolvedSlug: providerDetail._resolvedSlug,
+            },
+          };
           this.setUpcomingCache(cacheKey, providerResult);
           return providerResult;
         }
@@ -1037,7 +1261,21 @@ export class MoviesService {
       episodes: [],
       tmdb: { id: String(item.id), type: 'movie', vote_average: item.vote_average || 0 },
     };
-    const data = { status: true, source: 'tmdb', movie, episodes: [] };
+    if (this.movieReleaseModel) {
+      const metadata = this.mapTmdbReleaseItem(item);
+      await this.movieReleaseModel.updateOne(
+        { tmdbId },
+        { $set: metadata, $setOnInsert: { playbackStatus: 'unavailable', nextCheckAt: new Date() } },
+        { upsert: true },
+      ).exec();
+    }
+    const data = {
+      status: true,
+      source: 'tmdb',
+      movie: { ...movie, availability: this.toReleaseAvailability(releaseRecord) },
+      episodes: [],
+      availability: this.toReleaseAvailability(releaseRecord),
+    };
     this.setUpcomingCache(cacheKey, data);
     return data;
   }
@@ -1780,13 +2018,18 @@ export class MoviesService {
         const itemTmdbId = String(item?.tmdb?.id || item?.tmdb || '');
         const itemTitle = normalizeText(item?.name);
         const itemOriginTitle = normalizeText(item?.origin_name);
-        if (expectedTmdbId && itemTmdbId === expectedTmdbId) score += 100;
-        if (normalizedOriginTitle && itemOriginTitle === normalizedOriginTitle) score += 70;
-        if (normalizedTitle && itemTitle === normalizedTitle) score += 60;
-        if (year && Number(item?.year) === year) score += 15;
-        return { item, score };
+        const tmdbMatch = Boolean(expectedTmdbId && itemTmdbId === expectedTmdbId);
+        const titleMatch = Boolean(
+          (normalizedOriginTitle && (itemOriginTitle === normalizedOriginTitle || itemTitle === normalizedOriginTitle)) ||
+          (normalizedTitle && (itemTitle === normalizedTitle || itemOriginTitle === normalizedTitle)),
+        );
+        const yearMatch = Boolean(year && Number(item?.year) === Number(year));
+        if (tmdbMatch) score += 100;
+        if (titleMatch) score += 70;
+        if (yearMatch) score += 20;
+        return { item, score, safeMatch: tmdbMatch || (titleMatch && yearMatch) };
       })
-      .filter(({ item, score }: any) => item?.slug && score >= 60)
+      .filter(({ item, safeMatch }: any) => item?.slug && safeMatch)
       .sort((left: any, right: any) => right.score - left.score);
 
     const matchedSlug = ranked[0]?.item?.slug;

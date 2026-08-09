@@ -16,6 +16,12 @@ interface Movie {
   thumb_url?: string;
   release_date?: string;
   year?: number;
+  availability?: {
+    status: "available" | "unavailable";
+    label: string;
+    source?: "phimapi" | "ophim";
+    resolvedSlug?: string;
+  };
 }
 
 export default function UpcomingRow() {
@@ -259,7 +265,7 @@ function UpcomingMovieCard({ movie, wasDraggingRef, router }: { movie: Movie; wa
 
   const handleCardClick = () => {
     if (wasDraggingRef.current) return;
-    router.push(`/movie/${movie.slug}`);
+    router.push(`/movie/${movie.availability?.resolvedSlug || movie.slug}`);
   };
 
   const releaseDate = movie.release_date ? new Date(`${movie.release_date}T00:00:00+07:00`) : null;
@@ -276,6 +282,7 @@ function UpcomingMovieCard({ movie, wasDraggingRef, router }: { movie: Movie; wa
     : releaseDays !== null && releaseDays > 0
       ? `Còn ${releaseDays} ngày • ${formattedReleaseDate}`
       : formattedReleaseDate || (movie.year ? `Dự kiến ${movie.year}` : "Đang cập nhật");
+  const isAvailable = movie.availability?.status === "available";
 
   return (
     <div
@@ -296,8 +303,13 @@ function UpcomingMovieCard({ movie, wasDraggingRef, router }: { movie: Movie; wa
           referrerPolicy="no-referrer"
           className="w-full h-full object-cover rounded-2xl transition-transform duration-500 group-hover/upcoming:scale-105"
         />
-        <div className="absolute bottom-3 left-3 flex items-center gap-1.5 rounded bg-amber-400 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider text-zinc-950 shadow-md">
-          <CalendarDays size={11} /> {releaseLabel}
+        {!isAvailable && (
+          <div className="absolute right-3 top-3 rounded-full border border-white/10 bg-black/65 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-zinc-200 backdrop-blur-md">
+            Chưa có bản xem
+          </div>
+        )}
+        <div className={`absolute bottom-3 left-3 flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider text-zinc-950 shadow-md ${isAvailable ? "bg-emerald-400" : "bg-amber-400"}`}>
+          <CalendarDays size={11} /> {isAvailable ? "Đã có bản phát" : releaseLabel}
         </div>
       </div>
       <div className="px-1 text-left">

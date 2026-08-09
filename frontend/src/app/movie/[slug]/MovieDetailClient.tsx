@@ -52,6 +52,12 @@ interface MovieDetail {
   imdb?: { vote_average?: number };
   age_rating?: string;
   rating?: string;
+  availability?: {
+    status: "available" | "unavailable";
+    label: string;
+    source?: "phimapi" | "ophim";
+    resolvedSlug?: string;
+  };
 }
 
 
@@ -650,6 +656,11 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
             <div className="text-left space-y-5">
               {/* Row of interaction buttons - vertical icon layout like cobephim */}
               <div className="flex items-center gap-6 select-none flex-wrap">
+                {isTrailerOnly && (
+                  <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-amber-300">
+                    {movie.availability?.label || "Chưa có bản xem"}
+                  </span>
+                )}
                 {isTrailerOnly ? (
                   <button
                     onClick={() => {

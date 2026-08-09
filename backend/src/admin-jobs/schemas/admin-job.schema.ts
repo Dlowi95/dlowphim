@@ -5,7 +5,7 @@ export type AdminJobDocument = AdminJob & Document;
 
 @Schema({ timestamps: true, versionKey: false })
 export class AdminJob {
-  @Prop({ required: true, enum: ['upcoming_reminder_scan', 'source_health_check'], index: true })
+  @Prop({ required: true, enum: ['movie_metadata_sync', 'movie_availability_scan', 'upcoming_reminder_scan', 'source_health_check'], index: true })
   type: string;
 
   @Prop({ enum: ['pending', 'processing', 'completed', 'failed'], default: 'pending', index: true })

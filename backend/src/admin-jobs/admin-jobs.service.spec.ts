@@ -39,4 +39,11 @@ describe('AdminJobsService', () => {
     }));
     expect(result.type).toBe('source_health_check');
   });
+
+  it('accepts movie pipeline jobs', async () => {
+    const { service, jobModel } = createService();
+    await service.enqueue('movie_metadata_sync');
+    await service.enqueue('movie_availability_scan');
+    expect(jobModel.create).toHaveBeenCalledTimes(2);
+  });
 });

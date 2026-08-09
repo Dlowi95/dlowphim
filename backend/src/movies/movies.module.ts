@@ -6,6 +6,7 @@ import { BlockedMovie, BlockedMovieSchema } from './schemas/blocked-movie.schema
 import { CustomMovie, CustomMovieSchema } from './schemas/custom-movie.schema';
 import { MovieLogo, MovieLogoSchema } from './schemas/movie-logo.schema';
 import { MovieOverride, MovieOverrideSchema } from './schemas/movie-override.schema';
+import { MovieRelease, MovieReleaseSchema } from './schemas/movie-release.schema';
 import { User, UserSchema } from '../auth/schemas/user.schema';
 import { AuthModule } from '../auth/auth.module';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
@@ -18,6 +19,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: CustomMovie.name, schema: CustomMovieSchema },
       { name: MovieLogo.name, schema: MovieLogoSchema },
       { name: MovieOverride.name, schema: MovieOverrideSchema },
+      { name: MovieRelease.name, schema: MovieReleaseSchema },
       { name: User.name, schema: UserSchema },
     ]),
     AuthModule,
