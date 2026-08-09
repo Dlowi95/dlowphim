@@ -561,9 +561,20 @@ export default function RoomPage() {
         video.playbackRate = 1;
       }
 
-      video.play().catch(() => {
-        pendingVideoStateRef.current = state;
-        setStreamNotice("Trình duyệt đang chặn tự phát. Hãy bấm phát để tiếp tục đồng bộ.");
+      video.play().then(() => {
+        pendingVideoStateRef.current = null;
+      }).catch(() => {
+        // Browsers block autoplay with sound until the visitor interacts with
+        // the page. Muted autoplay is allowed and keeps the guest synchronized.
+        video.muted = true;
+        setIsMuted(true);
+        video.play().then(() => {
+          pendingVideoStateRef.current = null;
+          setStreamNotice("Video đang phát tắt tiếng. Bấm biểu tượng loa để bật âm thanh.");
+        }).catch(() => {
+          pendingVideoStateRef.current = state;
+          setStreamNotice("Hãy bấm biểu tượng loa để bắt đầu phát và tiếp tục đồng bộ.");
+        });
       });
     }
 
@@ -1498,6 +1509,21 @@ export default function RoomPage() {
                                     if (video) {
                                       video.muted = !video.muted;
                                       setIsMuted(video.muted);
+                                      if (!video.muted) {
+                                        setStreamNotice(null);
+                                        if (video.paused) {
+                                          isSyncingRef.current = true;
+                                          void video.play()
+                                            .catch(() => {
+                                              setStreamNotice("Trình duyệt chưa cho phép phát. Hãy bấm biểu tượng loa thêm một lần.");
+                                            })
+                                            .finally(() => {
+                                              window.setTimeout(() => {
+                                                isSyncingRef.current = false;
+                                              }, 350);
+                                            });
+                                        }
+                                      }
                                     }
                                   }}
                                   className="h-9 w-9 rounded-xl bg-black/80 backdrop-blur-md border border-white/10 hover:border-pink-500/50 text-zinc-200 hover:text-white flex items-center justify-center transition-all cursor-pointer shadow-xl active:scale-95"
