@@ -572,23 +572,48 @@ export default function AnimeRow() {
           </div>
         </div>
 
-        <DesktopAnimeFeature
-          feature={feature}
-          title={title}
-          originName={originName}
-          imdbScore={imdbScore}
-          ageRating={ageRating}
-          year={year}
-          duration={duration}
-          quality={quality}
-          language={language}
-          genres={genreNames}
-          description={description}
-          isFavorite={isFavorite}
-          onFavorite={toggleFavorite}
-          onWatch={() => router.push(`/watch/${movie.slug}`)}
-          onInfo={() => router.push(`/movie/${movie.slug}`)}
-        />
+        <div className="relative hidden min-h-[560px] w-full overflow-hidden rounded-3xl border border-zinc-800/40 bg-[#111219] shadow-2xl md:block">
+          <DesktopAnimeFeature
+            feature={feature}
+            title={title}
+            originName={originName}
+            imdbScore={imdbScore}
+            ageRating={ageRating}
+            year={year}
+            duration={duration}
+            quality={quality}
+            language={language}
+            genres={genreNames}
+            description={description}
+            isFavorite={isFavorite}
+            onFavorite={toggleFavorite}
+            onWatch={() => router.push(`/watch/${movie.slug}`)}
+            onInfo={() => router.push(`/movie/${movie.slug}`)}
+          />
+
+          <div className="absolute bottom-7 left-[11%] right-[8%] z-20">
+            <div
+              ref={scrollContainerRef}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={endDrag}
+              onMouseLeave={endDrag}
+              className="no-scrollbar grid cursor-grab grid-cols-[repeat(15,minmax(0,1fr))] gap-2.5 overflow-visible"
+            >
+              {movies.map((item) => (
+                <AnimeThumbCard
+                  key={item._id || item.slug}
+                  movie={item}
+                  isActive={item.slug === movie.slug}
+                  isPending={item.slug === pendingSlug}
+                  onClick={() => {
+                    if (!dragStateRef.current.moved) void activateMovie(item);
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="mt-4 flex items-center justify-center gap-2 md:hidden" aria-label="Chọn Anime nổi bật">
@@ -613,28 +638,6 @@ export default function AnimeRow() {
         })}
       </div>
 
-      <div className="relative z-10 mt-7 hidden border-t border-zinc-800/40 pt-6 md:block">
-        <div
-          ref={scrollContainerRef}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={endDrag}
-          onMouseLeave={endDrag}
-          className="no-scrollbar grid cursor-grab grid-cols-[repeat(15,minmax(0,1fr))] gap-2.5 overflow-x-visible"
-        >
-          {movies.map((item) => (
-            <AnimeThumbCard
-              key={item._id || item.slug}
-              movie={item}
-              isActive={item.slug === movie.slug}
-              isPending={item.slug === pendingSlug}
-              onClick={() => {
-                if (!dragStateRef.current.moved) void activateMovie(item);
-              }}
-            />
-          ))}
-        </div>
-      </div>
     </section>
   );
 }
@@ -778,15 +781,16 @@ function DesktopAnimeFeature(props: {
   onInfo: () => void;
 }) {
   return (
-    <div className="relative hidden min-h-[390px] overflow-hidden rounded-3xl border border-zinc-800/40 bg-[#111219] p-10 shadow-2xl md:flex md:items-center">
-      <div className="pointer-events-none absolute inset-y-0 right-0 w-[67%] overflow-hidden">
-        <img src={props.feature.imageUrl} alt={props.title} className="h-full w-full object-cover" />
+    <div className="relative flex min-h-[560px] items-start overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <img src={props.feature.imageUrl} alt={props.title} className="h-full w-full object-cover object-center" />
         <HalftoneOverlay />
       </div>
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-[76%] bg-gradient-to-r from-[#111219] via-[#111219] via-55% to-transparent" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#111219] to-transparent" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,#111219_0%,rgba(17,18,25,0.98)_20%,rgba(17,18,25,0.84)_38%,rgba(17,18,25,0.28)_60%,transparent_80%)]" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[42%] bg-gradient-to-t from-[#111219] via-[#111219]/72 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-[#111219]/20 to-transparent" />
 
-      <div className="relative z-10 w-[52%] pr-4">
+      <div className="relative z-10 w-[48%] px-10 pb-44 pt-12">
         <h4 className="line-clamp-2 text-3xl font-black leading-tight text-zinc-100">{props.title}</h4>
         <p className="mt-1.5 line-clamp-1 text-[13px] font-bold text-pink-500">{props.originName}</p>
         <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] font-bold text-zinc-300">
