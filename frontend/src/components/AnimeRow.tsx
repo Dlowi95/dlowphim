@@ -1,19 +1,19 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Play, Heart, Info, ChevronRight } from "lucide-react";
-import { cleanMovieName, cleanSlug, getImageUrl, getBestMovieImage, isValidMovieImage } from "@/utils/movieUtils";
+import { ChevronRight, Heart, Info, LoaderCircle, Play } from "lucide-react";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
+import MovieLanguageBadges from "@/components/MovieLanguageBadges";
+import MovieQualityBadge from "@/components/MovieQualityBadge";
 import { useAuth } from "@/context/AuthContext";
-import Cookies from "js-cookie";
-import Image from "next/image";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
+import { cleanMovieName, cleanSlug, getBestMovieImage, getImageUrl } from "@/utils/movieUtils";
 
 interface Movie {
-  _id: string;
+  _id?: string;
   name: string;
   slug: string;
   origin_name: string;
@@ -23,665 +23,836 @@ interface Movie {
   quality?: string;
   lang?: string;
   time?: string;
-  category?: any[];
+  category?: Array<{ name?: string; slug?: string }>;
 }
+
+interface AnimeFeature {
+  movie: Movie;
+  details: any | null;
+  imageUrl: string;
+}
+
+const FALLBACK_IMAGE =
+  "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=1200&q=80";
 
 const FALLBACK_ANIME: Movie[] = [
   {
-    _id: "anime-1",
-    name: "Vào Ma Giới Rồi Đấy! Iruma-kun (Phần 4)",
-    slug: "vao-ma-gioi-roi-day-iruma-kun-phan-4",
-    origin_name: "Welcome to Demon School! Iruma-kun (Season 4)",
-    poster_url: "vao-ma-gioi-roi-day-iruma-kun-phan-4-poster.jpg",
-    thumb_url: "vao-ma-gioi-roi-day-iruma-kun-phan-4-thumb.jpg",
-    year: 2026,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "25 phút/tập"
+    _id: "anime-fallback-1",
+    name: "Đứa Con Của Thời Tiết",
+    slug: "dua-con-cua-thoi-tiet",
+    origin_name: "Weathering with You",
+    year: 2019,
+    quality: "FHD",
+    lang: "Vietsub + Lồng tiếng",
+    time: "112 phút",
   },
   {
-    _id: "anime-2",
-    name: "Vô Thượng Thần Đế",
-    slug: "vo-thuong-than-de",
-    origin_name: "Supreme God Emperor",
-    poster_url: "vo-thuong-than-de-poster.jpg",
-    thumb_url: "vo-thuong-than-de-thumb.jpg",
-    year: 2020,
+    _id: "anime-fallback-2",
+    name: "Thám Tử Lừng Danh Conan",
+    slug: "tham-tu-lung-danh-conan",
+    origin_name: "Detective Conan",
+    year: 1996,
     quality: "HD",
     lang: "Vietsub",
-    time: "8 phút/tập"
+    time: "24 phút/tập",
   },
-  {
-    _id: "anime-3",
-    name: "Luyện Khí Mười Vạn Năm",
-    slug: "luyen-khi-muoi-van-nam",
-    origin_name: "One Hundred Thousand Years of Qi Refining",
-    poster_url: "luyen-khi-muoi-van-nam-poster.jpg",
-    thumb_url: "luyen-khi-muoi-van-nam-thumb.jpg",
-    year: 2023,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "7 phút/tập"
-  },
-  {
-    _id: "anime-4",
-    name: "Tiên Nghịch",
-    slug: "tien-nghich",
-    origin_name: "Renegade Immortal",
-    poster_url: "tien-nghich-poster.jpg",
-    thumb_url: "tien-nghich-thumb.jpg",
-    year: 2023,
-    quality: "HD",
-    lang: "Vietsub + Thuyết Minh",
-    time: "20phút/Tập"
-  },
-  {
-    _id: "anime-5",
-    name: "Người Trên Vạn Người (Phần 6)",
-    slug: "nguoi-tren-van-nguoi-phan-6",
-    origin_name: "Hitori No Shita - The Outcast (Season 6)",
-    poster_url: "nguoi-tren-van-nguoi-phan-6-poster.jpg",
-    thumb_url: "nguoi-tren-van-nguoi-phan-6-thumb.jpg",
-    year: 2026,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "? phút/tập"
-  },
-  {
-    _id: "anime-6",
-    name: "Trạch Thiên Ký",
-    slug: "trach-thien-ky-2026",
-    origin_name: "Fighter of the Destiny 3D",
-    poster_url: "trach-thien-ky-2026-poster.jpg",
-    thumb_url: "trach-thien-ky-2026-thumb.jpg",
-    year: 2026,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "26 phút/tập"
-  },
-  {
-    _id: "anime-7",
-    name: "Trái Đất Đóng Băng",
-    slug: "trai-dat-dong-bang",
-    origin_name: "SNOWBALL EARTH",
-    poster_url: "trai-dat-dong-bang-poster.jpg",
-    thumb_url: "trai-dat-dong-bang-thumb.jpg",
-    year: 2026,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "23 phút/tập"
-  },
-  {
-    _id: "anime-8",
-    name: "Dáng Say Tựa Đoá Bách Hợp",
-    slug: "dang-say-tua-doa-bach-hop",
-    origin_name: "Botan Kamiina Fully Blossoms When Drunk",
-    poster_url: "dang-say-tua-doa-bach-hop-poster.jpg",
-    thumb_url: "dang-say-tua-doa-bach-hop-thumb.jpg",
-    year: 2026,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "24 phút/tập"
-  },
-  {
-    _id: "anime-9",
-    name: "Lúc Đó Tôi Đã Chuyển Sinh Thành Slime (Phần 4)",
-    slug: "luc-do-toi-da-chuyen-sinh-thanh-slime-phan-4",
-    origin_name: "That Time I Got Reincarnated as a Slime (Season 4)",
-    poster_url: "luc-do-toi-da-chuyen-sinh-thanh-slime-phan-4-poster.jpg",
-    thumb_url: "luc-do-toi-da-chuyen-sinh-thanh-slime-phan-4-thumb.jpg",
-    year: 2026,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "24 phút/tập"
-  },
-  {
-    _id: "anime-10",
-    name: "Tôi là Frankelda",
-    slug: "toi-la-frankelda",
-    origin_name: "I Am Frankelda",
-    poster_url: "toi-la-frankelda-poster.jpg",
-    thumb_url: "toi-la-frankelda-thumb.jpg",
-    year: 2025,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "104 Phút"
-  },
-  {
-    _id: "anime-11",
-    name: "Linh Vũ Đại Lục",
-    slug: "linh-vu-dai-luc",
-    origin_name: "Legend of Lingwu Continent",
-    poster_url: "linh-vu-dai-luc-poster.jpg",
-    thumb_url: "linh-vu-dai-luc-thumb.jpg",
-    year: 2024,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "15 phút/tập"
-  },
-  {
-    _id: "anime-12",
-    name: "Lại Bị Giết Nữa À, Thưa Thám Tử?",
-    slug: "lai-co-an-mang-nua-roi-thua-tham-tu",
-    origin_name: "Killed Again, Mr. Detective.",
-    poster_url: "lai-co-an-mang-nua-roi-thua-tham-tu-poster.jpg",
-    thumb_url: "lai-co-an-mang-nua-roi-thua-tham-tu-thumb.jpg",
-    year: 2026,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "24 phút/tập"
-  },
-  {
-    _id: "anime-13",
-    name: "Bức Tường Băng",
-    slug: "buc-tuong-bang",
-    origin_name: "The Ramparts of Ice",
-    poster_url: "buc-tuong-bang-poster.jpg",
-    thumb_url: "buc-tuong-bang-thumb.jpg",
-    year: 2026,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "24 phút/tập"
-  },
-  {
-    _id: "anime-14",
-    name: "Tiên Sĩ Đá: Hồi Sinh Thế Giới (Phần 4)",
-    slug: "tien-si-da-hoi-sinh-the-gioi-phan-4",
-    origin_name: "Dr. STONE (Season 4)",
-    poster_url: "tien-si-da-hoi-sinh-the-gioi-phan-4-poster.jpg",
-    thumb_url: "tien-si-da-hoi-sinh-the-gioi-phan-4-thumb.jpg",
-    year: 2025,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "24 phút/tập"
-  },
-  {
-    _id: "anime-15",
-    name: "Rick và Morty (Phần 9)",
-    slug: "rick-va-morty-phan-9",
-    origin_name: "Rick and Morty (Season 9)",
-    poster_url: "rick-va-morty-phan-9-poster.jpg",
-    thumb_url: "rick-va-morty-phan-9-thumb.jpg",
-    year: 2026,
-    quality: "HD",
-    lang: "Vietsub",
-    time: "? phút/tập"
-  }
 ];
 
-const stripHtmlTags = (html?: string) => {
-  if (!html) return "";
-  return html.replace(/<[^>]*>/g, "");
+const stripHtmlTags = (html?: string) =>
+  (html || "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+
+const getAgeRating = (name: string, categories: Movie["category"] = []) => {
+  const slugs = categories?.map((category) => category.slug || "") || [];
+  if (slugs.some((slug) => ["kinh-di", "toi-pham", "18"].includes(slug))) return "T18";
+  if (slugs.some((slug) => ["hanh-dong", "hinh-su", "giat-gan", "tam-ly"].includes(slug))) return "T16";
+  if (slugs.some((slug) => ["vien-tuong", "phieu-luu", "co-trang", "than-thoai"].includes(slug))) return "T13";
+  return name.length % 2 === 0 ? "T13" : "P";
 };
 
-const getAgeRating = (name: string, categories: any[] = []) => {
-  const slugs = categories.map((c: any) => c.slug);
-  if (slugs.some(s => ["kinh-di", "toi-pham", "18"].includes(s))) return "T18";
-  if (slugs.some(s => ["hanh-dong", "hinh-su", "giat-gan", "tam-ly"].includes(s))) return "T16";
-  if (slugs.some(s => ["vien-tuong", "phieu-luu", "co-trang", "than-thoai"].includes(s))) return "T13";
-  if (name.length % 5 === 0) return "T18";
-  if (name.length % 3 === 0) return "T16";
-  if (name.length % 2 === 0) return "T13";
-  return "P";
-};
-
-export default function AnimeRow() {
-  const [movies, setMovies] = useState<Movie[]>([]);
-  const [activeMovie, setActiveMovie] = useState<Movie | null>(null);
-  const [details, setDetails] = useState<any | null>(null);
-
-  // Details cache to prevent delay on repeated clicks
-  const [detailsCache, setDetailsCache] = useState<Record<string, any>>({});
-
-  // Transition state to handle smooth fade-out and fade-in
-  const [isTransitioning, setIsTransitioning] = useState(false);
-
-  const [loadingList, setLoadingList] = useState(true);
-  const [loadingDetails, setLoadingDetails] = useState(false);
-
-  const router = useRouter();
-  const { user, toggleFavorite: toggleFavoriteCtx } = useAuth();
-
-  const isFavorite = user?.favorites?.includes(activeMovie?.slug || "") || false;
-
-  // Drag-to-scroll state refs for thumbnails row
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const isDraggingRef = useRef(false);
-  const wasDraggingRef = useRef(false);
-  const startXRef = useRef(0);
-  const scrollLeftRef = useRef(0);
-
-  // Fetch lists
-  useEffect(() => {
-    async function fetchAnime() {
-      try {
-        setLoadingList(true);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
-
-        const data = await fetchMovieDiscovery(
-          { kind: "list", slug: "hoat-hinh", page: 1, limit: 18 },
-          { signal: controller.signal, timeoutMs: 6000 },
-        );
-        clearTimeout(timeoutId);
-        if (data.status === true) {
-          const items = data.items || [];
-          if (items.length > 0) {
-            // Deduplicate base slug
-            const seen = new Set<string>();
-            const uniqueItems = items.filter((item: any) => {
-              const baseSlug = cleanSlug(item.slug);
-              if (seen.has(baseSlug)) return false;
-              seen.add(baseSlug);
-              return true;
-            });
-
-            const top15 = uniqueItems.slice(0, 15);
-            setMovies(top15);
-            if (top15.length > 0) {
-              setActiveMovie(top15[0]);
-            }
-          } else {
-            setMovies(FALLBACK_ANIME);
-            setActiveMovie(FALLBACK_ANIME[0]);
-          }
-        } else {
-          setMovies(FALLBACK_ANIME);
-          setActiveMovie(FALLBACK_ANIME[0]);
-        }
-      } catch (err) {
-        console.error("Lỗi lấy danh sách anime, chuyển sang dự phòng:", err);
-        setMovies(FALLBACK_ANIME);
-        setActiveMovie(FALLBACK_ANIME[0]);
-      } finally {
-        setLoadingList(false);
-      }
-    }
-
-    fetchAnime();
-  }, []);
-
-  // Fetch details when activeMovie changes
-  useEffect(() => {
-    if (!activeMovie) return;
-
-    if (detailsCache[activeMovie.slug]) {
-      setDetails(detailsCache[activeMovie.slug]);
+const preloadImage = (url: string) =>
+  new Promise<boolean>((resolve) => {
+    if (typeof window === "undefined" || !url) {
+      resolve(false);
       return;
     }
 
-    setDetails(null); // Clear details instantly to show skeleton loading block during network fetch
+    const image = new window.Image();
+    let settled = false;
+    const finish = (loaded: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(loaded);
+    };
 
-    const controller = new AbortController();
-    async function fetchActiveDetails() {
+    const timeout = window.setTimeout(() => finish(false), 5000);
+    image.onload = async () => {
+      window.clearTimeout(timeout);
       try {
-        setLoadingDetails(true);
-        const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${activeMovie!.slug}`), {
-          signal: controller.signal
-        });
-        const data = await res.json();
-        if (data.status === true || data.status === "success") {
-          const item = data.movie || data.data?.item || null;
-          if (item) {
-            // Cào thêm ảnh nét từ TMDB thông qua Backend Proxy Cache
-            const tmdbId = item.tmdb?.id;
-            const tmdbType = item.tmdb?.type || "tv";
-            if (tmdbId || item.name) {
-              try {
-                const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-                const proxyRes = await fetch(
-                  `${API_URL}/movies/logo/${activeMovie!.slug}?title=${encodeURIComponent(item.origin_name || item.name)}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`
-                );
-                if (proxyRes.ok) {
-                  const proxyData = await proxyRes.json();
-                  if (proxyData.posterUrl) {
-                    item.poster_url = proxyData.posterUrl;
-                  }
-                  if (proxyData.backdropUrl) {
-                    item.thumb_url = proxyData.backdropUrl;
-                  }
-                }
-              } catch (e) {
-                console.error("Lỗi cào TMDB ảnh cho AnimeRow qua proxy:", e);
-              }
-            }
-            setDetailsCache(prev => ({ ...prev, [activeMovie!.slug]: item }));
-            setDetails(item);
-          }
+        await image.decode?.();
+      } catch {}
+      finish(true);
+    };
+    image.onerror = () => {
+      window.clearTimeout(timeout);
+      finish(false);
+    };
+    image.src = url;
+  });
+
+export default function AnimeRow() {
+  const [movies, setMovies] = useState<Movie[]>([]);
+  const [feature, setFeature] = useState<AnimeFeature | null>(null);
+  const [preparedFeatures, setPreparedFeatures] = useState<Record<string, AnimeFeature>>({});
+  const [pendingSlug, setPendingSlug] = useState<string | null>(null);
+  const [loadingList, setLoadingList] = useState(true);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [mobileDragX, setMobileDragX] = useState(0);
+  const [isMobileDragging, setIsMobileDragging] = useState(false);
+
+  const featureCacheRef = useRef(new Map<string, AnimeFeature>());
+  const requestIdRef = useRef(0);
+  const featureRef = useRef<AnimeFeature | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const dragStateRef = useRef({ dragging: false, moved: false, startX: 0, scrollLeft: 0 });
+  const mobileSwipeRef = useRef({
+    tracking: false,
+    startX: 0,
+    startY: 0,
+    currentX: 0,
+    currentY: 0,
+  });
+
+  const router = useRouter();
+  const { user, toggleFavorite: toggleFavoriteCtx } = useAuth();
+  const activeMovie = feature?.movie || null;
+  const isFavorite = Boolean(activeMovie && user?.favorites?.includes(activeMovie.slug));
+
+  useEffect(() => {
+    featureRef.current = feature;
+  }, [feature]);
+
+  const loadFeature = useCallback(async (movie: Movie, signal?: AbortSignal) => {
+    const cached = featureCacheRef.current.get(movie.slug);
+    if (cached) return cached;
+
+    let details: any | null = null;
+    try {
+      const detailResponse = await fetch(
+        getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${movie.slug}`),
+        { signal },
+      );
+      if (detailResponse.ok) {
+        const payload = await detailResponse.json();
+        details = payload.movie || payload.data?.item || null;
+      }
+    } catch (error: any) {
+      if (error?.name === "AbortError") throw error;
+    }
+
+    const mergedMovie: Movie = { ...movie, ...(details || {}), slug: movie.slug };
+    let finalImage = getBestMovieImage(mergedMovie, "thumb") || getBestMovieImage(movie, "thumb");
+
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      const tmdbId = details?.tmdb?.id || "";
+      const tmdbType = details?.tmdb?.type || "tv";
+      const tmdbResponse = await fetch(
+        `${apiUrl}/movies/logo/${movie.slug}?title=${encodeURIComponent(
+          details?.origin_name || details?.name || movie.origin_name || movie.name,
+        )}&tmdbId=${tmdbId}&tmdbType=${tmdbType}`,
+        { signal },
+      );
+      if (tmdbResponse.ok) {
+        const tmdb = await tmdbResponse.json();
+        finalImage = tmdb.backdropUrl || tmdb.posterUrl || finalImage;
+        if (details) {
+          details = {
+            ...details,
+            poster_url: tmdb.posterUrl || details.poster_url,
+            thumb_url: tmdb.backdropUrl || details.thumb_url,
+          };
         }
-      } catch (err: any) {
-        if (err.name !== "AbortError") {
-          console.error("Lỗi tải chi tiết anime active:", err);
+      }
+    } catch (error: any) {
+      if (error?.name === "AbortError") throw error;
+    }
+
+    finalImage = getImageUrl(finalImage) || FALLBACK_IMAGE;
+    const imageLoaded = await preloadImage(finalImage);
+    if (!imageLoaded) {
+      const sourceFallback = getBestMovieImage(movie, "thumb");
+      finalImage = sourceFallback ? getImageUrl(sourceFallback) : FALLBACK_IMAGE;
+      await preloadImage(finalImage);
+    }
+
+    const nextFeature = { movie: mergedMovie, details, imageUrl: finalImage };
+    featureCacheRef.current.set(movie.slug, nextFeature);
+    setPreparedFeatures((current) =>
+      current[movie.slug] ? current : { ...current, [movie.slug]: nextFeature },
+    );
+    return nextFeature;
+  }, []);
+
+  const activateMovie = useCallback(
+    async (movie: Movie, options: { initial?: boolean; prefetchOnly?: boolean } = {}) => {
+      if (!options.prefetchOnly && movie.slug === featureRef.current?.movie.slug) return;
+
+      const requestId = options.prefetchOnly ? requestIdRef.current : ++requestIdRef.current;
+      const controller = new AbortController();
+      if (!options.prefetchOnly) setPendingSlug(movie.slug);
+
+      try {
+        const nextFeature = await loadFeature(movie, controller.signal);
+        if (options.prefetchOnly) return;
+        if (requestId !== requestIdRef.current) return;
+
+        if (!options.initial && featureRef.current) {
+          setIsTransitioning(true);
+          await new Promise((resolve) => window.setTimeout(resolve, 140));
+          if (requestId !== requestIdRef.current) return;
+        }
+
+        setFeature(nextFeature);
+        window.requestAnimationFrame(() =>
+          window.requestAnimationFrame(() => setIsTransitioning(false)),
+        );
+      } catch (error: any) {
+        if (error?.name !== "AbortError") {
+          console.error("Không thể chuẩn bị Anime nổi bật:", error);
         }
       } finally {
-        setLoadingDetails(false);
+        if (!options.prefetchOnly && requestId === requestIdRef.current) {
+          setPendingSlug(null);
+        }
+      }
+
+      return () => controller.abort();
+    },
+    [loadFeature],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function fetchAnime() {
+      setLoadingList(true);
+      try {
+        const data = await fetchMovieDiscovery(
+          { kind: "list", slug: "hoat-hinh", page: 1, limit: 18 },
+          { signal: controller.signal, timeoutMs: 6500 },
+        );
+
+        const sourceItems = data.status === true && data.items?.length ? data.items : FALLBACK_ANIME;
+        const seen = new Set<string>();
+        const uniqueItems = sourceItems
+          .filter((item: Movie) => {
+            const slug = cleanSlug(item.slug);
+            if (!slug || seen.has(slug)) return false;
+            seen.add(slug);
+            return true;
+          })
+          .slice(0, 15);
+
+        setMovies(uniqueItems);
+        if (uniqueItems[0]) await activateMovie(uniqueItems[0], { initial: true });
+
+        // Prepare the small mobile carousel ahead of interaction. Keep concurrency
+        // deliberately low so artwork never competes aggressively with the page hero.
+        const mobileCandidates = uniqueItems.slice(1, 6);
+        void (async () => {
+          for (let index = 0; index < mobileCandidates.length; index += 2) {
+            await Promise.all(
+              mobileCandidates
+                .slice(index, index + 2)
+                .map((candidate) => loadFeature(candidate, controller.signal).catch(() => null)),
+            );
+          }
+        })();
+      } catch (error: any) {
+        if (error?.name !== "AbortError") {
+          setMovies(FALLBACK_ANIME);
+          await activateMovie(FALLBACK_ANIME[0], { initial: true });
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoadingList(false);
       }
     }
 
-    fetchActiveDetails();
-
-    return () => {
-      controller.abort();
-    };
-  }, [activeMovie]);
-
-  const initialHeroUrl = getImageUrl(details?.thumb_url || activeMovie?.thumb_url || details?.poster_url || activeMovie?.poster_url);
-  const [heroImgSrc, setHeroImgSrc] = useState<string>(initialHeroUrl);
+    void fetchAnime();
+    return () => controller.abort();
+  }, [activateMovie, loadFeature]);
 
   useEffect(() => {
-    setHeroImgSrc(getImageUrl(details?.thumb_url || activeMovie?.thumb_url || details?.poster_url || activeMovie?.poster_url));
-  }, [activeMovie?.slug, details?.thumb_url, details?.poster_url]);
+    if (!feature || movies.length < 2) return;
+    const currentIndex = movies.findIndex((movie) => movie.slug === feature.movie.slug);
+    const neighbors = [movies[currentIndex + 1], movies[currentIndex + 2]].filter(Boolean);
 
-  const handleHeroImgError = () => {
-    if (!activeMovie) return;
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-    fetch(`${API_URL}/movies/logo/${activeMovie.slug}?title=${encodeURIComponent(activeMovie.origin_name || activeMovie.name)}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data && (data.backdropUrl || data.posterUrl)) {
-          setHeroImgSrc(data.backdropUrl || data.posterUrl);
-        } else {
-          setHeroImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+    const idleId = window.setTimeout(() => {
+      neighbors.forEach((movie) => {
+        if (!featureCacheRef.current.has(movie.slug)) {
+          void activateMovie(movie, { prefetchOnly: true });
         }
-      })
-      .catch(() => {
-        setHeroImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
       });
-  };
+    }, 450);
 
-  // Favorite toggle handler
-  const toggleFavorite = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!activeMovie) return;
-    await toggleFavoriteCtx(activeMovie.slug);
-  };
+    return () => window.clearTimeout(idleId);
+  }, [activateMovie, feature, movies]);
 
-  // Drag-to-scroll Handlers for thumbnails row
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handleMouseDown = (event: React.MouseEvent) => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    isDraggingRef.current = true;
-    wasDraggingRef.current = false;
-    setIsDragging(true);
-    startXRef.current = e.pageX - container.offsetLeft;
-    scrollLeftRef.current = container.scrollLeft;
+    dragStateRef.current = {
+      dragging: true,
+      moved: false,
+      startX: event.pageX - container.offsetLeft,
+      scrollLeft: container.scrollLeft,
+    };
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDraggingRef.current) return;
-    e.preventDefault();
+  const handleMouseMove = (event: React.MouseEvent) => {
     const container = scrollContainerRef.current;
-    if (!container) return;
-    const x = e.pageX - container.offsetLeft;
-    const walk = (x - startXRef.current) * 1.5; // scrolling speed
-    if (Math.abs(walk) > 5) {
-      wasDraggingRef.current = true;
+    const drag = dragStateRef.current;
+    if (!container || !drag.dragging) return;
+    event.preventDefault();
+    const walk = (event.pageX - container.offsetLeft - drag.startX) * 1.4;
+    if (Math.abs(walk) > 5) drag.moved = true;
+    container.scrollLeft = drag.scrollLeft - walk;
+  };
+
+  const endDrag = () => {
+    dragStateRef.current.dragging = false;
+    window.setTimeout(() => {
+      dragStateRef.current.moved = false;
+    }, 60);
+  };
+
+  const beginMobileSwipe = (
+    target: EventTarget | null,
+    clientX: number,
+    clientY: number,
+  ) => {
+    if ((target as HTMLElement | null)?.closest?.("button, a")) {
+      mobileSwipeRef.current.tracking = false;
+      return;
     }
-    container.scrollLeft = scrollLeftRef.current - walk;
+
+    mobileSwipeRef.current = {
+      tracking: true,
+      startX: clientX,
+      startY: clientY,
+      currentX: clientX,
+      currentY: clientY,
+    };
+    setMobileDragX(0);
+    setIsMobileDragging(true);
   };
 
-  const handleMouseUpOrLeave = () => {
-    isDraggingRef.current = false;
-    setIsDragging(false);
-    setTimeout(() => {
-      wasDraggingRef.current = false;
-    }, 50);
+  const resetMobileSwipe = () => {
+    mobileSwipeRef.current.tracking = false;
+    setMobileDragX(0);
+    setIsMobileDragging(false);
   };
 
-  const handleThumbnailClick = (movie: Movie) => {
-    if (wasDraggingRef.current) return;
-    if (movie.slug === activeMovie?.slug) return;
+  const trackMobileSwipe = (
+    clientX: number,
+    clientY: number,
+    viewportWidth: number,
+  ) => {
+    if (!mobileSwipeRef.current.tracking) return false;
 
-    setIsTransitioning(true);
-    setTimeout(() => {
-      setActiveMovie(movie);
-      setIsTransitioning(false);
-    }, 150); // 150ms fade-out, then swap and fade-in
-  };
+    mobileSwipeRef.current.currentX = clientX;
+    mobileSwipeRef.current.currentY = clientY;
 
-  if (loadingList) {
-    return (
-      <div className="container mx-auto px-4 mt-12 max-w-[1400px] select-none text-left">
-        <div className="h-6 w-56 bg-zinc-800 rounded animate-pulse mb-6" />
-        <div className="w-full h-[480px] bg-zinc-900 border border-zinc-800 rounded-3xl animate-pulse" />
-      </div>
+    const deltaX = clientX - mobileSwipeRef.current.startX;
+    const deltaY = clientY - mobileSwipeRef.current.startY;
+    if (Math.abs(deltaX) <= Math.abs(deltaY)) return false;
+
+    const mobileMovies = movies.slice(0, 6);
+    const currentIndex = mobileMovies.findIndex(
+      (item) => item.slug === featureRef.current?.movie.slug,
     );
-  }
+    const pullingPastEdge =
+      (currentIndex <= 0 && deltaX > 0) ||
+      (currentIndex >= mobileMovies.length - 1 && deltaX < 0);
+    const trackedDelta = pullingPastEdge ? deltaX * 0.22 : deltaX * 0.92;
 
-  if (movies.length === 0 || !activeMovie) return null;
+    setMobileDragX(
+      Math.max(-viewportWidth, Math.min(viewportWidth, trackedDelta)),
+    );
+    return true;
+  };
 
-  const cleanedName = cleanMovieName(activeMovie.name);
-  const cleanedOriginName = cleanMovieName(activeMovie.origin_name);
+  const finishMobileSwipe = (clientX: number, clientY: number) => {
+    const swipe = { ...mobileSwipeRef.current };
+    resetMobileSwipe();
+    const mobileMovies = movies.slice(0, 6);
+    if (!swipe.tracking || pendingSlug || mobileMovies.length < 2) return;
 
-  // Instantly use details from listing object if details is loading
-  const ageRating = getAgeRating(activeMovie.name, details?.category || activeMovie.category);
-  const durationText = activeMovie.time || details?.time || "24 phút/tập";
-  const movieYear = activeMovie.year || details?.year || 2026;
-  const movieQuality = activeMovie.quality || details?.quality || "HD";
-  const movieLang = activeMovie.lang || details?.lang || "Vietsub";
+    const deltaX = clientX - swipe.startX;
+    const deltaY = clientY - swipe.startY;
 
-  const movieDescription = stripHtmlTags(details?.content || "");
-  const genres = activeMovie.category?.map((c: any) => c.name).join(" • ") || details?.category?.map((c: any) => c.name).join(" • ") || "Hoạt hình";
-  const imdbScore = details?.imdb?.vote_average || ((cleanedName.length % 3) * 0.4 + 7.2).toFixed(1);
+    if (Math.abs(deltaX) < 32 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
+
+    const currentIndex = mobileMovies.findIndex(
+      (item) => item.slug === featureRef.current?.movie.slug,
+    );
+    const nextIndex =
+      deltaX < 0
+        ? Math.min(currentIndex + 1, mobileMovies.length - 1)
+        : Math.max(currentIndex - 1, 0);
+
+    if (nextIndex === currentIndex) return;
+
+    const nextMovie = mobileMovies[nextIndex];
+    if (!nextMovie) return;
+
+    const prepared = featureCacheRef.current.get(nextMovie.slug);
+    if (prepared) {
+      requestIdRef.current += 1;
+      setPendingSlug(null);
+      setIsTransitioning(false);
+      setFeature(prepared);
+      return;
+    }
+
+    void activateMovie(nextMovie);
+  };
+
+  const handleMobileTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    if (touch) beginMobileSwipe(event.target, touch.clientX, touch.clientY);
+  };
+
+  const handleMobileTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    if (!touch || !mobileSwipeRef.current.tracking) return;
+    const isHorizontalSwipe = trackMobileSwipe(
+      touch.clientX,
+      touch.clientY,
+      event.currentTarget.clientWidth || 360,
+    );
+    if (isHorizontalSwipe && event.cancelable) event.preventDefault();
+  };
+
+  const handleMobileTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    const touch = event.changedTouches[0];
+    finishMobileSwipe(
+      touch?.clientX ?? mobileSwipeRef.current.currentX,
+      touch?.clientY ?? mobileSwipeRef.current.currentY,
+    );
+  };
+
+  const handleMobileMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    beginMobileSwipe(event.target, event.clientX, event.clientY);
+  };
+
+  const handleMobileMouseUp = (event: React.MouseEvent<HTMLDivElement>) => {
+    finishMobileSwipe(event.clientX, event.clientY);
+  };
+
+  const handleMobileMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!mobileSwipeRef.current.tracking) return;
+    trackMobileSwipe(
+      event.clientX,
+      event.clientY,
+      event.currentTarget.clientWidth || 360,
+    );
+  };
+
+  if (loadingList || !feature) return <AnimeSkeleton />;
+  if (!movies.length) return null;
+
+  const movie = feature.movie;
+  const details = feature.details;
+  const title = cleanMovieName(movie.name);
+  const originName = cleanMovieName(movie.origin_name);
+  const categories = details?.category || movie.category || [];
+  const genreNames = categories
+    .map((category: { name?: string }) => category.name)
+    .filter(Boolean)
+    .slice(0, 4);
+  const description = stripHtmlTags(details?.content) || "Khám phá câu chuyện, nhân vật và thế giới hoạt hình đặc sắc trong bộ phim này.";
+  const imdbScore = details?.imdb?.vote_average || details?.tmdb?.vote_average || "7.5";
+  const year = details?.year || movie.year || "—";
+  const duration = details?.time || movie.time || "24 phút/tập";
+  const quality = details?.quality || movie.quality || "HD";
+  const language = details?.lang || movie.lang || "Vietsub";
+  const ageRating = getAgeRating(title, categories);
+
+  const toggleFavorite = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    await toggleFavoriteCtx(movie.slug);
+  };
+
+  const mobileMovies = movies.slice(0, 6);
+  const activeMobileIndex = Math.max(
+    0,
+    mobileMovies.findIndex((item) => item.slug === movie.slug),
+  );
+
+  const selectMobileMovie = (item: Movie) => {
+    const prepared = featureCacheRef.current.get(item.slug);
+    if (prepared) {
+      requestIdRef.current += 1;
+      setPendingSlug(null);
+      setIsTransitioning(false);
+      setFeature(prepared);
+      return;
+    }
+
+    void activateMovie(item);
+  };
 
   return (
-    <div className="container mx-auto px-4 mt-12 max-w-[1400px] select-none text-left">
-      {/* Tiêu đề & Nút Xem thêm */}
-      <div className="flex items-center gap-2 mb-6">
-        <h3 className="text-xl md:text-2xl font-black text-zinc-100 uppercase tracking-tight">
+    <section className="container mx-auto mt-10 max-w-[1400px] select-none px-4 text-left md:mt-12">
+      <div className="mb-5 flex items-center gap-2 md:mb-6">
+        <h3 className="text-[21px] font-black uppercase leading-tight tracking-tight text-zinc-100 md:text-2xl">
           Kho Tàng Anime Mới Nhất
         </h3>
+        <Link
+          href="/the-loai/hoat-hinh"
+          aria-label="Xem toàn bộ Anime"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900/60 transition-colors hover:border-pink-500 hover:text-pink-500"
+        >
+          <ChevronRight size={16} />
+        </Link>
+      </div>
 
-        <div className="relative group/tooltip">
-          <Link
-            href="/the-loai/hoat-hinh"
-            className="w-8 h-8 rounded-full border border-zinc-800 bg-zinc-900/60 hover:border-pink-500 hover:text-pink-500 flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer"
+      <div
+        className={`transition-[opacity,transform,filter] duration-300 ease-out ${
+          isTransitioning ? "scale-[0.992] opacity-30 blur-[1px]" : "scale-100 opacity-100 blur-0"
+        }`}
+      >
+        <div
+          onTouchStart={handleMobileTouchStart}
+          onTouchMove={handleMobileTouchMove}
+          onTouchEnd={handleMobileTouchEnd}
+          onTouchCancel={resetMobileSwipe}
+          onMouseDown={handleMobileMouseDown}
+          onMouseMove={handleMobileMouseMove}
+          onMouseUp={handleMobileMouseUp}
+          onMouseLeave={resetMobileSwipe}
+          onDragStart={(event) => event.preventDefault()}
+          style={{ touchAction: "pan-y", overscrollBehaviorX: "contain" }}
+          className="cursor-grab overflow-hidden rounded-[22px] border border-white/[0.07] bg-[#171925] shadow-[0_20px_60px_rgba(0,0,0,0.35)] active:cursor-grabbing md:hidden"
+        >
+          <div
+            className={`flex will-change-transform ${
+              isMobileDragging
+                ? "transition-none"
+                : "transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]"
+            }`}
+            style={{
+              transform: `translate3d(calc(${-activeMobileIndex * 100}% + ${mobileDragX}px), 0, 0)`,
+            }}
           >
-            <ChevronRight size={16} className="ml-0.5" />
-          </Link>
-          <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 px-2.5 py-1 bg-zinc-900 border border-zinc-800 text-zinc-100 text-[10px] font-bold rounded-lg opacity-0 pointer-events-none group-hover/tooltip:opacity-100 transition-opacity duration-200 z-30 shadow-xl whitespace-nowrap">
-            Xem thêm
+            {mobileMovies.map((item, index) => {
+              const prepared = preparedFeatures[item.slug];
+              return (
+                <div key={item._id || item.slug} className="w-full min-w-full">
+                  {prepared ? (
+                    <MobileAnimeFeatureCard
+                      feature={prepared}
+                      isActive={index === activeMobileIndex}
+                      isPending={pendingSlug === item.slug}
+                      isFavorite={Boolean(user?.favorites?.includes(item.slug))}
+                      onFavorite={async (event) => {
+                        event.stopPropagation();
+                        await toggleFavoriteCtx(item.slug);
+                      }}
+                      onWatch={() => router.push(`/watch/${item.slug}`)}
+                      onInfo={() => router.push(`/movie/${item.slug}`)}
+                    />
+                  ) : (
+                    <MobileAnimeSlideSkeleton />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <DesktopAnimeFeature
+          feature={feature}
+          title={title}
+          originName={originName}
+          imdbScore={imdbScore}
+          ageRating={ageRating}
+          year={year}
+          duration={duration}
+          quality={quality}
+          language={language}
+          genres={genreNames}
+          description={description}
+          isFavorite={isFavorite}
+          onFavorite={toggleFavorite}
+          onWatch={() => router.push(`/watch/${movie.slug}`)}
+          onInfo={() => router.push(`/movie/${movie.slug}`)}
+        />
+      </div>
+
+      <div className="mt-4 flex items-center justify-center gap-2 md:hidden" aria-label="Chọn Anime nổi bật">
+        {mobileMovies.map((item) => {
+          const active = item.slug === (pendingSlug || movie.slug);
+          const pending = item.slug === pendingSlug;
+          return (
+            <button
+              key={item._id || item.slug}
+              onClick={() => selectMobileMovie(item)}
+              aria-label={`Hiển thị ${cleanMovieName(item.name)}`}
+              aria-current={active ? "true" : undefined}
+              className={`h-2 rounded-full transition-all duration-300 ${
+                active
+                  ? pending
+                    ? "w-6 animate-pulse bg-pink-300"
+                    : "w-6 bg-pink-500"
+                  : "w-2 bg-zinc-600 hover:bg-zinc-400"
+              }`}
+            />
+          );
+        })}
+      </div>
+
+      <div className="relative z-10 mt-7 hidden border-t border-zinc-800/40 pt-6 md:block">
+        <div
+          ref={scrollContainerRef}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={endDrag}
+          onMouseLeave={endDrag}
+          className="no-scrollbar grid cursor-grab grid-cols-[repeat(15,minmax(0,1fr))] gap-2.5 overflow-x-visible"
+        >
+          {movies.map((item) => (
+            <AnimeThumbCard
+              key={item._id || item.slug}
+              movie={item}
+              isActive={item.slug === movie.slug}
+              isPending={item.slug === pendingSlug}
+              onClick={() => {
+                if (!dragStateRef.current.moved) void activateMovie(item);
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MobileAnimeFeatureCard(props: {
+  feature: AnimeFeature;
+  isActive: boolean;
+  isPending: boolean;
+  isFavorite: boolean;
+  onFavorite: (event: React.MouseEvent) => void;
+  onWatch: () => void;
+  onInfo: () => void;
+}) {
+  const movie = props.feature.movie;
+  const details = props.feature.details;
+  const title = cleanMovieName(movie.name);
+  const originName = cleanMovieName(movie.origin_name);
+  const categories = details?.category || movie.category || [];
+  const genres = categories
+    .map((category: { name?: string }) => category.name)
+    .filter(Boolean)
+    .slice(0, 4);
+  const description =
+    stripHtmlTags(details?.content) ||
+    "Khám phá câu chuyện, nhân vật và thế giới hoạt hình đặc sắc trong bộ phim này.";
+  const imdbScore = details?.imdb?.vote_average || details?.tmdb?.vote_average || "7.5";
+  const year = details?.year || movie.year || "—";
+  const duration = details?.time || movie.time || "24 phút/tập";
+  const quality = details?.quality || movie.quality || "HD";
+  const language = details?.lang || movie.lang || "Vietsub";
+  const ageRating = getAgeRating(title, categories);
+
+  return (
+    <article className="w-full overflow-hidden bg-[#171925]">
+      <div className="relative aspect-[16/10] overflow-hidden bg-zinc-900">
+        <img
+          src={props.feature.imageUrl}
+          alt={title}
+          draggable={false}
+          loading={props.isActive ? "eager" : "lazy"}
+          decoding="async"
+          fetchPriority={props.isActive ? "high" : "low"}
+          className="h-full w-full object-cover [transform:translateZ(0)]"
+          onError={(event) => {
+            event.currentTarget.src = FALLBACK_IMAGE;
+          }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#171925] via-transparent to-black/5" />
+        <HalftoneOverlay />
+        {props.isPending && (
+          <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-black/65 px-2.5 py-1 text-[10px] font-bold text-zinc-200 backdrop-blur-md">
+            <LoaderCircle size={12} className="animate-spin text-pink-400" />
+            Đang chuẩn bị
+          </div>
+        )}
+      </div>
+
+      <div className="relative z-10 -mt-6 min-w-0 px-4 pb-4">
+        <h4 className="block overflow-hidden text-ellipsis whitespace-nowrap text-[20px] font-black leading-tight text-white" title={title}>
+          {title}
+        </h4>
+        <p className="mt-1 block overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold text-pink-400" title={originName}>
+          {originName}
+        </p>
+
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-zinc-300">
+          <span className="rounded-md border border-amber-400/70 bg-amber-400/10 px-1.5 py-0.5 text-amber-300">
+            IMDb {imdbScore}
+          </span>
+          <span className="rounded-md border border-white/15 bg-white/5 px-1.5 py-0.5">{ageRating}</span>
+          <span className="rounded-md border border-white/15 bg-white/5 px-1.5 py-0.5">{year}</span>
+          <span className="rounded-md border border-white/15 bg-white/5 px-1.5 py-0.5">{duration}</span>
+          <MovieQualityBadge quality={quality} className="ml-0.5" />
+        </div>
+
+        <MovieLanguageBadges lang={language} className="mt-2 flex flex-wrap gap-1" />
+
+        {!!genres.length && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {genres.map((genre: string) => (
+              <span key={genre} className="rounded-md bg-white/[0.07] px-2 py-1 text-[10px] font-semibold text-zinc-300">
+                {genre}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <p className="mt-3 line-clamp-3 text-[12px] font-medium leading-5 text-zinc-400">
+          {description}
+        </p>
+
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <button
+            onClick={props.onWatch}
+            className="flex h-9 items-center justify-center gap-1.5 rounded-lg bg-pink-500 px-4 text-[11px] font-black text-white shadow-[0_8px_22px_rgba(236,72,153,0.25)] active:scale-[0.98]"
+          >
+            <Play size={13} className="fill-current" /> Xem phim
+          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={props.onFavorite} aria-label="Yêu thích" className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.05] text-zinc-300">
+              <Heart size={15} className={props.isFavorite ? "fill-pink-500 text-pink-500" : ""} />
+            </button>
+            <button onClick={props.onInfo} aria-label="Thông tin phim" className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.05] text-zinc-300">
+              <Info size={15} />
+            </button>
           </div>
         </div>
       </div>
+    </article>
+  );
+}
 
-      {/* Main Unified Box */}
-      <div className="relative w-full rounded-3xl border border-zinc-800/40 bg-[#111219] overflow-hidden flex flex-col p-6 md:p-10 shadow-2xl">
-
-        {/* Top Section: Active Movie Banner Details with Transition opacity & blur */}
-        <div className={`relative w-full min-h-[320px] md:min-h-[380px] flex items-center mb-8 md:mb-10 z-10 transition-all duration-300 ease-in-out ${isTransitioning ? "opacity-0 scale-[0.98] blur-[2px]" : "opacity-100 scale-100 blur-0"
-          }`}>
-
-          {/* Right-aligned Backdrop Image (No mask inside to avoid sub-pixel bleed) */}
-          <div className="absolute right-0 top-0 bottom-0 w-full md:w-[65%] h-full z-0 pointer-events-none select-none overflow-hidden rounded-r-3xl">
-            <img
-              src={heroImgSrc}
-              alt={cleanedName}
-              onError={handleHeroImgError}
-              className="w-full h-full object-cover"
-            />
-            {/* Halftone dot grid pattern overlay to make the image look crisp and textured */}
-            <HalftoneOverlay />
-          </div>
-
-          {/* Smooth mask on parent: starts at left-0 to cover any sub-pixel gap at the image left edge */}
-          <div className="absolute inset-y-0 left-0 w-full md:w-[72%] z-[1] pointer-events-none select-none bg-gradient-to-r from-[#111219] via-[#111219] via-55% to-transparent" />
-
-          {/* Bottom fade mask to blend with thumbnails */}
-          <div className="absolute inset-x-0 bottom-0 h-1/4 z-[2] pointer-events-none select-none bg-gradient-to-t from-[#111219] to-transparent" />
-
-          {/* Left-aligned Details Content */}
-          <div className="relative z-10 w-full md:w-[52%] flex flex-col text-left pr-4">
-            <h4 className="text-xl md:text-3xl font-black text-zinc-100 tracking-tight leading-tight line-clamp-2">
-              {cleanedName}
-            </h4>
-            <p className="text-[11px] md:text-[13px] text-pink-500 font-bold mt-1.5 line-clamp-1">
-              {cleanedOriginName}
-            </p>
-
-            {/* Metadata Badges */}
-            <div className="flex flex-wrap items-center gap-2.5 mt-3.5 text-[10px] md:text-xs text-zinc-400 font-bold">
-              <span className="border border-amber-500/50 bg-amber-500/10 text-amber-500 text-[10px] font-black px-1.5 py-0.5 rounded shadow-sm">
-                IMDb {imdbScore}
-              </span>
-              <span className="border border-zinc-700 bg-zinc-800/40 text-zinc-300 text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm">
-                {ageRating}
-              </span>
-              <span>•</span>
-              <span className="text-zinc-350">{movieYear}</span>
-              <span>•</span>
-              <span className="text-zinc-350">{durationText}</span>
-              <span>•</span>
-              <span className="text-pink-400 uppercase tracking-wider">{movieQuality}</span>
-              <span>•</span>
-              <span className="text-zinc-350">{movieLang}</span>
-            </div>
-
-            {/* Genre list below metadata */}
-            <div className="text-[10px] md:text-[11px] text-zinc-500 font-bold mt-2.5 uppercase tracking-wide">
-              {genres}
-            </div>
-
-            {/* Description Paragraph with loading skeleton state */}
-            {loadingDetails && !details ? (
-              <div className="space-y-2.5 mt-4 max-w-[92%] animate-pulse">
-                <div className="h-4 bg-zinc-800/60 rounded w-full"></div>
-                <div className="h-4 bg-zinc-800/60 rounded w-[90%]"></div>
-                <div className="h-4 bg-zinc-800/60 rounded w-[75%]"></div>
-              </div>
-            ) : (
-              <p className="text-xs md:text-sm text-zinc-400 leading-relaxed mt-4 line-clamp-3 md:line-clamp-4 font-medium max-w-[92%]">
-                {movieDescription || "Không có mô tả chi tiết cho phim này."}
-              </p>
-            )}
-
-            {/* Action Buttons */}
-            <div className="flex items-center gap-4 mt-6">
-              {/* Pink Play Button */}
-              <button
-                onClick={() => router.push(`/watch/${activeMovie.slug}`)}
-                className="bg-pink-500 hover:bg-pink-600 text-white rounded-full w-12 h-12 md:w-14 md:h-14 flex items-center justify-center transition-all duration-300 shadow-[0_4px_20px_rgba(236,72,153,0.45)] hover:scale-105 active:scale-95 cursor-pointer shrink-0"
-              >
-                <Play size={20} className="fill-white ml-0.5" />
-              </button>
-
-              {/* Heart Button */}
-              <button
-                onClick={toggleFavorite}
-                className={`w-10 h-10 md:w-12 md:h-12 rounded-full border flex items-center justify-center transition-all duration-300 cursor-pointer ${isFavorite
-                    ? "border-pink-500/40 bg-pink-500/10 text-pink-500 hover:bg-pink-500/20"
-                    : "border-zinc-800/60 bg-zinc-900/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
-                  }`}
-              >
-                <Heart size={16} className={isFavorite ? "fill-pink-500" : ""} />
-              </button>
-
-              {/* Info Button */}
-              <button
-                onClick={() => router.push(`/movie/${activeMovie.slug}`)}
-                className="w-10 h-10 md:w-12 md:h-12 rounded-full border border-zinc-800/60 bg-zinc-900/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200 flex items-center justify-center transition-all duration-300 cursor-pointer"
-              >
-                <Info size={16} />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom Section: Scrollable strip of 15 thumbnails (Grid on desktop to fit all 15) */}
-        <div className="relative w-full z-10 border-t border-zinc-800/40 pt-6">
-          <div
-            ref={scrollContainerRef}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUpOrLeave}
-            onMouseLeave={handleMouseUpOrLeave}
-            className={`flex overflow-x-auto md:overflow-x-visible no-scrollbar w-full gap-4 md:gap-2.5 select-none pb-2 md:pb-0 md:grid md:grid-cols-[repeat(15,minmax(0,1fr))] md:w-full ${isDragging ? "cursor-grabbing" : "cursor-grab"
-              }`}
-            style={{
-              msOverflowStyle: "none",
-              scrollbarWidth: "none"
-            }}
-          >
-            {movies.map((movie) => (
-              <AnimeThumbCard
-                key={movie._id || movie.slug}
-                movie={movie}
-                isActive={movie.slug === activeMovie.slug}
-                onClick={() => handleThumbnailClick(movie)}
-              />
-            ))}
-          </div>
-        </div>
-
+function MobileAnimeSlideSkeleton() {
+  return (
+    <div className="w-full bg-[#171925]">
+      <div className="aspect-[16/10] animate-pulse bg-zinc-900" />
+      <div className="space-y-3 px-4 pb-4 pt-3">
+        <div className="h-6 w-3/4 animate-pulse rounded bg-zinc-800" />
+        <div className="h-4 w-1/2 animate-pulse rounded bg-zinc-800" />
+        <div className="h-16 w-full animate-pulse rounded bg-zinc-800/70" />
       </div>
     </div>
   );
 }
 
-function AnimeThumbCard({
-  movie,
-  isActive,
-  onClick
-}: {
-  movie: Movie;
-  isActive: boolean;
-  onClick: () => void;
+function DesktopAnimeFeature(props: {
+  feature: AnimeFeature;
+  title: string;
+  originName: string;
+  imdbScore: string | number;
+  ageRating: string;
+  year: string | number;
+  duration: string;
+  quality: string;
+  language: string;
+  genres: string[];
+  description: string;
+  isFavorite: boolean;
+  onFavorite: (event: React.MouseEvent) => void;
+  onWatch: () => void;
+  onInfo: () => void;
 }) {
-  const title = cleanMovieName(movie.name);
-  const initialUrl = getBestMovieImage(movie, 'poster');
-  const [imgSrc, setImgSrc] = useState<string>(initialUrl);
+  return (
+    <div className="relative hidden min-h-[390px] overflow-hidden rounded-3xl border border-zinc-800/40 bg-[#111219] p-10 shadow-2xl md:flex md:items-center">
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-[67%] overflow-hidden">
+        <img src={props.feature.imageUrl} alt={props.title} className="h-full w-full object-cover" />
+        <HalftoneOverlay />
+      </div>
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-[76%] bg-gradient-to-r from-[#111219] via-[#111219] via-55% to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#111219] to-transparent" />
+
+      <div className="relative z-10 w-[52%] pr-4">
+        <h4 className="line-clamp-2 text-3xl font-black leading-tight text-zinc-100">{props.title}</h4>
+        <p className="mt-1.5 line-clamp-1 text-[13px] font-bold text-pink-500">{props.originName}</p>
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] font-bold text-zinc-300">
+          <span className="rounded border border-amber-500/50 bg-amber-500/10 px-1.5 py-0.5 text-amber-400">IMDb {props.imdbScore}</span>
+          <span className="rounded border border-zinc-700 bg-zinc-800/60 px-1.5 py-0.5">{props.ageRating}</span>
+          <span>{props.year}</span><span>•</span><span>{props.duration}</span>
+          <MovieQualityBadge quality={props.quality} />
+        </div>
+        <MovieLanguageBadges lang={props.language} className="mt-2 flex gap-1" />
+        {!!props.genres.length && <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-zinc-500">{props.genres.join(" • ")}</p>}
+        <p className="mt-4 line-clamp-4 max-w-[92%] text-sm font-medium leading-relaxed text-zinc-400">{props.description}</p>
+        <div className="mt-6 flex items-center gap-4">
+          <button onClick={props.onWatch} className="flex h-14 w-14 items-center justify-center rounded-full bg-pink-500 text-white shadow-[0_4px_20px_rgba(236,72,153,0.45)] transition-transform hover:scale-105">
+            <Play size={20} className="ml-0.5 fill-current" />
+          </button>
+          <button onClick={props.onFavorite} className="flex h-12 w-12 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900/50 text-zinc-300">
+            <Heart size={17} className={props.isFavorite ? "fill-pink-500 text-pink-500" : ""} />
+          </button>
+          <button onClick={props.onInfo} className="flex h-12 w-12 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900/50 text-zinc-300"><Info size={17} /></button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnimeThumbCard({ movie, isActive, isPending, onClick }: { movie: Movie; isActive: boolean; isPending: boolean; onClick: () => void }) {
+  const [imgSrc, setImgSrc] = useState(() => getBestMovieImage(movie, "poster"));
 
   useEffect(() => {
-    let isMounted = true;
-    const baseImg = getBestMovieImage(movie, 'poster');
-    setImgSrc(baseImg);
-
-    // Tự động cào ảnh Poster đứng nét căng chuẩn từ TMDB Proxy
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-    fetch(`${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (isMounted && data && data.posterUrl) {
-          setImgSrc(data.posterUrl);
-        }
-      })
-      .catch(() => {});
-
-    return () => {
-      isMounted = false;
-    };
-  }, [movie.slug, movie.origin_name, movie.name, movie.thumb_url, movie.poster_url]);
-
-  const handleImgError = () => {
-    if (movie.poster_url && movie.thumb_url && movie.poster_url !== movie.thumb_url) {
-      setImgSrc(getImageUrl(movie.poster_url));
-    } else {
-      setImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
-    }
-  };
+    setImgSrc(getBestMovieImage(movie, "poster"));
+  }, [movie]);
 
   return (
-    <div
+    <button
       onClick={onClick}
-      className={`w-[70px] shrink-0 md:w-auto md:shrink aspect-[2/3] rounded-xl overflow-hidden cursor-pointer transition-all duration-300 relative select-none ${isActive
-          ? "border-2 border-pink-500 scale-105 shadow-[0_0_15px_rgba(236,72,153,0.5)]"
-          : "border border-zinc-800/60 hover:border-pink-500/50"
-        }`}
-      style={{
-        WebkitMaskImage: "-webkit-radial-gradient(white, black)",
-        maskImage: "radial-gradient(white, black)"
-      }}
+      aria-label={`Hiển thị ${cleanMovieName(movie.name)}`}
+      className={`relative aspect-[2/3] w-auto overflow-hidden rounded-xl border transition-all duration-300 ${
+        isActive
+          ? "scale-105 border-2 border-pink-500 shadow-[0_0_15px_rgba(236,72,153,0.5)]"
+          : "border-zinc-800/60 hover:border-pink-500/50"
+      } ${isPending ? "animate-pulse" : ""}`}
     >
       <img
         src={imgSrc}
-        alt={title}
-        onError={handleImgError}
+        alt={cleanMovieName(movie.name)}
         loading="lazy"
         decoding="async"
-        className="w-full h-full object-cover object-[center_top]"
+        className="h-full w-full object-cover object-top"
+        onError={() => setImgSrc(movie.poster_url ? getImageUrl(movie.poster_url) : FALLBACK_IMAGE)}
       />
-      <div className="absolute inset-0 bg-black/10 hover:bg-black/0 transition-colors" />
-    </div>
+    </button>
+  );
+}
+
+function AnimeSkeleton() {
+  return (
+    <section className="container mx-auto mt-10 max-w-[1400px] select-none px-4 md:mt-12">
+      <div className="mb-5 h-7 w-64 animate-pulse rounded-lg bg-zinc-800" />
+      <div className="overflow-hidden rounded-[22px] border border-white/[0.06] bg-[#171925] md:rounded-3xl">
+        <div className="aspect-[16/10] animate-pulse bg-zinc-900 md:h-[390px] md:aspect-auto" />
+        <div className="space-y-3 p-4 md:hidden">
+          <div className="h-6 w-3/4 animate-pulse rounded bg-zinc-800" />
+          <div className="h-4 w-1/2 animate-pulse rounded bg-zinc-800" />
+          <div className="h-16 w-full animate-pulse rounded bg-zinc-800/70" />
+        </div>
+      </div>
+    </section>
   );
 }
