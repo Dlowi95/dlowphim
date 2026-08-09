@@ -30,7 +30,7 @@ const movie = {
 };
 
 async function mockBackend(page: Page, authenticatedHistory: unknown[] = []) {
-  await page.route("http://localhost:5000/**", async (route) => {
+  await page.route(/https?:\/\/(?:localhost|127\.0\.0\.1):5000\/.*/, async (route) => {
     const url = new URL(route.request().url());
     let body: unknown = {};
     let status = 200;

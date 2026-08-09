@@ -2,6 +2,12 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
+  timeout: 45_000,
+  expect: {
+    // Next.js dev mode has to compile a route on its first visit. GitHub's
+    // shared runners regularly need longer than Playwright's 5s default.
+    timeout: process.env.CI ? 15_000 : 10_000,
+  },
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
