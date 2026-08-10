@@ -572,7 +572,7 @@ export default function AnimeRow() {
           </div>
         </div>
 
-        <div className="relative hidden min-h-[560px] w-full overflow-hidden rounded-3xl border border-zinc-800/40 bg-[#111219] shadow-2xl md:block">
+        <div className="relative hidden w-full overflow-hidden rounded-3xl border border-zinc-800/40 bg-[#111219] p-8 shadow-2xl md:flex md:flex-col lg:p-10">
           <DesktopAnimeFeature
             feature={feature}
             title={title}
@@ -591,14 +591,14 @@ export default function AnimeRow() {
             onInfo={() => router.push(`/movie/${movie.slug}`)}
           />
 
-          <div className="absolute bottom-7 left-[11%] right-[8%] z-20">
+          <div className="relative z-20 w-full border-t border-zinc-800/40 pt-6">
             <div
               ref={scrollContainerRef}
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={endDrag}
               onMouseLeave={endDrag}
-              className="no-scrollbar grid cursor-grab grid-cols-[repeat(15,minmax(0,1fr))] gap-2.5 overflow-visible"
+              className="no-scrollbar grid w-full cursor-grab grid-cols-[repeat(15,minmax(0,1fr))] gap-2.5 overflow-visible pb-1"
             >
               {movies.map((item) => (
                 <AnimeThumbCard
@@ -781,16 +781,15 @@ function DesktopAnimeFeature(props: {
   onInfo: () => void;
 }) {
   return (
-    <div className="relative flex min-h-[560px] items-start overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+    <div className="relative z-10 mb-8 flex min-h-[380px] w-full items-center overflow-hidden lg:mb-10">
+      <div className="pointer-events-none absolute inset-y-0 right-0 z-0 h-full w-[65%] overflow-hidden rounded-r-3xl">
         <img src={props.feature.imageUrl} alt={props.title} className="h-full w-full object-cover object-center" />
         <HalftoneOverlay />
       </div>
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,#111219_0%,rgba(17,18,25,0.98)_20%,rgba(17,18,25,0.84)_38%,rgba(17,18,25,0.28)_60%,transparent_80%)]" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[42%] bg-gradient-to-t from-[#111219] via-[#111219]/72 to-transparent" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-[#111219]/20 to-transparent" />
+      <div className="pointer-events-none absolute inset-y-0 left-0 z-[1] w-[72%] bg-gradient-to-r from-[#111219] via-[#111219] via-55% to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[2] h-1/4 bg-gradient-to-t from-[#111219] to-transparent" />
 
-      <div className="relative z-10 w-[48%] px-10 pb-44 pt-12">
+      <div className="relative z-10 flex w-[52%] flex-col pr-4">
         <h4 className="line-clamp-2 text-3xl font-black leading-tight text-zinc-100">{props.title}</h4>
         <p className="mt-1.5 line-clamp-1 text-[13px] font-bold text-pink-500">{props.originName}</p>
         <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] font-bold text-zinc-300">

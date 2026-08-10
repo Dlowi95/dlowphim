@@ -217,7 +217,7 @@ export default function CinemaRow() {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUpOrLeave}
         onMouseLeave={handleMouseUpOrLeave}
-        className={`no-scrollbar flex w-full snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto pb-6 select-none sm:gap-6 sm:pb-8 ${
+        className={`no-scrollbar flex w-full snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto pb-6 select-none sm:gap-6 sm:pb-8 md:snap-none md:scroll-px-0 ${
           isDragging ? "cursor-grabbing" : "cursor-grab"
         }`}
         style={{

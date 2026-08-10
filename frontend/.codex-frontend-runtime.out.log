@@ -1,0 +1,27 @@
+
+> frontend@0.1.0 dev
+> next dev
+
+  ▲ Next.js 14.2.15
+  - Local:        http://localhost:3000
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 2.4s
+ ○ Compiling / ...
+ ✓ Compiled / in 40.9s (4971 modules)
+ GET / 200 in 4689ms
+ ✓ Compiled in 1988ms (2479 modules)
+ GET / 200 in 537ms
+ GET / 200 in 462ms
+ GET / 200 in 334ms
+ GET / 200 in 90ms
+ GET / 200 in 518ms
+ ○ Compiling /movie/[slug] ...
+ ✓ Compiled /movie/[slug] in 7.6s (5021 modules)
+ GET /movie/hawkeye-than-tien-mat-dieu-hau 200 in 2576ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 10.8s (5010 modules)
+ GET /.well-known/appspecific/com.chrome.devtools.json 404 in 51ms
+ GET / 200 in 1137ms
+ GET /.well-known/appspecific/com.chrome.devtools.json 404 in 151ms

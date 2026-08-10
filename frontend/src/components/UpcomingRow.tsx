@@ -199,7 +199,7 @@ export default function UpcomingRow() {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUpOrLeave}
         onMouseLeave={handleMouseUpOrLeave}
-        className={`no-scrollbar flex w-full snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto pb-4 select-none sm:gap-6 sm:pb-6 ${
+        className={`no-scrollbar flex w-full snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto pb-4 select-none sm:gap-6 sm:pb-6 md:snap-none md:scroll-px-0 ${
           isDragging ? "cursor-grabbing" : "cursor-grab"
         }`}
         style={{
