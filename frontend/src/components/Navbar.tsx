@@ -11,6 +11,7 @@ import { cleanMovieName, cleanSlug, getImageUrl } from "@/utils/movieUtils";
 import { searchMovies } from "@/utils/movieSearch";
 import { searchPeople, type PersonResult } from "@/utils/people";
 import { COUNTRIES, GENRES } from "@/constants/discovery";
+import MobileNavigation from "./MobileNavigation";
 
 export default function NavbarComponent() {
   const pathname = usePathname();
@@ -178,6 +179,13 @@ export default function NavbarComponent() {
 
   return (
     <>
+      <MobileNavigation
+        isAuthenticated={Boolean(user)}
+        isAuthLoading={loading}
+        unreadNotificationsCount={unreadNotificationsCount}
+        onOpenAuth={onOpen}
+      />
+      <div className="hidden md:block">
       <Navbar
         isBlurred={false}
         classNames={{
@@ -679,6 +687,7 @@ export default function NavbarComponent() {
           </NavbarItem>
         </NavbarContent>
       </Navbar>
+      </div>
       <AuthModal isOpen={isOpen} onOpenChange={onOpenChange} />
     </>
   );

@@ -7,6 +7,7 @@ import NavbarComponent from "@/components/Navbar";
 import FooterComponent from "@/components/Footer";
 import { ShieldAlert, Loader2 } from "lucide-react";
 import { normalizeAdminRole } from "@/utils/adminPermissions";
+import { shouldHideMobileNavigation } from "@/utils/mobileNavigation";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading } = useAuth();
@@ -35,6 +36,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   const isAdminPath = pathname.startsWith("/sys-dlowadmin");
+  const showMobileNavigation =
+    !isAdminPath && !shouldHideMobileNavigation(pathname);
 
   if (loading || authLoading) {
     return (
@@ -69,7 +72,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   // Bình thường: Ẩn Navbar và Footer client nếu là trang Admin
   return (
-    <div className="flex flex-col min-h-screen bg-black">
+    <div
+      className={`flex min-h-screen flex-col bg-black ${
+        showMobileNavigation
+          ? "pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-0"
+          : ""
+      }`}
+    >
       {!isAdminPath && <NavbarComponent />}
       <main className="flex-grow flex flex-col">{children}</main>
       {!isAdminPath && <FooterComponent />}
