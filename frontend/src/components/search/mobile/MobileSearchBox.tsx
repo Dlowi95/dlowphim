@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { cleanMovieName, cleanSlug, getImageUrl } from "@/utils/movieUtils";
 import { searchMovies } from "@/utils/movieSearch";
 import { searchPeople, type PersonResult } from "@/utils/people";
+import { LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
 
 type MobileSearchBoxProps = {
   initialQuery: string;
@@ -36,13 +37,16 @@ export default function MobileSearchBox({ initialQuery }: MobileSearchBoxProps) 
       return;
     }
 
+    setIsSearching(true);
+    setMovies([]);
+    setPeople([]);
+
     const controller = new AbortController();
     const debounce = window.setTimeout(async () => {
-      setIsSearching(true);
       try {
         const [movieResult, peopleResult] = await Promise.allSettled([
           searchMovies(normalizedQuery, 1, { signal: controller.signal, timeoutMs: 3500 }),
-          searchPeople(normalizedQuery, 1, controller.signal),
+          searchPeople(normalizedQuery, 1, { signal: controller.signal, timeoutMs: 3500 }),
         ]);
         if (controller.signal.aborted) return;
 
@@ -108,7 +112,7 @@ export default function MobileSearchBox({ initialQuery }: MobileSearchBoxProps) 
   const showSuggestions = isOpen && Boolean(query.trim());
 
   return (
-    <div ref={containerRef} className="relative z-40 mb-6 md:hidden">
+    <div ref={containerRef} data-mobile-search-box="true" className="relative z-40 mb-6 md:hidden">
       <form
         role="search"
         onSubmit={(event) => {
@@ -158,7 +162,7 @@ export default function MobileSearchBox({ initialQuery }: MobileSearchBoxProps) 
       </form>
 
       {showSuggestions && (
-        <section className="absolute inset-x-0 top-full z-50 mt-2 max-h-[min(64dvh,34rem)] overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-[#0b0b0f] shadow-[0_24px_70px_rgba(0,0,0,0.8)]">
+        <section aria-busy={isSearching} aria-label="Gợi ý tìm kiếm" className="absolute inset-x-0 top-full z-50 mt-2 max-h-[min(64dvh,34rem)] overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-[#0b0b0f] shadow-[0_24px_70px_rgba(0,0,0,0.8)]">
           <div className="p-3.5 pb-2">
             <p className="mb-2 px-1 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-500">Danh sách phim</p>
             {!isSearching && movies.length === 0 ? (
@@ -177,6 +181,10 @@ export default function MobileSearchBox({ initialQuery }: MobileSearchBoxProps) 
                       alt=""
                       className="h-14 w-10 shrink-0 rounded-md border border-zinc-800 bg-zinc-900 object-cover"
                       loading="lazy"
+                      decoding="async"
+                      onError={(event) => {
+                        if (!event.currentTarget.src.endsWith(LOCAL_MOVIE_IMAGE_FALLBACK)) event.currentTarget.src = LOCAL_MOVIE_IMAGE_FALLBACK;
+                      }}
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-bold text-zinc-100">{cleanMovieName(movie.name)}</span>
@@ -197,11 +205,10 @@ export default function MobileSearchBox({ initialQuery }: MobileSearchBoxProps) 
               <div className="space-y-1">
                 {people.map((person) => (
                   <button key={person.id} type="button" onClick={() => selectPerson(person.id)} className="flex min-h-14 w-full items-center gap-3 rounded-xl p-2 text-left active:bg-white/[0.06]">
-                    {person.profileUrl ? (
-                      <img src={person.profileUrl} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" loading="lazy" />
-                    ) : (
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900 text-zinc-500"><UserRound size={18} /></span>
-                    )}
+                    <span className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-zinc-800 bg-zinc-900 text-zinc-500">
+                      <UserRound size={18} />
+                      {person.profileUrl && <img src={person.profileUrl} alt="" className="absolute inset-0 h-full w-full object-cover" loading="lazy" decoding="async" onError={(event) => { event.currentTarget.hidden = true; }} />}
+                    </span>
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-bold text-zinc-200">{person.name}</span>
                       <span className="mt-0.5 block truncate text-[11px] text-zinc-500">{person.knownFor.join(" • ") || "Xem phim đã tham gia"}</span>

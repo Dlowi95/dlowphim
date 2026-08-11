@@ -130,13 +130,16 @@ export default function NavbarComponent() {
       return;
     }
 
+    setIsSearching(true);
+    setSuggestions([]);
+    setPersonSuggestions([]);
+
     const controller = new AbortController();
     const delayDebounce = setTimeout(async () => {
-      setIsSearching(true);
       try {
         const [movieResult, peopleResult] = await Promise.allSettled([
           searchMovies(searchQuery.trim(), 1, { signal: controller.signal, timeoutMs: 3500 }),
-          searchPeople(searchQuery.trim(), 1, controller.signal),
+          searchPeople(searchQuery.trim(), 1, { signal: controller.signal, timeoutMs: 3500 }),
         ]);
         const items = movieResult.status === "fulfilled" ? movieResult.value.items : [];
         const seen = new Set<string>();

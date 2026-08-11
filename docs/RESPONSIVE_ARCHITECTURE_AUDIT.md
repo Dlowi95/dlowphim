@@ -6,8 +6,8 @@ Tài liệu này lưu **trạng thái đã kiểm chứng** của từng route. 
 
 | Khu vực | Owner dữ liệu | Mobile độc lập | Desktop độc lập | Nguy cơ gọi trùng |
 | --- | --- | --- | --- | --- |
-| Trang chủ | `app/page.tsx` và các row dùng chung | Hero/Anime có nhánh mobile | Có nhánh desktop | Thấp về kiến trúc; runtime còn đang xác minh |
-| Tìm kiếm | `app/search/page.tsx` | `MobileSearchBox` | Navbar desktop | Thấp: page chỉ gọi request kết quả một lần |
+| Trang chủ | `app/page.tsx` và các row dùng chung | Hero/Anime có nhánh mobile | Có nhánh desktop | Đã xác minh production; không có request trùng do responsive |
+| Tìm kiếm | `app/search/page.tsx` | `MobileSearchBox` tải động và chỉ mount dưới `768px` | Navbar desktop | Đã xác minh production; page chỉ gọi danh sách một lần, gợi ý có cache/in-flight |
 | Lịch chiếu | Page lịch chiếu | Bố cục responsive cùng dữ liệu | Bố cục responsive cùng dữ liệu | Thấp: không có hai owner dữ liệu |
 | User | `app/user/layout.tsx` và từng page | `components/user/mobile/*` | Sidebar/form desktop | Thấp: view nhận chung auth/state |
 | Chuông thông báo | `Navbar.tsx` | `MobileNotificationBell` | `DesktopNotificationBell` | Thấp: request chỉ chạy khi popup được mở |
@@ -68,6 +68,36 @@ Việc còn lại không chặn trạng thái **Đạt** của trang chủ publi
 
 - [ ] Khi có phiên đăng nhập dùng để test, xác minh card “Xem tiếp”, xóa một mục và listener/navbar sau khi chuyển route. Đây là kiểm tra cho nhánh cá nhân hóa, không phải các danh mục public.
 
+### Tìm kiếm `/search`
+
+**Trạng thái: Đạt cho tìm kiếm public trên mobile và desktop.**
+
+Phạm vi đã tối ưu:
+
+- `app/search/page.tsx` là owner duy nhất tải danh sách kết quả. `MobileSearchBox` chỉ tải gợi ý sau khi người dùng chạm/gõ và được dynamic import, chỉ mount ở `360–767px`; từ `768px` trở lên chỉ còn ô tìm kiếm desktop trong Navbar.
+- Request phim dùng cache/in-flight của discovery. Request diễn viên có cache 2 phút, giới hạn 40 mục, khóa in-flight và timeout; đổi từ khóa/route có cleanup nên kết quả cũ không ghi đè kết quả mới.
+- Debounce không còn chớp trạng thái “không tìm thấy” trước khi request bắt đầu và không tiếp tục hiển thị gợi ý của từ khóa cũ.
+- Sau khi gợi ý đã tải, submit cùng từ khóa và focus lại dùng cache, không phát lại request phim/diễn viên.
+- Poster gợi ý có fallback nội bộ; ảnh diễn viên lỗi trở về icon thay vì để ảnh vỡ. Danh sách kết quả tiếp tục dùng khung ảnh cố định và fallback chuẩn của `MovieCard`.
+- Mobile dùng phân trang gọn `Trước – Trang x/y – Sau`, nên số trang lớn không thể đẩy rộng viewport. Desktop giữ nguyên phân trang và bố cục cũ.
+- Có timeout và nút thử lại cho lỗi tải danh sách; tiêu đề danh mục đúng theo `type`; từ khóa dài được ngắt dòng mà không tạo overflow.
+- Popup hover chỉ mount sau 800ms trên thiết bị có chuột fine pointer. Việc lướt chuột/cuộn qua card không còn chủ động mount preview ngay từ `mouseenter`; request preview bị hủy không tạo console error production.
+
+Bằng chứng runtime production ghi nhận ngày `2026-08-11`:
+
+| Nhóm | Kết quả | Bằng chứng |
+| --- | --- | --- |
+| Owner/DOM responsive | Đạt | `360`, `390`, `440`, `767px`: đúng 1 `MobileSearchBox`; `768`, `1024`, `1440`, `1920px`: `MobileSearchBox = 0`, chỉ còn ô Navbar desktop. Mỗi lượt có đúng 24 card cho từ khóa kiểm tra. |
+| API ban đầu | Đạt | Cả 8 breakpoint có `duplicateInitialRequests: []`. Không có hai view responsive cùng gọi danh sách. |
+| Gõ nhanh mobile | Đạt | Chuỗi `one piece` được nhập từng ký tự cách 40ms nhưng sau debounce chỉ có 1 request discovery phim và 1 request người; không gọi theo từng ký tự. |
+| Submit/cache | Đạt | Submit cùng từ khóa có `submitRequests: []`; focus lại có `refocusRequests: []`. Desktop tại `1440px` có cùng kết quả: 2 request gợi ý cần thiết và 0 request lại khi submit. |
+| Ảnh tải mới/reload | Đạt | Cả 8 breakpoint có `brokenImages: []` và `transparentImages: []` ở viewport trước và sau reload. Cuộn hết 24 card tại `390px` và `1440px` có 26/27 ảnh trong DOM, không ảnh vỡ hoặc ảnh đã tải còn opacity `0`. |
+| Overflow | Đạt | `scrollWidth === clientWidth` ở cả 8 breakpoint, khi dropdown đang mở, sau reload, với từ khóa 160 ký tự và ở trang 2. |
+| Phân trang/danh mục | Đạt | Mobile đổi sang `page=2` thành công; `/search`, `phim-chieu-rap`, `phim-sap-chieu` lần lượt hiện đúng tiêu đề và 24/24/12 card trong dữ liệu audit. |
+| Socket/listener | Đạt | Production Search không mở WebSocket. Listener ngoài của ô mobile không tồn tại từ `768px` vì component không mount; listener trong component có cleanup. |
+| Console/runtime | Đạt | Audit chính production ở cả 8 breakpoint có `errors: []` và `sockets: []`. |
+| Kiểm tra mã | Đạt | TypeScript thành công, 7/7 test frontend liên quan thành công và production build hoàn tất sau thay đổi cuối. |
+
 ### Các route còn lại
 
-Tìm kiếm, lịch chiếu, `user/*`, chuông thông báo và chi tiết phim hiện mới có kiểm kê kiến trúc ở bảng đầu tài liệu. Chưa route nào trong nhóm này được đánh dấu **Đạt** cho đến khi có nhật ký runtime theo sáu nhóm bắt buộc trong tài liệu quy ước.
+Lịch chiếu, `user/*`, chuông thông báo và chi tiết phim hiện mới có kiểm kê kiến trúc ở bảng đầu tài liệu. Chưa route nào trong nhóm này được đánh dấu **Đạt** cho đến khi có nhật ký runtime theo sáu nhóm bắt buộc trong tài liệu quy ước.

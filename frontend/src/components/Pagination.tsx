@@ -7,14 +7,23 @@ interface PaginationProps {
   currentPage: number;
   totalPages: number;
   onPageChange: (page: number) => void;
+  compactOnMobile?: boolean;
 }
 
-export default function Pagination({ currentPage, totalPages, onPageChange }: PaginationProps) {
+export default function Pagination({ currentPage, totalPages, onPageChange, compactOnMobile = false }: PaginationProps) {
   const [jumpPage, setJumpPage] = useState(String(currentPage));
 
   useEffect(() => setJumpPage(String(currentPage)), [currentPage]);
 
   if (totalPages <= 1) return null;
+
+  const mobileCompactPagination = compactOnMobile ? (
+    <nav aria-label="Phân trang kết quả tìm kiếm" className="mt-10 flex items-center justify-center gap-2 border-t border-zinc-900 pt-8 md:hidden">
+      <button type="button" aria-label="Trang trước" onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1} className="flex h-11 w-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400 disabled:cursor-not-allowed disabled:opacity-30"><ChevronLeft size={18} /></button>
+      <span className="flex h-11 min-w-28 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm font-bold text-zinc-300">Trang <span className="mx-1 text-pink-500">{currentPage}</span> / {totalPages}</span>
+      <button type="button" aria-label="Trang sau" onClick={() => onPageChange(currentPage + 1)} disabled={currentPage === totalPages} className="flex h-11 w-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400 disabled:cursor-not-allowed disabled:opacity-30"><ChevronRight size={18} /></button>
+    </nav>
+  ) : null;
 
   const submitJump = (event: React.FormEvent) => {
     event.preventDefault();
@@ -25,7 +34,9 @@ export default function Pagination({ currentPage, totalPages, onPageChange }: Pa
 
   if (totalPages > 12) {
     return (
-      <div className="mt-10 flex flex-wrap items-center justify-center gap-2 border-t border-zinc-900 pt-8 select-none">
+      <>
+      {mobileCompactPagination}
+      <div className={`mt-10 flex flex-wrap items-center justify-center gap-2 border-t border-zinc-900 pt-8 select-none ${compactOnMobile ? "hidden md:flex" : ""}`}>
         <button onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1} className="flex h-11 items-center gap-1 rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm font-bold text-zinc-400 transition hover:border-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"><ChevronLeft size={16} /> Trước</button>
         <div className="rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-2.5 text-sm font-bold text-zinc-300">Trang <span className="text-pink-500">{currentPage}</span> / {totalPages}</div>
         <form onSubmit={submitJump} className="flex items-center overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 focus-within:border-pink-500">
@@ -35,6 +46,7 @@ export default function Pagination({ currentPage, totalPages, onPageChange }: Pa
         </form>
         <button onClick={() => onPageChange(currentPage + 1)} disabled={currentPage === totalPages} className="flex h-11 items-center gap-1 rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm font-bold text-zinc-400 transition hover:border-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-30">Sau <ChevronRight size={16} /></button>
       </div>
+      </>
     );
   }
 
@@ -83,7 +95,9 @@ export default function Pagination({ currentPage, totalPages, onPageChange }: Pa
   const pages = generatePageNumbers();
 
   return (
-    <div className="flex items-center justify-center gap-1.5 md:gap-2 pt-8 border-t border-zinc-900 select-none">
+    <>
+    {mobileCompactPagination}
+    <div className={`items-center justify-center gap-1.5 border-t border-zinc-900 pt-8 select-none md:gap-2 ${compactOnMobile ? "hidden md:flex" : "flex"}`}>
       {/* Nút Previous */}
       <button
         onClick={() => onPageChange(currentPage - 1)}
@@ -135,5 +149,6 @@ export default function Pagination({ currentPage, totalPages, onPageChange }: Pa
         <ChevronRight size={16} />
       </button>
     </div>
+    </>
   );
 }

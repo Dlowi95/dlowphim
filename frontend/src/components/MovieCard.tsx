@@ -88,10 +88,8 @@ export default function MovieCard({ movie, aspect = "landscape", variant = "defa
   };
 
   const handleMouseEnter = (e: React.MouseEvent) => {
+    if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
     if (closeTimer.current) clearTimeout(closeTimer.current);
-    
-    // Popup owns the single detail request for this hover.
-    setShowPopup(true);
 
     if (isHovered) return;
 
@@ -123,6 +121,10 @@ export default function MovieCard({ movie, aspect = "landscape", variant = "defa
         left: finalLeft,
         width: scaledWidth
       });
+      // Chỉ mount popup sau khi người dùng thực sự dừng chuột đủ lâu.
+      // Nếu mount ngay lúc mouseenter, popup sẽ gọi API chi tiết cho mọi card
+      // chỉ lướt qua trong lúc cuộn trang.
+      setShowPopup(true);
       setIsHovered(true);
     }, 800); // 800ms delay to prevent flickering popups during mouse sweeps
   };

@@ -68,8 +68,8 @@ export default function MovieHoverPopup({
           setDetails(data.movie || data.data?.item || null);
         }
       } catch (err: any) {
-        if (err.name !== "AbortError") {
-          console.error("Error fetching hover details:", err);
+        if (!controller.signal.aborted && err.name !== "AbortError" && process.env.NODE_ENV !== "production") {
+          console.debug("Hover preview tạm thời không tải được:", err);
         }
       } finally {
         setLoadingDetails(false);
