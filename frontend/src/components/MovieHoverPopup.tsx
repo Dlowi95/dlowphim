@@ -9,6 +9,7 @@ import { useAuth } from "@/context/AuthContext";
 import Cookies from "js-cookie";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import MovieQualityBadge from "./MovieQualityBadge";
+import { fetchMovieArtwork, LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
 
 interface Movie {
   _id: string;
@@ -108,18 +109,16 @@ export default function MovieHoverPopup({
 
     if (popupAttempt < 2) {
       setPopupAttempt(2);
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-      fetch(`${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`)
-        .then((res) => (res.ok ? res.json() : null))
+      fetchMovieArtwork({ slug: movie.slug, title: movie.origin_name || movie.name })
         .then((data) => {
           if (data && (data.backdropUrl || data.posterUrl)) {
-            setPopupImgSrc(data.backdropUrl || data.posterUrl);
+            setPopupImgSrc(data.backdropUrl || data.posterUrl || LOCAL_MOVIE_IMAGE_FALLBACK);
           } else {
-            setPopupImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+            setPopupImgSrc(LOCAL_MOVIE_IMAGE_FALLBACK);
           }
         })
         .catch(() => {
-          setPopupImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+          setPopupImgSrc(LOCAL_MOVIE_IMAGE_FALLBACK);
         });
     }
   };

@@ -48,6 +48,28 @@ interface UseResolvedHeroBannersOptions {
 
 const PUBLIC_HERO_CACHE_KEY = "dlowphim:home-hero:v1";
 const PUBLIC_HERO_CACHE_TTL = 30 * 60 * 1000;
+const publicHeroInflight = new Map<string, Promise<ResolvedHeroResponse>>();
+
+function fetchPublicHero(apiUrl: string) {
+  const requestUrl = `${apiUrl}/banners/hero`;
+  const existing = publicHeroInflight.get(requestUrl);
+  if (existing) return existing;
+
+  const request = (async () => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 15_000);
+    try {
+      const response = await fetch(requestUrl, { signal: controller.signal });
+      if (!response.ok) throw new Error(`Hero API phản hồi lỗi ${response.status}`);
+      return await response.json() as ResolvedHeroResponse;
+    } finally {
+      window.clearTimeout(timeoutId);
+      publicHeroInflight.delete(requestUrl);
+    }
+  })();
+  publicHeroInflight.set(requestUrl, request);
+  return request;
+}
 
 export function useResolvedHeroBanners({
   apiUrl,
@@ -66,23 +88,26 @@ export function useResolvedHeroBanners({
     const requestId = ++requestIdRef.current;
     setLoading(!hasUsableCacheRef.current);
     setError(null);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
     try {
-      const token = admin ? Cookies.get("token") : undefined;
-      const response = await fetch(
-        `${apiUrl}/banners/hero${admin ? "/admin" : ""}`,
-        {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          signal: controller.signal,
-        },
-      );
-      if (!response.ok) {
-        throw new Error(`Hero API phản hồi lỗi ${response.status}`);
+      let data: ResolvedHeroResponse;
+      if (admin) {
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 15_000);
+        try {
+          const token = Cookies.get("token");
+          const response = await fetch(`${apiUrl}/banners/hero/admin`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            signal: controller.signal,
+          });
+          if (!response.ok) throw new Error(`Hero API phản hồi lỗi ${response.status}`);
+          data = await response.json();
+        } finally {
+          window.clearTimeout(timeoutId);
+        }
+      } else {
+        data = await fetchPublicHero(apiUrl);
       }
-
-      const data: ResolvedHeroResponse = await response.json();
       if (requestId !== requestIdRef.current) return;
       setSlots(data.slots || []);
       setRawBanners(data.rawBanners || []);
@@ -108,7 +133,6 @@ export function useResolvedHeroBanners({
       );
       if (!hasUsableCacheRef.current) setSlots([]);
     } finally {
-      clearTimeout(timeoutId);
       if (requestId === requestIdRef.current) setLoading(false);
     }
   }, [admin, apiUrl]);

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { CalendarDays, ChevronRight, RefreshCw } from "lucide-react";
 import { cleanMovieName, cleanSlug, getImageUrl } from "@/utils/movieUtils";
 import ProgressiveImage from "@/components/ProgressiveImage";
+import { fetchMovieArtwork, LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
 
 interface Movie {
   _id: string;
@@ -22,6 +23,24 @@ interface Movie {
     source?: "phimapi" | "ophim";
     resolvedSlug?: string;
   };
+}
+
+let upcomingInflight: Promise<any> | null = null;
+
+function fetchUpcomingPage(apiUrl: string) {
+  if (upcomingInflight) return upcomingInflight;
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 12_000);
+  upcomingInflight = fetch(`${apiUrl}/movies/upcoming?page=1`, { signal: controller.signal })
+    .then(async (response) => {
+      if (!response.ok) throw new Error(`Upcoming API ${response.status}`);
+      return response.json();
+    })
+    .finally(() => {
+      window.clearTimeout(timeoutId);
+      upcomingInflight = null;
+    });
+  return upcomingInflight;
 }
 
 export default function UpcomingRow() {
@@ -44,11 +63,13 @@ export default function UpcomingRow() {
     let activeController: AbortController | null = null;
     const cacheKey = "dlowphim_upcoming_v1";
     let hasCachedMovies = false;
+    let shouldRefresh = true;
 
     try {
       const cached = JSON.parse(sessionStorage.getItem(cacheKey) || "null");
       if (cached?.savedAt > Date.now() - 6 * 60 * 60 * 1000 && Array.isArray(cached.items) && cached.items.length > 0) {
         hasCachedMovies = true;
+        shouldRefresh = cached.savedAt < Date.now() - 10 * 60 * 1000;
         setMovies(cached.items);
         setLoading(false);
       }
@@ -57,6 +78,7 @@ export default function UpcomingRow() {
     }
 
     async function fetchUpcoming() {
+      if (!shouldRefresh) return;
       if (!hasCachedMovies) setLoading(true);
       setLoadError(false);
       const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -66,9 +88,17 @@ export default function UpcomingRow() {
         activeController = new AbortController();
         const timeout = window.setTimeout(() => activeController?.abort(), 8000 + attempt * 2000);
         try {
-          const res = await fetch(`${API_URL}/movies/upcoming?page=1`, { signal: activeController.signal });
-          if (!res.ok) throw new Error(`Upcoming API ${res.status}`);
-          const data = await res.json();
+          const request = fetchUpcomingPage(API_URL);
+          const data = await Promise.race([
+            request,
+            new Promise<never>((_, reject) => {
+              activeController?.signal.addEventListener(
+                "abort",
+                () => reject(new DOMException("Request aborted", "AbortError")),
+                { once: true },
+              );
+            }),
+          ]);
           const seen = new Set<string>();
           const uniqueItems = (data.items || []).filter((item: any) => {
             const baseSlug = cleanSlug(item.slug);
@@ -248,18 +278,16 @@ function UpcomingMovieCard({ movie, wasDraggingRef, router }: { movie: Movie; wa
 
     if (attemptCount < 2) {
       setAttemptCount(2);
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-      fetch(`${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`)
-        .then((res) => (res.ok ? res.json() : null))
+      fetchMovieArtwork({ slug: movie.slug, title: movie.origin_name || movie.name })
         .then((data) => {
           if (data && (data.backdropUrl || data.posterUrl)) {
-            setImgSrc(data.backdropUrl || data.posterUrl);
+            setImgSrc(data.backdropUrl || data.posterUrl || LOCAL_MOVIE_IMAGE_FALLBACK);
           } else {
-            setImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+            setImgSrc(LOCAL_MOVIE_IMAGE_FALLBACK);
           }
         })
         .catch(() => {
-          setImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+          setImgSrc(LOCAL_MOVIE_IMAGE_FALLBACK);
         });
     }
   };

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1200" role="img" aria-labelledby="title description">
+  <title id="title">DlowPhim</title>
+  <desc id="description">Ảnh phim đang được cập nhật</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#18181b"/>
+      <stop offset="0.55" stop-color="#111118"/>
+      <stop offset="1" stop-color="#2b1020"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="42%" r="48%">
+      <stop offset="0" stop-color="#ec4899" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#ec4899" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="800" height="1200" fill="url(#background)"/>
+  <rect width="800" height="1200" fill="url(#glow)"/>
+  <circle cx="400" cy="520" r="92" fill="#ec4899" fill-opacity=".14" stroke="#ec4899" stroke-opacity=".5" stroke-width="5"/>
+  <path d="M376 467v106l88-53-88-53Z" fill="#f9a8d4"/>
+  <text x="400" y="690" fill="#fafafa" font-family="Arial, sans-serif" font-size="58" font-weight="700" text-anchor="middle">DlowPhim</text>
+  <text x="400" y="742" fill="#a1a1aa" font-family="Arial, sans-serif" font-size="26" text-anchor="middle">Ảnh đang được cập nhật</text>
+</svg>

@@ -96,3 +96,71 @@ Với markup nhỏ, không có effect/API/socket/ảnh ưu tiên, có thể dùn
 ## 7. Nguyên tắc chống regression
 
 Nếu yêu cầu chỉ nhắc tới mobile, mọi thay đổi layout phải nằm trong file/component mobile hoặc class mobile có class khôi phục rõ ràng từ `md:`. Nếu cần thay cấu trúc desktop, coi đó là thay đổi riêng, xin đúng phạm vi và kiểm tra ảnh trước/sau.
+
+## 8. Quy trình xác minh bắt buộc theo từng route
+
+Không được kết luận một route đã tối ưu chỉ vì giao diện nhìn đẹp trong một ảnh chụp. Với **mỗi route được sửa**, phải kiểm tra bằng bằng chứng ở sáu nhóm sau:
+
+### DOM và vòng đời component
+
+- Đếm và đối chiếu cây DOM trước/sau khi tải dữ liệu, chuyển tab và cuộn lazy-load.
+- Feature nặng chỉ được mount đúng một view tại breakpoint hiện tại; mobile không giữ ngầm cây desktop và ngược lại.
+- Component đã rời viewport hoặc đổi route phải cleanup observer, timer, listener và effect.
+- Placeholder lazy-load phải giữ bố cục khi chưa mount, nhưng không được tiếp tục tạo khoảng trống sau khi nội dung thật đã xuất hiện.
+
+### API và dữ liệu
+
+- Ghi lại toàn bộ request `fetch`/XHR khi mở route, thao tác chính, chuyển tab và quay lại tab.
+- Nhóm request theo method + URL + payload để phát hiện request trùng thật sự; không chỉ nhìn tổng số request.
+- Mobile và desktop dùng chung controller/data owner, trừ khi nghiệp vụ bắt buộc tách nguồn dữ liệu.
+- Cache chỉ được coi là tối ưu khi dữ liệu cũ vẫn hiển thị an toàn, có thời hạn rõ ràng và refresh nền không tạo request lặp.
+
+### Ảnh và tài nguyên
+
+- Kiểm tra ảnh trong viewport: `complete`, `naturalWidth`, opacity và fallback sau khi tải mới lẫn reload từ cache.
+- Ảnh ưu tiên chỉ dành cho nội dung above-the-fold; ảnh ngoài viewport phải lazy-load.
+- Không tải đồng thời poster/backdrop của view đang không được mount.
+- Mỗi khung ảnh phải có tỷ lệ cố định để tránh layout shift; lỗi ảnh không được để khung trắng, mất ảnh hoặc giữ `opacity: 0`.
+
+### Socket, listener và kết nối thời gian thực
+
+- Kiểm tra số kết nối WebSocket/Socket.IO thực tế của route.
+- Một tính năng chỉ được sở hữu một socket; hai view responsive không được tạo hai kết nối cho cùng dữ liệu.
+- Đổi route, đóng popup hoặc unmount phải gỡ listener; không được tăng số lần nhận event sau mỗi lần mở lại.
+
+### Overflow và tương tác
+
+- So sánh `documentElement.scrollWidth` với `clientWidth`; toàn trang không được overflow ngang.
+- Chỉ carousel được phép overflow trong container riêng và phải thao tác được bằng touch.
+- Kiểm tra nội dung dài, bàn phím mobile, modal/bottom sheet, safe-area và thanh điều hướng cố định.
+- Không có phần tử fixed che nút hành động, toast, nội dung cuối trang hoặc vùng cuộn.
+
+### Breakpoint và chống regression desktop
+
+- Kiểm tra tối thiểu `360`, `390`, `430/440`, `767`, `768`, `1024`, `1440` và `1920px` khi thay đổi có phạm vi toàn layout.
+- Tại `767/768px`, xác nhận chỉ một nhánh responsive được mount và không nháy hai giao diện khi hydrate.
+- Chụp hoặc đo bố cục desktop trước/sau. Yêu cầu chỉ sửa mobile phải chứng minh desktop không đổi.
+- Class mobile thay đổi giá trị dùng chung phải có giá trị khôi phục rõ ràng từ `md:`; nếu không bảo đảm được thì tách component/file mobile.
+
+### Điều kiện được phép kết luận “đã tối ưu”
+
+Chỉ được báo hoàn tất khi có đủ các bằng chứng sau:
+
+- [ ] Không có DOM/view nặng mount trùng.
+- [ ] Không có API trùng do responsive hoặc effect sai dependency.
+- [ ] Không có ảnh visible bị lỗi, kẹt loading hoặc `opacity: 0` sau reload.
+- [ ] Không có socket/listener bị nhân đôi hoặc rò rỉ.
+- [ ] Không có overflow ngang toàn trang và không có fixed element che nội dung.
+- [ ] Mobile qua các breakpoint yêu cầu và desktop giữ nguyên.
+- [ ] TypeScript, test liên quan và production build đều thành công.
+
+Nếu chưa kiểm tra đủ một mục, phải nói rõ đó là phần **chưa được xác minh**, không được suy luận là đã tối ưu.
+
+## 9. Tiêu chí riêng cho trang chủ
+
+- Hero mobile và desktop chỉ mount một nhánh theo breakpoint; chỉ ảnh Hero đang hoạt động được đặt ưu tiên cao.
+- Các khối `chủ đề`, `xem tiếp`, `phim theo quốc gia`, `Top 10`, `phim sắp chiếu`, `phim chiếu rạp`, `anime` và `phim mới cập nhật` phải tải theo thứ tự khi người dùng cuộn.
+- Placeholder của mỗi khối phải ngăn observer kích hoạt dây chuyền nhưng không được tạo padding/khoảng đen sau khi nội dung thật xuất hiện.
+- Reload từ cache phải giữ ảnh Hero và các hàng phim hiển thị; không được reset trạng thái loaded sau sự kiện `load`.
+- Request Hero được cache và giới hạn số ứng viên; không gọi chi tiết/TMDB cho toàn bộ danh sách nếu đã đủ số slide hợp lệ.
+- Chỉ kết luận trang chủ mobile tối ưu sau khi đo cả lần tải mới, reload có cache và cuộn hết trang.

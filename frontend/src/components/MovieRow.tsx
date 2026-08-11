@@ -77,10 +77,15 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
 
   // 1. Initial fetch
   useEffect(() => {
+    const controller = new AbortController();
     async function fetchMovies() {
       try {
         setLoading(true);
-        const data = await fetchMovieDiscovery({ kind: "country", slug: countrySlug, page: 1, limit: MOVIE_ROW_PAGE_SIZE });
+        const data = await fetchMovieDiscovery(
+          { kind: "country", slug: countrySlug, page: 1, limit: MOVIE_ROW_PAGE_SIZE },
+          { signal: controller.signal },
+        );
+        if (controller.signal.aborted) return;
         if (data.status === true) {
           const items = data.items || [];
           setMovies(getUniqueMovies(items));
@@ -88,12 +93,15 @@ export default function MovieRow({ title, accentText, countrySlug }: MovieRowPro
           setSourceMode(data.stale?.used ? "stale" : data.fallback?.used ? "fallback" : null);
         }
       } catch (err) {
-        console.error(`Error fetching movies for country ${countrySlug}:`, err);
+        if (!controller.signal.aborted) {
+          console.error(`Error fetching movies for country ${countrySlug}:`, err);
+        }
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     }
-    fetchMovies();
+    void fetchMovies();
+    return () => controller.abort();
   }, [countrySlug]);
 
   // 2. Fetch more movies for infinite scroll

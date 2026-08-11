@@ -38,7 +38,7 @@ export function cleanSlug(slug: string): string {
 }
 
 export function getImageUrl(path?: string): string {
-  if (!path) return "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80";
+  if (!path) return "/images/movie-placeholder.svg";
   let url = path.trim();
   if (url.startsWith("http://") || url.startsWith("https://")) {
     return url;
@@ -63,7 +63,7 @@ export function isValidMovieImage(path?: string): boolean {
 }
 
 export function getBestMovieImage(movie: any, preferAspect: 'poster' | 'thumb' = 'thumb'): string {
-  if (!movie) return "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80";
+  if (!movie) return "/images/movie-placeholder.svg";
   const poster = movie.poster_url || movie.poster;
   const thumb = movie.thumb_url || movie.thumbnail;
 

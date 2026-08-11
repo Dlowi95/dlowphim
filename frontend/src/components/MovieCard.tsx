@@ -7,6 +7,7 @@ import MovieHoverPopup from "./MovieHoverPopup";
 import ProgressiveImage from "./ProgressiveImage";
 import MovieLanguageBadges from "./MovieLanguageBadges";
 import MovieQualityBadge from "./MovieQualityBadge";
+import { fetchMovieArtwork, LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
 
 interface Movie {
   _id: string;
@@ -69,18 +70,19 @@ export default function MovieCard({ movie, aspect = "landscape", variant = "defa
 
     if (attemptCount < 2) {
       setAttemptCount(2);
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-      fetch(`${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`)
-        .then((res) => (res.ok ? res.json() : null))
+      fetchMovieArtwork({ slug: movie.slug, title: movie.origin_name || movie.name })
         .then((data) => {
           if (data && (data.posterUrl || data.backdropUrl)) {
-            setImgSrc(aspect === "portrait" ? (data.posterUrl || data.backdropUrl) : (data.backdropUrl || data.posterUrl));
+            setImgSrc(
+              (aspect === "portrait" ? (data.posterUrl || data.backdropUrl) : (data.backdropUrl || data.posterUrl))
+                || LOCAL_MOVIE_IMAGE_FALLBACK,
+            );
           } else {
-            setImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+            setImgSrc(LOCAL_MOVIE_IMAGE_FALLBACK);
           }
         })
         .catch(() => {
-          setImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+          setImgSrc(LOCAL_MOVIE_IMAGE_FALLBACK);
         });
     }
   };

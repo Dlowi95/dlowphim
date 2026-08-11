@@ -14,6 +14,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useResolvedHeroBanners } from "@/hooks/useResolvedHeroBanners";
 import { useIsMobileViewport } from "@/hooks/useIsMobileViewport";
 import ContinueWatchingRow from "@/components/ContinueWatchingRow";
+import { fetchMovieArtwork, LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
 
 const Top10Row = dynamic(() => import("@/components/Top10Row"), { ssr: false });
 const UpcomingRow = dynamic(() => import("@/components/UpcomingRow"), { ssr: false });
@@ -33,6 +34,7 @@ function DeferredHomeSection({
 }) {
   const sectionRef = useRef<HTMLDivElement>(null);
   const [shouldRender, setShouldRender] = useState(false);
+  const [hasMeasuredContent, setHasMeasuredContent] = useState(false);
 
   useEffect(() => {
     const section = sectionRef.current;
@@ -54,8 +56,39 @@ function DeferredHomeSection({
     return () => observer.disconnect();
   }, [enabled, rootMargin, shouldRender]);
 
+  useEffect(() => {
+    const section = sectionRef.current;
+    if (!shouldRender || !section || hasMeasuredContent) return;
+
+    let resizeObserver: ResizeObserver | null = null;
+    const checkContent = () => {
+      const content = section.firstElementChild as HTMLElement | null;
+      if (!content) return;
+      if (content.getBoundingClientRect().height > 0) {
+        setHasMeasuredContent(true);
+        mutationObserver.disconnect();
+        resizeObserver?.disconnect();
+      } else if (resizeObserver) {
+        resizeObserver.disconnect();
+        resizeObserver.observe(content);
+      }
+    };
+    const mutationObserver = new MutationObserver(checkContent);
+    resizeObserver = new ResizeObserver(checkContent);
+    mutationObserver.observe(section, { childList: true });
+    checkContent();
+
+    // A section that intentionally renders null must not reserve blank space forever.
+    const releaseTimer = window.setTimeout(() => setHasMeasuredContent(true), 4000);
+    return () => {
+      window.clearTimeout(releaseTimer);
+      mutationObserver.disconnect();
+      resizeObserver?.disconnect();
+    };
+  }, [hasMeasuredContent, shouldRender]);
+
   return (
-    <div ref={sectionRef} className={minHeightClass}>
+    <div ref={sectionRef} className={hasMeasuredContent ? undefined : minHeightClass}>
       {shouldRender ? children : null}
     </div>
   );
@@ -179,6 +212,12 @@ export default function HomePage() {
 
   const isFavorited = user?.favorites?.includes(heroCandidates[activeHeroIndex]?.slug || "") || false;
 
+  useEffect(() => {
+    if (!resolvedHeroLoading && heroCandidates.length === 0) {
+      setHeroVisualReady(true);
+    }
+  }, [heroCandidates.length, resolvedHeroLoading]);
+
   const activeMovieCandidate = heroCandidates[activeHeroIndex];
   const heroDetailCandidate = detailsCache[activeMovieCandidate?.slug || ""];
   const initialHeroUrl = backdropCache[activeMovieCandidate?.slug || ""] || getImageUrl(heroDetailCandidate?.thumb_url || activeMovieCandidate?.thumb_url || heroDetailCandidate?.poster_url || activeMovieCandidate?.poster_url);
@@ -192,17 +231,19 @@ export default function HomePage() {
 
   const handleHeroBackdropError = () => {
     if (!activeMovieCandidate) return;
-    fetch(`${API_URL}/movies/logo/${activeMovieCandidate.slug}?title=${encodeURIComponent(activeMovieCandidate.origin_name || activeMovieCandidate.name)}`)
-      .then((res) => (res.ok ? res.json() : null))
+    fetchMovieArtwork({
+      slug: activeMovieCandidate.slug,
+      title: activeMovieCandidate.origin_name || activeMovieCandidate.name,
+    })
       .then((data) => {
         if (data && (data.backdropUrl || data.posterUrl)) {
-          setHeroBackdropSrc(data.backdropUrl || data.posterUrl);
+          setHeroBackdropSrc(data.backdropUrl || data.posterUrl || LOCAL_MOVIE_IMAGE_FALLBACK);
         } else {
-          setHeroBackdropSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+          setHeroBackdropSrc(LOCAL_MOVIE_IMAGE_FALLBACK);
         }
       })
       .catch(() => {
-        setHeroBackdropSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+        setHeroBackdropSrc(LOCAL_MOVIE_IMAGE_FALLBACK);
       });
   };
 
@@ -390,10 +431,11 @@ export default function HomePage() {
                       }}
                       className="h-full w-full object-cover"
                       onError={(event) => {
+                        if (isActive) setHeroVisualReady(true);
+                        const image = event.currentTarget as HTMLImageElement;
+                        if (image.src.includes("/images/movie-placeholder.svg")) return;
                         const fallback = backdropCache[movie.slug] || getImageUrl(movie.thumb_url || movie.poster_url);
-                        if ((event.currentTarget as HTMLImageElement).src !== fallback) {
-                          (event.currentTarget as HTMLImageElement).src = fallback;
-                        }
+                        image.src = image.src !== fallback ? fallback : LOCAL_MOVIE_IMAGE_FALLBACK;
                       }}
                     />
                     <span className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/55 to-transparent" />
@@ -606,7 +648,7 @@ export default function HomePage() {
                     src={backdropCache[movie.slug] || getImageUrl(movie.thumb_url || movie.poster_url)}
                     alt={movie.name}
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80";
+                      (e.target as HTMLImageElement).src = LOCAL_MOVIE_IMAGE_FALLBACK;
                     }}
                     className="w-full h-full object-cover"
                   />

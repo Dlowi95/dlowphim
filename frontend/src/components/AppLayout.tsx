@@ -9,6 +9,33 @@ import { ShieldAlert, Loader2 } from "lucide-react";
 import { normalizeAdminRole } from "@/utils/adminPermissions";
 import { shouldHideMobileNavigation } from "@/utils/mobileNavigation";
 
+const SYSTEM_SETTINGS_CACHE_TTL_MS = 60 * 1000;
+let maintenanceCache: { value: boolean; expiresAt: number } | null = null;
+let maintenanceInflight: Promise<boolean> | null = null;
+
+function loadMaintenanceMode(apiUrl: string) {
+  if (maintenanceCache && maintenanceCache.expiresAt > Date.now()) {
+    return Promise.resolve(maintenanceCache.value);
+  }
+  if (maintenanceInflight) return maintenanceInflight;
+
+  maintenanceInflight = fetch(`${apiUrl}/system-settings`)
+    .then(async (response) => {
+      if (!response.ok) throw new Error(`System settings ${response.status}`);
+      const data = await response.json();
+      const value = Boolean(data.maintenanceMode);
+      maintenanceCache = {
+        value,
+        expiresAt: Date.now() + SYSTEM_SETTINGS_CACHE_TTL_MS,
+      };
+      return value;
+    })
+    .finally(() => {
+      maintenanceInflight = null;
+    });
+  return maintenanceInflight;
+}
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading } = useAuth();
   const pathname = usePathname();
@@ -17,23 +44,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
-  const checkMaintenance = async () => {
-    try {
-      const res = await fetch(`${API_URL}/system-settings`);
-      if (res.ok) {
-        const data = await res.json();
-        setMaintenance(data.maintenanceMode);
-      }
-    } catch (e) {
-      console.error("Lỗi kiểm tra bảo trì:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    checkMaintenance();
-  }, [pathname]);
+    let disposed = false;
+    void loadMaintenanceMode(API_URL)
+      .then((value) => {
+        if (!disposed) setMaintenance(value);
+      })
+      .catch((error) => {
+        if (!disposed) console.error("Lỗi kiểm tra bảo trì:", error);
+      })
+      .finally(() => {
+        if (!disposed) setLoading(false);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [API_URL, pathname]);
 
   const isAdminPath = pathname.startsWith("/sys-dlowadmin");
   const showMobileNavigation =

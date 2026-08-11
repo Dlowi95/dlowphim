@@ -17,6 +17,59 @@ export interface UserMovieSummary {
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 250;
 const summaryCache = new Map<string, { value: UserMovieSummary; expiresAt: number }>();
+const summaryInflight = new Map<string, Promise<UserMovieSummary[]>>();
+
+function waitForSummaryRequest(
+  request: Promise<UserMovieSummary[]>,
+  signal?: AbortSignal,
+) {
+  if (!signal) return request;
+  if (signal.aborted) return Promise.reject(new DOMException("Request aborted", "AbortError"));
+  return new Promise<UserMovieSummary[]>((resolve, reject) => {
+    const handleAbort = () => reject(new DOMException("Request aborted", "AbortError"));
+    signal.addEventListener("abort", handleAbort, { once: true });
+    request.then(resolve, reject).finally(() => signal.removeEventListener("abort", handleAbort));
+  });
+}
+
+function fetchSummaryBatch(apiUrl: string, slugs: string[], token?: string) {
+  const key = `${token || "public"}:${[...slugs].sort().join(",")}`;
+  const existing = summaryInflight.get(key);
+  if (existing) return existing;
+
+  const request = fetch(`${apiUrl}/movies/resolved-summaries`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ slugs }),
+  })
+    .then(async (response) => {
+      if (!response.ok) throw new Error(`Không thể tải thông tin phim (${response.status})`);
+      const summaries = await response.json();
+      return Array.isArray(summaries) ? summaries as UserMovieSummary[] : [];
+    })
+    .then((summaries) => {
+      summaries.forEach((summary) => {
+        if (!summary?.slug) return;
+        summaryCache.set(summary.slug, {
+          value: summary,
+          expiresAt: Date.now() + CACHE_TTL_MS,
+        });
+        while (summaryCache.size > MAX_CACHE_ENTRIES) {
+          const oldestKey = summaryCache.keys().next().value;
+          if (!oldestKey) break;
+          summaryCache.delete(oldestKey);
+        }
+      });
+      return summaries;
+    })
+    .finally(() => summaryInflight.delete(key));
+
+  summaryInflight.set(key, request);
+  return request;
+}
 
 export async function getUserMovieSummaries(
   slugs: string[],
@@ -36,31 +89,8 @@ export async function getUserMovieSummaries(
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
     const token = Cookies.get("token");
     for (let offset = 0; offset < missing.length; offset += 50) {
-      const response = await fetch(`${apiUrl}/movies/resolved-summaries`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ slugs: missing.slice(offset, offset + 50) }),
-        signal,
-      });
-      if (!response.ok) throw new Error(`Không thể tải thông tin phim (${response.status})`);
-      const summaries = await response.json();
-      if (!Array.isArray(summaries)) continue;
-      summaries.forEach((summary: UserMovieSummary) => {
-        if (summary?.slug) {
-          summaryCache.set(summary.slug, {
-            value: summary,
-            expiresAt: Date.now() + CACHE_TTL_MS,
-          });
-          while (summaryCache.size > MAX_CACHE_ENTRIES) {
-            const oldestKey = summaryCache.keys().next().value;
-            if (!oldestKey) break;
-            summaryCache.delete(oldestKey);
-          }
-        }
-      });
+      const batch = missing.slice(offset, offset + 50);
+      await waitForSummaryRequest(fetchSummaryBatch(apiUrl, batch, token), signal);
     }
   }
 

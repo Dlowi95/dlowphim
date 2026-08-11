@@ -9,6 +9,7 @@ import MovieHoverPopup from "./MovieHoverPopup";
 import MovieQualityBadge from "./MovieQualityBadge";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
+import { fetchMovieArtwork, LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
 
 interface Movie {
   _id: string;
@@ -91,16 +92,15 @@ export default function CinemaRow() {
   const scrollLeftRef = useRef(0);
 
   useEffect(() => {
+    const controller = new AbortController();
     async function fetchCinema() {
       try {
         setLoading(true);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
         const data = await fetchMovieDiscovery(
           { kind: "list", slug: "phim-chieu-rap", page: 1, limit: 12 },
           { signal: controller.signal, timeoutMs: 6000 },
         );
-        clearTimeout(timeoutId);
+        if (controller.signal.aborted) return;
         if (data.status === true) {
           const items = data.items || [];
           if (items.length > 0) {
@@ -127,14 +127,17 @@ export default function CinemaRow() {
           setMovies(FALLBACK_CINEMA);
         }
       } catch (err) {
-        console.error("Lỗi lấy danh sách phim chiếu rạp, chuyển sang dự phòng:", err);
-        setMovies(FALLBACK_CINEMA);
+        if (!controller.signal.aborted) {
+          console.error("Lỗi lấy danh sách phim chiếu rạp, chuyển sang dự phòng:", err);
+          setMovies(FALLBACK_CINEMA);
+        }
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     }
 
-    fetchCinema();
+    void fetchCinema();
+    return () => controller.abort();
   }, []);
 
   // Mouse Drag-to-scroll Handlers
@@ -286,18 +289,16 @@ function CinemaMovieCard({ movie, wasDraggingRef }: CinemaMovieCardProps) {
 
     if (bannerAttempt < 2) {
       setBannerAttempt(2);
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-      fetch(`${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`)
-        .then((res) => (res.ok ? res.json() : null))
+      fetchMovieArtwork({ slug: movie.slug, title: movie.origin_name || movie.name })
         .then((data) => {
           if (data && (data.backdropUrl || data.posterUrl)) {
-            setBannerImgSrc(data.backdropUrl || data.posterUrl);
+            setBannerImgSrc(data.backdropUrl || data.posterUrl || LOCAL_MOVIE_IMAGE_FALLBACK);
           } else {
-            setBannerImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+            setBannerImgSrc(LOCAL_MOVIE_IMAGE_FALLBACK);
           }
         })
         .catch(() => {
-          setBannerImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+          setBannerImgSrc(LOCAL_MOVIE_IMAGE_FALLBACK);
         });
     }
   };
@@ -311,18 +312,16 @@ function CinemaMovieCard({ movie, wasDraggingRef }: CinemaMovieCardProps) {
 
     if (thumbAttempt < 2) {
       setThumbAttempt(2);
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-      fetch(`${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`)
-        .then((res) => (res.ok ? res.json() : null))
+      fetchMovieArtwork({ slug: movie.slug, title: movie.origin_name || movie.name })
         .then((data) => {
           if (data && (data.posterUrl || data.backdropUrl)) {
-            setThumbImgSrc(data.posterUrl || data.backdropUrl);
+            setThumbImgSrc(data.posterUrl || data.backdropUrl || LOCAL_MOVIE_IMAGE_FALLBACK);
           } else {
-            setThumbImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+            setThumbImgSrc(LOCAL_MOVIE_IMAGE_FALLBACK);
           }
         })
         .catch(() => {
-          setThumbImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+          setThumbImgSrc(LOCAL_MOVIE_IMAGE_FALLBACK);
         });
     }
   };

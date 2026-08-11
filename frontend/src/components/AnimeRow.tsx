@@ -11,6 +11,7 @@ import { useAuth } from "@/context/AuthContext";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
 import { cleanMovieName, cleanSlug, getBestMovieImage, getImageUrl } from "@/utils/movieUtils";
+import { fetchMovieArtwork, LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
 
 interface Movie {
   _id?: string;
@@ -32,8 +33,7 @@ interface AnimeFeature {
   imageUrl: string;
 }
 
-const FALLBACK_IMAGE =
-  "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=1200&q=80";
+const FALLBACK_IMAGE = LOCAL_MOVIE_IMAGE_FALLBACK;
 
 const MOBILE_ANIME_LIMIT = 15;
 const MOBILE_INITIAL_PRELOAD_COUNT = 6;
@@ -113,8 +113,11 @@ export default function AnimeRow() {
   const [isMobileDragging, setIsMobileDragging] = useState(false);
 
   const featureCacheRef = useRef(new Map<string, AnimeFeature>());
+  const featureInflightRef = useRef(new Map<string, Promise<AnimeFeature>>());
   const requestIdRef = useRef(0);
   const featureRef = useRef<AnimeFeature | null>(null);
+  const activeFeatureControllerRef = useRef<AbortController | null>(null);
+  const featureControllersRef = useRef(new Set<AbortController>());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef({ dragging: false, moved: false, startX: 0, scrollLeft: 0 });
   const mobileSwipeRef = useRef({
@@ -134,9 +137,19 @@ export default function AnimeRow() {
     featureRef.current = feature;
   }, [feature]);
 
+  useEffect(() => () => {
+    featureControllersRef.current.forEach((controller) => controller.abort());
+    featureControllersRef.current.clear();
+    activeFeatureControllerRef.current = null;
+  }, []);
+
   const loadFeature = useCallback(async (movie: Movie, signal?: AbortSignal) => {
     const cached = featureCacheRef.current.get(movie.slug);
     if (cached) return cached;
+    const inflight = featureInflightRef.current.get(movie.slug);
+    if (inflight) return inflight;
+
+    const request = (async () => {
 
     let details: any | null = null;
     try {
@@ -156,17 +169,15 @@ export default function AnimeRow() {
     let finalImage = getBestMovieImage(mergedMovie, "thumb") || getBestMovieImage(movie, "thumb");
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
       const tmdbId = details?.tmdb?.id || "";
       const tmdbType = details?.tmdb?.type || "tv";
-      const tmdbResponse = await fetch(
-        `${apiUrl}/movies/logo/${movie.slug}?title=${encodeURIComponent(
-          details?.origin_name || details?.name || movie.origin_name || movie.name,
-        )}&tmdbId=${tmdbId}&tmdbType=${tmdbType}`,
-        { signal },
-      );
-      if (tmdbResponse.ok) {
-        const tmdb = await tmdbResponse.json();
+      const tmdb = await fetchMovieArtwork({
+        slug: movie.slug,
+        title: details?.origin_name || details?.name || movie.origin_name || movie.name,
+        tmdbId,
+        tmdbType,
+      });
+      if (tmdb) {
         finalImage = tmdb.backdropUrl || tmdb.posterUrl || finalImage;
         if (details) {
           details = {
@@ -194,6 +205,16 @@ export default function AnimeRow() {
       current[movie.slug] ? current : { ...current, [movie.slug]: nextFeature },
     );
     return nextFeature;
+    })();
+
+    featureInflightRef.current.set(movie.slug, request);
+    try {
+      return await request;
+    } finally {
+      if (featureInflightRef.current.get(movie.slug) === request) {
+        featureInflightRef.current.delete(movie.slug);
+      }
+    }
   }, []);
 
   const activateMovie = useCallback(
@@ -201,7 +222,10 @@ export default function AnimeRow() {
       if (!options.prefetchOnly && movie.slug === featureRef.current?.movie.slug) return;
 
       const requestId = options.prefetchOnly ? requestIdRef.current : ++requestIdRef.current;
+      if (!options.prefetchOnly) activeFeatureControllerRef.current?.abort();
       const controller = new AbortController();
+      featureControllersRef.current.add(controller);
+      if (!options.prefetchOnly) activeFeatureControllerRef.current = controller;
       if (!options.prefetchOnly) setPendingSlug(movie.slug);
 
       try {
@@ -224,12 +248,14 @@ export default function AnimeRow() {
           console.error("Không thể chuẩn bị Anime nổi bật:", error);
         }
       } finally {
+        featureControllersRef.current.delete(controller);
+        if (activeFeatureControllerRef.current === controller) {
+          activeFeatureControllerRef.current = null;
+        }
         if (!options.prefetchOnly && requestId === requestIdRef.current) {
           setPendingSlug(null);
         }
       }
-
-      return () => controller.abort();
     },
     [loadFeature],
   );
