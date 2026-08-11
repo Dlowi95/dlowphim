@@ -12,6 +12,7 @@ import HalftoneOverlay from "@/components/HalftoneOverlay";
 import ProgressiveImage from "@/components/ProgressiveImage";
 import { useAuth } from "@/context/AuthContext";
 import { useResolvedHeroBanners } from "@/hooks/useResolvedHeroBanners";
+import { useIsMobileViewport } from "@/hooks/useIsMobileViewport";
 import ContinueWatchingRow from "@/components/ContinueWatchingRow";
 
 const Top10Row = dynamic(() => import("@/components/Top10Row"), { ssr: false });
@@ -22,16 +23,20 @@ const AnimeRow = dynamic(() => import("@/components/AnimeRow"), { ssr: false });
 function DeferredHomeSection({
   children,
   minHeightClass = "min-h-[360px]",
+  rootMargin = "0px",
+  enabled = true,
 }: {
   children: ReactNode;
   minHeightClass?: string;
+  rootMargin?: string;
+  enabled?: boolean;
 }) {
   const sectionRef = useRef<HTMLDivElement>(null);
   const [shouldRender, setShouldRender] = useState(false);
 
   useEffect(() => {
     const section = sectionRef.current;
-    if (!section || shouldRender) return;
+    if (!enabled || !section || shouldRender) return;
     if (!("IntersectionObserver" in window)) {
       setShouldRender(true);
       return;
@@ -43,14 +48,14 @@ function DeferredHomeSection({
         setShouldRender(true);
         observer.disconnect();
       },
-      { rootMargin: "900px 0px" },
+      { rootMargin },
     );
     observer.observe(section);
     return () => observer.disconnect();
-  }, [shouldRender]);
+  }, [enabled, rootMargin, shouldRender]);
 
   return (
-    <div ref={sectionRef} className={shouldRender ? undefined : minHeightClass}>
+    <div ref={sectionRef} className={minHeightClass}>
       {shouldRender ? children : null}
     </div>
   );
@@ -164,9 +169,11 @@ export default function HomePage() {
   const [backdropCache, setBackdropCache] = useState<Record<string, string | null>>({});
   const [posterCache, setPosterCache] = useState<Record<string, string | null>>({});
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [heroVisualReady, setHeroVisualReady] = useState(false);
   const mobileTouchStartX = useRef<number | null>(null);
 
   const [movieList, setMovieList] = useState<any[]>([]);
+  const isMobileViewport = useIsMobileViewport();
   const router = useRouter();
   const { user, toggleFavorite } = useAuth();
 
@@ -174,12 +181,12 @@ export default function HomePage() {
 
   const activeMovieCandidate = heroCandidates[activeHeroIndex];
   const heroDetailCandidate = detailsCache[activeMovieCandidate?.slug || ""];
-  const initialHeroUrl = backdropCache[activeMovieCandidate?.slug || ""] || getImageUrl(heroDetailCandidate?.poster_url || activeMovieCandidate?.poster_url || heroDetailCandidate?.thumb_url || activeMovieCandidate?.thumb_url);
+  const initialHeroUrl = backdropCache[activeMovieCandidate?.slug || ""] || getImageUrl(heroDetailCandidate?.thumb_url || activeMovieCandidate?.thumb_url || heroDetailCandidate?.poster_url || activeMovieCandidate?.poster_url);
   const [heroBackdropSrc, setHeroBackdropSrc] = useState<string>(initialHeroUrl);
 
   useEffect(() => {
     if (activeMovieCandidate) {
-      setHeroBackdropSrc(backdropCache[activeMovieCandidate.slug] || getImageUrl(heroDetailCandidate?.poster_url || activeMovieCandidate?.poster_url || heroDetailCandidate?.thumb_url || activeMovieCandidate?.thumb_url));
+      setHeroBackdropSrc(backdropCache[activeMovieCandidate.slug] || getImageUrl(heroDetailCandidate?.thumb_url || activeMovieCandidate?.thumb_url || heroDetailCandidate?.poster_url || activeMovieCandidate?.poster_url));
     }
   }, [activeMovieCandidate?.slug, heroDetailCandidate?.poster_url, heroDetailCandidate?.thumb_url, backdropCache]);
 
@@ -260,12 +267,14 @@ export default function HomePage() {
   useEffect(() => {
     if (heroCandidates.length < 2) return;
     const nextMovie = heroCandidates[(activeHeroIndex + 1) % heroCandidates.length];
-    const nextSrc = backdropCache[nextMovie.slug] || getImageUrl(nextMovie.thumb_url || nextMovie.poster_url);
+    const nextSrc = isMobileViewport
+      ? posterCache[nextMovie.slug] || getBestMovieImage(detailsCache[nextMovie.slug] || nextMovie, "poster")
+      : backdropCache[nextMovie.slug] || getImageUrl(nextMovie.thumb_url || nextMovie.poster_url);
     if (nextSrc) {
       const image = new Image();
       image.src = nextSrc;
     }
-  }, [activeHeroIndex, backdropCache, heroCandidates]);
+  }, [activeHeroIndex, backdropCache, detailsCache, heroCandidates, isMobileViewport, posterCache]);
 
 
 
@@ -306,6 +315,9 @@ export default function HomePage() {
   const heroScore = Number(heroDetail?.tmdb?.vote_average || heroDetail?.imdb?.vote_average || 0);
   const heroAgeRating = heroDetail?.age_rating || heroDetail?.rating || "";
   const logoUrl = activeMovie ? logoCache[activeMovie.slug] : null;
+  const activeMobilePosterSrc = activeMovie
+    ? posterCache[activeMovie.slug] || getBestMovieImage(heroDetail || activeMovie, "poster")
+    : "";
   const loadingDetail = activeMovie && !heroDetail;
   const titleStyle = getMovieTitleStyle(heroDetail || activeMovie);
   const cleanedDesc = cleanContentHtml(heroDetail?.content || "");
@@ -325,12 +337,11 @@ export default function HomePage() {
           </div>
         </div>
       )}
-      {activeMovie && (
-        <>
-          <section className="relative overflow-hidden border-b border-zinc-900/70 bg-[#09090b] pb-5 pt-20 md:hidden">
+      {activeMovie && isMobileViewport && (
+          <section className="relative overflow-hidden border-b border-zinc-900/70 bg-[#09090b] pb-5 md:hidden">
             <div
               className="pointer-events-none absolute inset-x-0 top-12 h-[420px] scale-110 bg-cover bg-center opacity-20 blur-3xl"
-              style={{ backgroundImage: `url(${heroBackdropSrc})` }}
+              style={{ backgroundImage: `url(${activeMobilePosterSrc})` }}
               aria-hidden="true"
             />
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/25 via-black/45 to-[#09090b]" />
@@ -374,6 +385,9 @@ export default function HomePage() {
                       src={posterSrc}
                       alt={cleanMovieName(movie.name)}
                       priority={isActive}
+                      onLoad={() => {
+                        if (isActive) setHeroVisualReady(true);
+                      }}
                       className="h-full w-full object-cover"
                       onError={(event) => {
                         const fallback = backdropCache[movie.slug] || getImageUrl(movie.thumb_url || movie.poster_url);
@@ -435,7 +449,8 @@ export default function HomePage() {
               </div>
             </div>
           </section>
-
+      )}
+      {activeMovie && !isMobileViewport && (
           <div className="relative hidden w-full h-[88vh] items-end overflow-hidden border-b border-zinc-900/60 md:flex">
 
           {/* Ảnh nền Full-width trong suốt và sáng đẹp giống hệt mockup */}
@@ -443,7 +458,11 @@ export default function HomePage() {
             <ProgressiveImage
               src={heroBackdropSrc}
               alt={activeMovie.name}
-              onError={handleHeroBackdropError}
+              onLoad={() => setHeroVisualReady(true)}
+              onError={() => {
+                setHeroVisualReady(true);
+                handleHeroBackdropError();
+              }}
               priority
               className={`w-full h-full object-cover transition-all duration-500 ease-in-out ${isTransitioning ? "opacity-0 scale-102 blur-[4px]" : "opacity-100 scale-100 blur-0"
                 }`}
@@ -598,17 +617,18 @@ export default function HomePage() {
           </div>
 
           </div>
-        </>
       )}
 
       {/* 2. KHÚC ĐỆM BỔ SUNG: "BẠN ĐANG QUAN TÂM GÌ?" Y HỆT COBEPHIM */}
       <Interests />
 
       {/* Tiến trình cá nhân: chỉ hiển thị khi người dùng có lịch sử xem. */}
-      <ContinueWatchingRow />
+      <DeferredHomeSection enabled={heroVisualReady} minHeightClass="min-h-0" rootMargin="200px 0px">
+        <ContinueWatchingRow />
+      </DeferredHomeSection>
 
       {/* 2.5. HÀNH LANG PHIM THEO QUỐC GIA (MỚI THEO COBEPHIM) */}
-      <DeferredHomeSection minHeightClass="min-h-[570px] sm:min-h-[680px]">
+      <DeferredHomeSection enabled={heroVisualReady} minHeightClass="min-h-[570px] sm:min-h-[680px]">
         <div className="container mx-auto mt-8 max-w-7xl px-4 sm:mt-12 sm:px-6">
           <div className="flex flex-col rounded-2xl border border-[#282b3a]/60 bg-gradient-to-b from-[#282b3a]/28 to-[#282b3a] p-4 sm:rounded-[1.25rem] sm:p-6">
             <MovieRow title="Phim Hàn Quốc mới" accentText="Hàn Quốc" countrySlug="han-quoc" />
@@ -619,26 +639,27 @@ export default function HomePage() {
       </DeferredHomeSection>
 
       {/* 2.6. BẢNG XẾP HẠNG TOP 10 PHIM BỘ HÔM NAY (MỚI THEO COBEPHIM) */}
-      <DeferredHomeSection minHeightClass="min-h-[620px]">
+      <DeferredHomeSection enabled={heroVisualReady} minHeightClass="min-h-[360px] md:min-h-[620px]">
         <Top10Row />
       </DeferredHomeSection>
 
       {/* 2.7. PHIM SẮP TỚI TRÊN RỔ (TRAILERS) */}
-      <DeferredHomeSection minHeightClass="min-h-[360px]">
+      <DeferredHomeSection enabled={heroVisualReady} minHeightClass="min-h-[260px] md:min-h-[360px]">
         <UpcomingRow />
       </DeferredHomeSection>
 
       {/* 2.8. MÃN NHÃN VỚI PHIM CHIẾU RẠP */}
-      <DeferredHomeSection minHeightClass="min-h-[560px]">
+      <DeferredHomeSection enabled={heroVisualReady} minHeightClass="min-h-[260px] md:min-h-[560px]">
         <CinemaRow />
       </DeferredHomeSection>
 
       {/* 2.9. KHO TÀNG ANIME MỚI NHẤT */}
-      <DeferredHomeSection minHeightClass="min-h-[680px]">
+      <DeferredHomeSection enabled={heroVisualReady} minHeightClass="min-h-[680px]">
         <AnimeRow />
       </DeferredHomeSection>
 
       {/* 3. MAIN CONTENT - GRID DANH SÁCH PHIM MỚI NHẤT */}
+      <DeferredHomeSection enabled={heroVisualReady} minHeightClass="min-h-[420px]">
       <div className="container mx-auto px-6 mt-10 max-w-7xl space-y-6">
         <div className="flex items-center gap-2 border-b border-zinc-900 pb-3">
           <Film size={22} className="text-pink-500" />
@@ -651,6 +672,7 @@ export default function HomePage() {
           ))}
         </div>
       </div>
+      </DeferredHomeSection>
     </div>
   );
 }

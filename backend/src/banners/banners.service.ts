@@ -10,12 +10,13 @@ import { Banner, BannerDocument } from './schemas/banner.schema';
 import { MoviesService } from '../movies/movies.service';
 
 const HERO_SLOT_COUNT = 5;
-const HERO_CANDIDATE_LIMIT = 24;
-const HERO_TMDB_INITIAL_CANDIDATE_LIMIT = 12;
-const HERO_TMDB_CANDIDATE_LIMIT = 24;
+const HERO_LATEST_MOVIE_LIMIT = 24;
+const HERO_CANDIDATE_LIMIT = 16;
+const HERO_TMDB_INITIAL_CANDIDATE_LIMIT = 8;
+const HERO_TMDB_CANDIDATE_LIMIT = 16;
 const HERO_TMDB_EXPANSION_BATCH_SIZE = 4;
-const HERO_VALID_CANDIDATE_TARGET = 8;
-const HERO_DETAIL_CONCURRENCY = 4;
+const HERO_VALID_CANDIDATE_TARGET = HERO_SLOT_COUNT;
+const HERO_DETAIL_CONCURRENCY = 8;
 
 interface ProcessedHeroMovie {
   movie: any;
@@ -71,36 +72,41 @@ export class BannersService {
     heroCandidatesOnly = false,
     allowFallbackSource = false,
   ): Promise<ProcessedHeroMovie[]> {
-    const detailedMovies = await this.mapWithConcurrency(
-      movies,
-      HERO_DETAIL_CONCURRENCY,
-      async (movie): Promise<{ movie: any; detail: any }> => {
-        const sources = allowFallbackSource ? ['active', 'fallback'] : ['active'];
-        for (const source of sources) {
-          try {
-            const detailData = await this.moviesService.fetchOphimProxy(
-              `/v1/api/phim/${movie.slug}`,
-              source,
-            );
-            const detail = detailData?.data?.item || detailData?.movie || null;
-            if (detail?.name) return { movie, detail };
-          } catch {
-            // Banner do admin chọn được phép thử nguồn dự phòng.
+    const resolveDetailBatch = (items: any[]) =>
+      this.mapWithConcurrency(
+        items,
+        HERO_DETAIL_CONCURRENCY,
+        async (movie): Promise<{ movie: any; detail: any }> => {
+          const sources = allowFallbackSource
+            ? ['active', 'fallback']
+            : ['active'];
+          for (const source of sources) {
+            try {
+              const detailData = await this.moviesService.fetchOphimProxy(
+                `/v1/api/phim/${movie.slug}`,
+                source,
+              );
+              const detail =
+                detailData?.data?.item || detailData?.movie || null;
+              if (detail?.name) return { movie, detail };
+            } catch {
+              // Banner do admin chọn được phép thử nguồn dự phòng.
+            }
           }
-        }
-        return { movie, detail: null };
-      },
-    );
-
-    const eligibleMovies = detailedMovies.filter(({ movie, detail }) => {
-      if (!detail) return false;
-      if (!heroCandidatesOnly) return true;
-      const currentEpisode = (detail.episode_current || '').toLowerCase();
-      return (
-        !currentEpisode.includes('trailer') &&
-        !this.isAnimeOrAnimation(movie, detail)
+          return { movie, detail: null };
+        },
       );
-    });
+
+    const filterEligible = (items: Array<{ movie: any; detail: any }>) =>
+      items.filter(({ movie, detail }) => {
+        if (!detail) return false;
+        if (!heroCandidatesOnly) return true;
+        const currentEpisode = (detail.episode_current || '').toLowerCase();
+        return (
+          !currentEpisode.includes('trailer') &&
+          !this.isAnimeOrAnimation(movie, detail)
+        );
+      });
     const resolveTmdbBatch = (items: Array<{ movie: any; detail: any }>) =>
       this.mapWithConcurrency(
         items,
@@ -122,26 +128,26 @@ export class BannersService {
       );
 
     if (!heroCandidatesOnly) {
-      return resolveTmdbBatch(eligibleMovies);
+      return resolveTmdbBatch(filterEligible(await resolveDetailBatch(movies)));
     }
 
-    const tmdbCandidates = eligibleMovies.slice(
-      0,
-      HERO_TMDB_CANDIDATE_LIMIT,
-    );
+    const heroCandidates = movies.slice(0, HERO_TMDB_CANDIDATE_LIMIT);
     const processed: ProcessedHeroMovie[] = [];
 
-    // Keep cold starts bounded: try the original 12 candidates first and only
+    // Keep cold starts bounded: try the first eight candidates first and only
     // expand in small batches when TMDB has not produced enough valid heroes.
     let cursor = 0;
-    while (cursor < tmdbCandidates.length) {
+    while (cursor < heroCandidates.length) {
       const batchSize =
         cursor === 0
           ? HERO_TMDB_INITIAL_CANDIDATE_LIMIT
           : HERO_TMDB_EXPANSION_BATCH_SIZE;
-      const batch = tmdbCandidates.slice(cursor, cursor + batchSize);
+      const batch = heroCandidates.slice(cursor, cursor + batchSize);
       if (batch.length === 0) break;
-      processed.push(...(await resolveTmdbBatch(batch)));
+      const detailedBatch = await resolveDetailBatch(batch);
+      processed.push(
+        ...(await resolveTmdbBatch(filterEligible(detailedBatch))),
+      );
       cursor += batch.length;
 
       const validCount = processed.filter(
@@ -321,9 +327,12 @@ export class BannersService {
 
     const latestMovies = (
       latestData?.status && latestData?.items ? latestData.items : []
-    ).slice(0, HERO_CANDIDATE_LIMIT);
+    ).slice(0, HERO_LATEST_MOVIE_LIMIT);
+    const heroCandidates = latestMovies.slice(0, HERO_CANDIDATE_LIMIT);
     const sourceId = latestData?._sourceId || 'active';
-    const fingerprint = latestMovies.map((movie: any) => movie.slug).join('|');
+    const fingerprint = heroCandidates
+      .map((movie: any) => movie.slug)
+      .join('|');
     const cacheKey = `${sourceId}:${fingerprint}`;
     const now = Date.now();
     let processedMovies: ProcessedHeroMovie[];
@@ -337,7 +346,7 @@ export class BannersService {
       }
       let inflight = this.heroCandidateInflight.get(cacheKey);
       if (!inflight) {
-        inflight = this.resolveMovies(latestMovies, true);
+        inflight = this.resolveMovies(heroCandidates, true);
         this.heroCandidateInflight.set(cacheKey, inflight);
       }
       try {
@@ -356,7 +365,7 @@ export class BannersService {
         }
         this.heroCandidateCache.set(cacheKey, {
           processedMovies,
-          expiry: Date.now() + 5 * 60 * 1000,
+          expiry: Date.now() + 10 * 60 * 1000,
         });
       }
     }

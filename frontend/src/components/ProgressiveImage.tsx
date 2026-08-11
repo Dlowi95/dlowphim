@@ -1,6 +1,6 @@
 "use client";
 
-import React, { ImgHTMLAttributes, useEffect, useState } from "react";
+import React, { ImgHTMLAttributes, useState } from "react";
 
 type ProgressiveImageProps = ImgHTMLAttributes<HTMLImageElement> & {
   priority?: boolean;
@@ -19,9 +19,9 @@ export default function ProgressiveImage({
   onError,
   ...props
 }: ProgressiveImageProps) {
-  const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => setLoaded(false), [src]);
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const normalizedSrc = typeof src === "string" ? src : "";
+  const loaded = Boolean(normalizedSrc) && loadedSrc === normalizedSrc;
 
   return (
     <span className={`relative block h-full w-full overflow-hidden bg-zinc-900 ${wrapperClassName}`}>
@@ -39,11 +39,11 @@ export default function ProgressiveImage({
         fetchPriority={priority ? "high" : "auto"}
         decoding="async"
         onLoad={(event) => {
-          setLoaded(true);
+          setLoadedSrc(normalizedSrc);
           onLoad?.(event);
         }}
         onError={(event) => {
-          setLoaded(true);
+          setLoadedSrc(normalizedSrc);
           onError?.(event);
         }}
         className={`transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"} ${className}`}

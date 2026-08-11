@@ -46,6 +46,9 @@ interface UseResolvedHeroBannersOptions {
   admin?: boolean;
 }
 
+const PUBLIC_HERO_CACHE_KEY = "dlowphim:home-hero:v1";
+const PUBLIC_HERO_CACHE_TTL = 30 * 60 * 1000;
+
 export function useResolvedHeroBanners({
   apiUrl,
   admin = false,
@@ -57,10 +60,11 @@ export function useResolvedHeroBanners({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
+  const hasUsableCacheRef = useRef(false);
 
   const refresh = useCallback(async () => {
     const requestId = ++requestIdRef.current;
-    setLoading(true);
+    setLoading(!hasUsableCacheRef.current);
     setError(null);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
@@ -84,6 +88,17 @@ export function useResolvedHeroBanners({
       setRawBanners(data.rawBanners || []);
       setLatestMovies(data.latestMovies || []);
       setSourceId(data.sourceId || "");
+      if (!admin) {
+        try {
+          localStorage.setItem(
+            PUBLIC_HERO_CACHE_KEY,
+            JSON.stringify({ savedAt: Date.now(), data }),
+          );
+          hasUsableCacheRef.current = true;
+        } catch {
+          // Trình duyệt có thể chặn storage; dữ liệu mạng vẫn hoạt động bình thường.
+        }
+      }
     } catch (loadError) {
       if (requestId !== requestIdRef.current) return;
       setError(
@@ -91,7 +106,7 @@ export function useResolvedHeroBanners({
           ? loadError.message
           : "Không thể tải Hero Banner",
       );
-      setSlots([]);
+      if (!hasUsableCacheRef.current) setSlots([]);
     } finally {
       clearTimeout(timeoutId);
       if (requestId === requestIdRef.current) setLoading(false);
@@ -99,7 +114,33 @@ export function useResolvedHeroBanners({
   }, [admin, apiUrl]);
 
   useEffect(() => {
-    refresh();
+    if (!admin) {
+      try {
+        const cachedValue = localStorage.getItem(PUBLIC_HERO_CACHE_KEY);
+        if (cachedValue) {
+          const cached = JSON.parse(cachedValue) as {
+            savedAt?: number;
+            data?: ResolvedHeroResponse;
+          };
+          const cachedData = cached.data;
+          if (
+            cached.savedAt &&
+            Date.now() - cached.savedAt <= PUBLIC_HERO_CACHE_TTL &&
+            cachedData?.slots?.length
+          ) {
+            hasUsableCacheRef.current = true;
+            setSlots(cachedData.slots);
+            setRawBanners(cachedData.rawBanners || []);
+            setLatestMovies(cachedData.latestMovies || []);
+            setSourceId(cachedData.sourceId || "");
+            setLoading(false);
+          }
+        }
+      } catch {
+        // Storage không khả dụng hoặc cache hỏng: bỏ qua và dùng dữ liệu mạng.
+      }
+    }
+    void refresh();
     return () => {
       requestIdRef.current += 1;
     };
