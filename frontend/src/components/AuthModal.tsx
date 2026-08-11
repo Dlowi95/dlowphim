@@ -12,6 +12,8 @@ interface AuthModalProps {
   onOpenChange: (isOpen: boolean) => void;
 }
 
+type SubmittingAction = "form" | "google" | "resend" | null;
+
 export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [displayName, setDisplayName] = useState("");
@@ -19,7 +21,7 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [submittingAction, setSubmittingAction] = useState<SubmittingAction>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
@@ -27,6 +29,7 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
   const { loginManual, registerManual, loginGoogle, showToast } = useAuth();
+  const submitting = submittingAction !== null;
 
   // Reset form states when modal is opened/closed
   useEffect(() => {
@@ -39,6 +42,7 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
       setShowPassword(false);
       setShowConfirmPassword(false);
       setNeedsVerification(false);
+      setSubmittingAction(null);
     }
   }, [isOpen]);
 
@@ -58,7 +62,7 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
       return;
     }
 
-    setSubmitting(true);
+    setSubmittingAction("form");
     try {
       if (isLogin) {
         await loginManual(email, password);
@@ -67,22 +71,22 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
       } else {
         if (displayName.trim().length < 2 || displayName.trim().length > 40) {
           setError("Tên hiển thị cần từ 2 đến 40 ký tự");
-          setSubmitting(false);
+          setSubmittingAction(null);
           return;
         }
         if (password.length < 8 || password.length > 72) {
           setError("Mật khẩu cần từ 8 đến 72 ký tự");
-          setSubmitting(false);
+          setSubmittingAction(null);
           return;
         }
         if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
           setError("Mật khẩu cần có ít nhất một chữ cái và một chữ số");
-          setSubmitting(false);
+          setSubmittingAction(null);
           return;
         }
         if (password !== confirmPassword) {
           setError("Mật khẩu nhập lại không khớp");
-          setSubmitting(false);
+          setSubmittingAction(null);
           return;
         }
         const result = await registerManual(displayName, email, password);
@@ -94,13 +98,13 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
       setError(message);
       setNeedsVerification(String(message).toLowerCase().includes("xác minh"));
     } finally {
-      setSubmitting(false);
+      setSubmittingAction(null);
     }
   };
 
   const resendVerification = async () => {
     if (!email.trim() || submitting) return;
-    setSubmitting(true);
+    setSubmittingAction("resend");
     try {
       const response = await fetch(`${API_URL}/auth/resend-verification`, {
         method: "POST",
@@ -115,13 +119,13 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
     } catch (err: any) {
       setError(err.message || "Chưa thể gửi lại email xác minh");
     } finally {
-      setSubmitting(false);
+      setSubmittingAction(null);
     }
   };
 
   const handleGoogleLogin = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
-      setSubmitting(true);
+      setSubmittingAction("google");
       setError(null);
       try {
         await loginGoogle(tokenResponse.access_token, true);
@@ -130,10 +134,11 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
       } catch (err: any) {
         setError(err.message || "Đăng nhập bằng Google thất bại");
       } finally {
-        setSubmitting(false);
+        setSubmittingAction(null);
       }
     },
     onError: () => {
+      setSubmittingAction(null);
       setError("Kết nối tới tài khoản Google thất bại");
     },
   });
@@ -146,13 +151,13 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
       placement="center"
       size="3xl"
       classNames={{
-        base: "bg-[#161a33] text-white rounded-3xl overflow-hidden p-0 max-w-[800px] border border-zinc-800/80 shadow-2xl",
+        base: "self-center w-full max-w-none md:max-w-[800px] bg-[#161a33] text-white rounded-3xl overflow-hidden p-0 border border-zinc-800/80 shadow-2xl",
         backdrop: "bg-black/85 backdrop-blur-sm"
       }}
     >
       <ModalContent>
         {(onClose) => (
-          <ModalBody className="p-0 flex flex-col md:flex-row h-[580px] min-h-[580px] max-h-[580px] overflow-y-auto md:overflow-hidden">
+          <ModalBody className="p-0 flex flex-col md:flex-row h-auto min-h-0 max-h-[calc(100dvh-5rem)] md:h-[580px] md:min-h-[580px] md:max-h-[580px] overflow-y-auto md:overflow-hidden">
             
             {/* CỘT TRÁI: BANNER POSTER PHIM MỜ ẢO (Ẩn trên điện thoại) */}
             <div className="hidden md:flex w-[350px] relative items-end p-8 bg-[#0f1122] overflow-hidden border-r border-zinc-800/40 select-none">
@@ -179,7 +184,7 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
             </div>
 
             {/* CỘT PHẢI: FORM ĐĂNG NHẬP / ĐĂNG KÝ */}
-            <form onSubmit={handleSubmit} className="flex-1 bg-[#161a33] p-10 flex flex-col justify-center relative">
+            <form onSubmit={handleSubmit} className="flex-1 bg-[#161a33] px-5 pb-7 pt-14 sm:px-7 md:p-10 flex flex-col justify-start md:justify-center relative">
               {/* Nút đóng modal góc phải */}
               <button 
                 type="button"
@@ -190,7 +195,7 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
                 <X size={20} />
               </button>
 
-              <div className="space-y-5">
+              <div className="space-y-4 md:space-y-5">
                 <div>
                   <h3 className="text-2xl font-black tracking-tight select-none">
                     {isLogin ? "Đăng nhập" : "Đăng ký"}
@@ -230,12 +235,12 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
                       autoComplete="name"
                       maxLength={40}
                       isDisabled={submitting}
-                      variant="bordered"
+                      variant="flat"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
                       classNames={{
-                        inputWrapper: "border-zinc-800 hover:border-zinc-700/80 focus-within:!border-pink-500 bg-[#0e1022]/40 rounded-xl h-11 shadow-none",
-                        input: "text-sm text-zinc-200 placeholder:text-zinc-500 ml-1"
+                        inputWrapper: "border-0 hover:border-0 data-[focus=true]:border-0 data-[focus=true]:ring-0 focus-within:!border-0 focus-within:!ring-0 bg-[#0e1022]/70 rounded-xl h-11 shadow-none",
+                        input: "text-sm text-zinc-200 placeholder:text-zinc-500 ml-1 outline-none focus:outline-none focus-visible:outline-none ring-0 focus:ring-0"
                       }}
                     />
                   )}
@@ -246,12 +251,12 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
                     autoComplete="email"
                     maxLength={254}
                     isDisabled={submitting}
-                    variant="bordered"
+                    variant="flat"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     classNames={{
-                      inputWrapper: "border-zinc-800 hover:border-zinc-700/80 focus-within:!border-pink-500 bg-[#0e1022]/40 rounded-xl h-11 shadow-none",
-                      input: "text-sm text-zinc-200 placeholder:text-zinc-500 ml-1"
+                      inputWrapper: "border-0 hover:border-0 data-[focus=true]:border-0 data-[focus=true]:ring-0 focus-within:!border-0 focus-within:!ring-0 bg-[#0e1022]/70 rounded-xl h-11 shadow-none",
+                      input: "text-sm text-zinc-200 placeholder:text-zinc-500 ml-1 outline-none focus:outline-none focus-visible:outline-none ring-0 focus:ring-0"
                     }}
                   />
                   <Input
@@ -261,7 +266,7 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
                     autoComplete={isLogin ? "current-password" : "new-password"}
                     maxLength={72}
                     isDisabled={submitting}
-                    variant="bordered"
+                    variant="flat"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     endContent={
@@ -275,8 +280,8 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
                       </button>
                     }
                     classNames={{
-                      inputWrapper: "border-zinc-800 hover:border-zinc-700/80 focus-within:!border-pink-500 bg-[#0e1022]/40 rounded-xl h-11 shadow-none",
-                      input: "text-sm text-zinc-200 placeholder:text-zinc-500 ml-1"
+                      inputWrapper: "border-0 hover:border-0 data-[focus=true]:border-0 data-[focus=true]:ring-0 focus-within:!border-0 focus-within:!ring-0 bg-[#0e1022]/70 rounded-xl h-11 shadow-none",
+                      input: "text-sm text-zinc-200 placeholder:text-zinc-500 ml-1 outline-none focus:outline-none focus-visible:outline-none ring-0 focus:ring-0"
                     }}
                   />
                   {!isLogin && (
@@ -288,7 +293,7 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
                         autoComplete="new-password"
                         maxLength={72}
                         isDisabled={submitting}
-                        variant="bordered"
+                        variant="flat"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         endContent={
@@ -302,8 +307,8 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
                           </button>
                         }
                         classNames={{
-                          inputWrapper: "border-zinc-800 hover:border-zinc-700/80 focus-within:!border-pink-500 bg-[#0e1022]/40 rounded-xl h-11 shadow-none",
-                          input: "text-sm text-zinc-200 placeholder:text-zinc-500 ml-1"
+                          inputWrapper: "border-0 hover:border-0 data-[focus=true]:border-0 data-[focus=true]:ring-0 focus-within:!border-0 focus-within:!ring-0 bg-[#0e1022]/70 rounded-xl h-11 shadow-none",
+                          input: "text-sm text-zinc-200 placeholder:text-zinc-500 ml-1 outline-none focus:outline-none focus-visible:outline-none ring-0 focus:ring-0"
                         }}
                       />
                       <p className="px-1 text-[10px] font-medium leading-relaxed text-zinc-500">
@@ -316,11 +321,11 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
                 {/* Nút Submit */}
                 <Button 
                   type="submit"
-                  isLoading={submitting}
+                  isLoading={submittingAction === "form"}
                   isDisabled={submitting}
                   className="w-full bg-pink-500 hover:bg-pink-600 text-white font-extrabold rounded-xl h-11 text-sm shadow-lg shadow-pink-500/20 transition-all duration-200"
                 >
-                  {isLogin ? "Đăng nhập" : "Đăng ký"}
+                  {submittingAction === "form" ? "Đang xác thực..." : isLogin ? "Đăng nhập" : "Đăng ký"}
                 </Button>
 
                 {isLogin && (
@@ -340,7 +345,7 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
                   <Button 
                     type="button"
                     variant="flat"
-                    isLoading={submitting}
+                    isLoading={submittingAction === "google"}
                     isDisabled={submitting}
                     onClick={() => handleGoogleLogin()}
                     className="w-full bg-white hover:bg-zinc-100 text-zinc-800 font-bold rounded-xl h-11 text-xs transition-all duration-200 flex items-center justify-center gap-2.5 shadow-md shadow-black/5"

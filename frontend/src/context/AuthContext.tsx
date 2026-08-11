@@ -185,38 +185,44 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     fetchUnreadNotificationsCount(token);
   };
 
-  const loginManual = async (email: string, password: string) => {
-    const res = await fetch(`${API_URL}/auth/login`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ email, password }),
-    });
+  const requestAuth = async (path: string, body: Record<string, unknown>) => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 12000);
 
-    const data = await res.json();
+    try {
+      const res = await fetch(`${API_URL}${path}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      const data = await res.json().catch(() => ({}));
 
-    if (!res.ok) {
-      throw new Error(data.message || "Đăng nhập thất bại");
+      if (!res.ok) {
+        throw new Error(data.message || "Yêu cầu xác thực thất bại");
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new Error("Máy chủ phản hồi quá lâu. Vui lòng thử lại.");
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeoutId);
     }
+  };
+
+  const loginManual = async (email: string, password: string) => {
+    const data = await requestAuth("/auth/login", { email, password });
 
     saveTokenAndUser(data.accessToken, data.user);
   };
 
   const registerManual = async (displayName: string, email: string, password: string) => {
-    const res = await fetch(`${API_URL}/auth/register`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ displayName, email, password }),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data.message || "Đăng ký thất bại");
-    }
+    const data = await requestAuth("/auth/register", { displayName, email, password });
 
     if (data.accessToken && data.user) saveTokenAndUser(data.accessToken, data.user);
     return data;
@@ -224,19 +230,7 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
 
   const loginGoogle = async (token: string, isAccessToken = true) => {
     const body = isAccessToken ? { accessToken: token } : { idToken: token };
-    const res = await fetch(`${API_URL}/auth/google`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data.message || "Đăng nhập Google thất bại");
-    }
+    const data = await requestAuth("/auth/google", body);
 
     saveTokenAndUser(data.accessToken, data.user);
   };
