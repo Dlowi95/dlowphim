@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Navbar, NavbarBrand, NavbarContent, NavbarItem, Input, Button, useDisclosure, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Avatar, Popover, PopoverTrigger, PopoverContent } from "@heroui/react";
-import { Search, User, Loader2, ChevronDown, Play, Bell, ChevronUp, Wallet, Heart, Plus, History, LogOut, MessageSquare, Film, Info } from "lucide-react";
+import { Search, User, Loader2, ChevronDown, Play, Bell, ChevronUp, Wallet, Heart, Plus, History, LogOut } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import AuthModal from "./AuthModal";
@@ -12,6 +12,7 @@ import { searchMovies } from "@/utils/movieSearch";
 import { searchPeople, type PersonResult } from "@/utils/people";
 import { COUNTRIES, GENRES } from "@/constants/discovery";
 import MobileNavigation from "./MobileNavigation";
+import NotificationPreview from "./NotificationPreview";
 
 export default function NavbarComponent() {
   const pathname = usePathname();
@@ -61,6 +62,33 @@ export default function NavbarComponent() {
     } finally {
       setIsLoadingNotifs(false);
     }
+  };
+
+  const handleNotificationOpenChange = (nextOpen: boolean) => {
+    setIsNotifPopoverOpen(nextOpen);
+    if (nextOpen) void loadRecentNotifs();
+  };
+
+  const handleReadAllRecentNotifications = async () => {
+    const success = await readAllNotifications();
+    if (success) setRecentNotifications((items) => items.map((item) => ({ ...item, isRead: true })));
+  };
+
+  const handleSelectRecentNotification = (notification: any) => {
+    if (!notification.isRead) {
+      setRecentNotifications((items) => items.map((item) =>
+        item._id === notification._id ? { ...item, isRead: true } : item,
+      ));
+      void readSingleNotification(notification._id);
+    }
+    setIsNotifPopoverOpen(false);
+    const target = String(notification.link || "").trim();
+    if (target.startsWith("/") && !target.startsWith("//")) router.push(target);
+  };
+
+  const handleViewAllNotifications = () => {
+    setIsNotifPopoverOpen(false);
+    router.push("/user/notifications");
   };
 
   useEffect(() => {
@@ -184,6 +212,13 @@ export default function NavbarComponent() {
         isAuthLoading={loading}
         unreadNotificationsCount={unreadNotificationsCount}
         onOpenAuth={onOpen}
+        notifications={recentNotifications}
+        isLoadingNotifications={isLoadingNotifs}
+        isNotificationsOpen={isNotifPopoverOpen}
+        onNotificationsOpenChange={handleNotificationOpenChange}
+        onReadAllNotifications={handleReadAllRecentNotifications}
+        onSelectNotification={handleSelectRecentNotification}
+        onViewAllNotifications={handleViewAllNotifications}
       />
       <div className="hidden md:block">
       <Navbar
@@ -450,10 +485,7 @@ export default function NavbarComponent() {
                   placement="bottom-end"
                   offset={12}
                   showArrow
-                  onOpenChange={(isOpen) => {
-                    setIsNotifPopoverOpen(isOpen);
-                    if (isOpen) void loadRecentNotifs();
-                  }}
+                  onOpenChange={handleNotificationOpenChange}
                 >
                     <PopoverTrigger>
                       <button
@@ -479,87 +511,15 @@ export default function NavbarComponent() {
                         )}
                       </button>
                     </PopoverTrigger>
-                  <PopoverContent className="bg-[#161a33] text-white border border-zinc-800 rounded-3xl p-4 w-[340px] shadow-[0_25px_60px_rgba(0,0,0,0.8)] block text-left">
-                    {/* Header */}
-                    <div className="flex items-center justify-between w-full border-b border-zinc-800/50 pb-2.5 mb-3">
-                      <span className="font-extrabold text-sm text-white uppercase tracking-wider">Thông báo</span>
-                      {unreadNotificationsCount > 0 && (
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            const success = await readAllNotifications();
-                            if (success) {
-                              setRecentNotifications((items) =>
-                                items.map((item) => ({ ...item, isRead: true })),
-                              );
-                            }
-                          }}
-                          className="text-[10px] font-black text-pink-500 hover:text-pink-400 uppercase tracking-wider transition-colors cursor-pointer border-none bg-transparent"
-                        >
-                          Đọc tất cả
-                        </button>
-                      )}
-                    </div>
-                    
-                    {/* List Items */}
-                    <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1 no-scrollbar">
-                      {isLoadingNotifs ? (
-                        <div className="py-8 text-center flex flex-col items-center justify-center gap-2">
-                          <Loader2 size={20} className="animate-spin text-pink-500" />
-                          <span className="text-xs text-zinc-500 font-medium">Đang tải...</span>
-                        </div>
-                      ) : recentNotifications.length === 0 ? (
-                        <div className="py-8 text-center flex flex-col items-center justify-center gap-1.5 text-zinc-500">
-                          <Bell size={24} className="stroke-[1.5]" />
-                          <span className="text-xs font-semibold">Không có thông báo mới nào</span>
-                        </div>
-                      ) : (
-                        recentNotifications.map((notif) => {
-                          let Icon = Info;
-                          let iconColor = "text-sky-500 bg-sky-500/10";
-                          if (notif.type === "reply") {
-                            Icon = MessageSquare;
-                            iconColor = "text-pink-500 bg-pink-500/10";
-                          } else if (["movie_update", "movie_available", "upcoming_release"].includes(notif.type)) {
-                            Icon = Film;
-                            iconColor = "text-yellow-500 bg-yellow-500/10";
-                          }
-                          return (
-                            <div
-                              key={notif._id}
-                              onClick={() => {
-                                if (!notif.isRead) void readSingleNotification(notif._id);
-                                const target = String(notif.link || "").trim();
-                                if (target.startsWith("/") && !target.startsWith("//")) {
-                                  router.push(target);
-                                }
-                              }}
-                              className={`flex items-start gap-3 w-full hover:bg-zinc-800/40 p-2.5 rounded-2xl transition-all cursor-pointer ${
-                                !notif.isRead ? "bg-pink-500/5 border-l-2 border-pink-500 pl-2" : ""
-                              }`}
-                            >
-                              <div className={`p-2 rounded-xl shrink-0 ${iconColor}`}>
-                                <Icon size={16} />
-                              </div>
-                              <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                                <span className="font-bold text-xs text-zinc-200 truncate">{notif.title}</span>
-                                <p className="text-[11px] text-zinc-400 font-medium line-clamp-2 leading-relaxed">{notif.content}</p>
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-
-                    {/* Footer */}
-                    <div className="pt-2.5 border-t border-zinc-800/50 mt-2">
-                      <button
-                        onClick={() => router.push("/user/notifications")}
-                        className="w-full h-9 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white font-extrabold text-xs rounded-xl transition-all cursor-pointer border-none"
-                      >
-                        Xem tất cả thông báo
-                      </button>
-                    </div>
+                  <PopoverContent className="block w-[340px] rounded-3xl border border-zinc-800 bg-[#161a33] p-4 text-left text-white shadow-[0_25px_60px_rgba(0,0,0,0.8)]">
+                    <NotificationPreview
+                      notifications={recentNotifications}
+                      isLoading={isLoadingNotifs}
+                      unreadCount={unreadNotificationsCount}
+                      onReadAll={handleReadAllRecentNotifications}
+                      onSelect={handleSelectRecentNotification}
+                      onViewAll={handleViewAllNotifications}
+                    />
                   </PopoverContent>
                 </Popover>
 

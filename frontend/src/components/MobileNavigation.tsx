@@ -6,12 +6,20 @@ import { usePathname } from "next/navigation";
 import { Bell, CalendarDays, Home, Search, UserRound } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { shouldHideMobileNavigation } from "@/utils/mobileNavigation";
+import NotificationPreview from "./NotificationPreview";
 
 interface MobileNavigationProps {
   isAuthenticated: boolean;
   isAuthLoading: boolean;
   unreadNotificationsCount: number;
   onOpenAuth: () => void;
+  notifications: any[];
+  isLoadingNotifications: boolean;
+  isNotificationsOpen: boolean;
+  onNotificationsOpenChange: (open: boolean) => void;
+  onReadAllNotifications: () => void;
+  onSelectNotification: (notification: any) => void;
+  onViewAllNotifications: () => void;
 }
 
 const NAV_ITEMS = [
@@ -48,6 +56,13 @@ export default function MobileNavigation({
   isAuthLoading,
   unreadNotificationsCount,
   onOpenAuth,
+  notifications,
+  isLoadingNotifications,
+  isNotificationsOpen,
+  onNotificationsOpenChange,
+  onReadAllNotifications,
+  onSelectNotification,
+  onViewAllNotifications,
 }: MobileNavigationProps) {
   const pathname = usePathname();
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
@@ -88,9 +103,22 @@ export default function MobileNavigation({
     };
   }, [pathname, updateHeader]);
 
+  useEffect(() => {
+    onNotificationsOpenChange(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!isNotificationsOpen) return;
+    setIsHeaderVisible(true);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onNotificationsOpenChange(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isNotificationsOpen, onNotificationsOpenChange]);
+
   if (shouldHideMobileNavigation(pathname)) return null;
 
-  const notificationHref = isAuthenticated ? "/user/notifications" : undefined;
   const unreadLabel =
     unreadNotificationsCount > 99 ? "99+" : unreadNotificationsCount;
 
@@ -122,11 +150,13 @@ export default function MobileNavigation({
             </span>
           </Link>
 
-          {notificationHref ? (
-            <Link
-              href={notificationHref}
+          {isAuthenticated ? (
+            <button
+              type="button"
+              onClick={() => onNotificationsOpenChange(!isNotificationsOpen)}
               aria-label="Thông báo"
-              className="relative flex size-11 items-center justify-center rounded-full border border-white/10 bg-white/[0.055] text-zinc-100 transition-colors active:bg-pink-500/15"
+              aria-expanded={isNotificationsOpen}
+              className={`relative flex size-11 items-center justify-center rounded-full border text-zinc-100 transition-colors ${isNotificationsOpen ? "border-pink-500/40 bg-pink-500/15" : "border-white/10 bg-white/[0.055] active:bg-pink-500/15"}`}
             >
               <Bell size={21} strokeWidth={2} />
               {unreadNotificationsCount > 0 && (
@@ -134,7 +164,7 @@ export default function MobileNavigation({
                   {unreadLabel}
                 </span>
               )}
-            </Link>
+            </button>
           ) : (
             <button
               type="button"
@@ -148,6 +178,31 @@ export default function MobileNavigation({
           )}
         </div>
       </header>
+
+      {isAuthenticated && isNotificationsOpen ? (
+        <>
+          <button
+            type="button"
+            aria-label="Đóng bảng thông báo"
+            onClick={() => onNotificationsOpenChange(false)}
+            className="fixed inset-0 z-[55] bg-black/55 backdrop-blur-[2px] md:hidden"
+          />
+          <aside
+            aria-label="Thông báo gần đây"
+            className="fixed inset-x-3 top-[calc(4rem+env(safe-area-inset-top)+0.65rem)] z-[65] mx-auto w-auto max-w-screen-sm rounded-[1.4rem] border border-white/10 bg-[#15182d]/98 p-4 shadow-[0_24px_70px_rgba(0,0,0,0.72)] backdrop-blur-2xl md:hidden"
+          >
+            <NotificationPreview
+              notifications={notifications}
+              isLoading={isLoadingNotifications}
+              unreadCount={unreadNotificationsCount}
+              onReadAll={onReadAllNotifications}
+              onSelect={onSelectNotification}
+              onViewAll={onViewAllNotifications}
+              onClose={() => onNotificationsOpenChange(false)}
+            />
+          </aside>
+        </>
+      ) : null}
 
       <div
         aria-hidden="true"
