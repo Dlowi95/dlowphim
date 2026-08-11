@@ -82,10 +82,10 @@ export default function UserFavoritePage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-zinc-900 pb-3.5 gap-4">
-        <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight text-zinc-100 flex items-center gap-2.5">
-          <Heart className="text-pink-500 fill-pink-500 drop-shadow-[0_0_8px_rgba(236,72,153,0.9)]" size={24} />
+    <div className="space-y-5 md:space-y-6">
+      <div className="flex items-center justify-between border-b border-zinc-900 pb-3.5 gap-3">
+        <h2 className="text-lg md:text-2xl font-black uppercase tracking-tight text-zinc-100 flex items-center gap-2.5">
+          <Heart className="h-[22px] w-[22px] text-pink-500 fill-pink-500 drop-shadow-[0_0_8px_rgba(236,72,153,0.9)] md:h-6 md:w-6" size={24} />
           <span>Yêu thích</span>
         </h2>
         
@@ -96,7 +96,7 @@ export default function UserFavoritePage() {
 
       {/* FAVORITE GRID */}
       {loadError ? (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-3xl border border-red-500/15 bg-red-500/[0.03] px-8 py-20 text-center">
+        <div className="flex flex-col items-center justify-center gap-3 rounded-2xl md:rounded-3xl border border-red-500/15 bg-red-500/[0.03] px-5 md:px-8 py-14 md:py-20 text-center">
           <p className="text-sm font-bold text-zinc-300">{loadError}</p>
           <button
             type="button"
@@ -108,7 +108,7 @@ export default function UserFavoritePage() {
         </div>
       ) : (
         loadingDetails ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 py-10">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4 py-6 md:py-10">
             {Array.from({ length: 6 }).map((_, idx) => (
               <div key={idx} className="flex flex-col gap-3.5 animate-pulse">
                 <div className="aspect-[2/3] bg-zinc-900 border border-zinc-800 rounded-2xl w-full" />
@@ -118,7 +118,7 @@ export default function UserFavoritePage() {
             ))}
           </div>
         ) : favoriteDetails.length === 0 ? (
-          <div className="bg-[#12131b]/30 border border-zinc-900 rounded-3xl py-20 px-8 flex flex-col items-center justify-center gap-3 select-none text-center">
+          <div className="bg-[#12131b]/30 border border-zinc-900 rounded-2xl md:rounded-3xl py-14 md:py-20 px-5 md:px-8 flex flex-col items-center justify-center gap-3 select-none text-center">
             <Heart size={44} className="text-zinc-700" />
             <h4 className="text-base font-bold text-zinc-400">Danh sách phim yêu thích trống</h4>
             <p className="text-xs text-zinc-500 max-w-xs">
@@ -127,7 +127,7 @@ export default function UserFavoritePage() {
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-x-3 gap-y-4 md:gap-4">
               {paginatedMovies.map((movie) => (
                 <FavoriteMovieCard key={movie.slug} movie={movie} onRemove={handleRemoveFavorite} />
               ))}
@@ -195,7 +195,7 @@ function FavoriteMovieCard({
   return (
     <div className="group relative flex flex-col gap-2.5">
       {/* Card Wrapper */}
-      <div className="aspect-[2/3] relative rounded-2xl overflow-hidden border border-zinc-800/80 bg-zinc-950 shadow-md group">
+      <div className="aspect-[2/3] relative rounded-xl md:rounded-2xl overflow-hidden border border-zinc-800/80 bg-zinc-950 shadow-md group">
         <img
           src={imgSrc}
           alt={movie.name}
@@ -205,16 +205,16 @@ function FavoriteMovieCard({
         />
 
         {/* Overlay control */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/35 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-2">
+        <div className="absolute inset-0 bg-transparent md:bg-gradient-to-t md:from-black/80 md:via-black/20 md:to-black/35 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300 flex items-start justify-end md:items-center md:justify-center gap-2 p-2 md:p-0">
           <Link
             href={`/movie/${movie.slug}`}
-            className="w-9 h-9 rounded-full bg-pink-500 hover:bg-pink-600 text-white flex items-center justify-center transition-all shadow-md active:scale-90"
+            className="hidden md:flex w-9 h-9 rounded-full bg-pink-500 hover:bg-pink-600 text-white items-center justify-center transition-all shadow-md active:scale-90"
           >
             <Play size={16} className="fill-white ml-0.5" />
           </Link>
           <button
             onClick={(e) => onRemove(e, movie.slug)}
-            className="w-9 h-9 rounded-full bg-zinc-900/90 hover:bg-red-500 hover:text-white border border-zinc-800 text-zinc-350 flex items-center justify-center transition-all shadow-md active:scale-90 cursor-pointer"
+            className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-black/75 md:bg-zinc-900/90 hover:bg-red-500 hover:text-white border border-white/15 md:border-zinc-800 text-zinc-200 md:text-zinc-350 flex items-center justify-center transition-all shadow-md active:scale-90 cursor-pointer backdrop-blur-sm md:backdrop-blur-none"
             title="Xóa khỏi yêu thích"
           >
             <X size={16} />

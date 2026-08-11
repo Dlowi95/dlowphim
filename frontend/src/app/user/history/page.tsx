@@ -149,17 +149,17 @@ export default function UserHistoryPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-zinc-900 pb-3.5 gap-4">
-        <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight text-zinc-100 flex items-center gap-2.5">
-          <History className="text-pink-500" size={24} />
+    <div className="space-y-5 md:space-y-6">
+      <div className="flex items-center justify-between border-b border-zinc-900 pb-3.5 gap-3">
+        <h2 className="min-w-0 text-lg md:text-2xl font-black uppercase tracking-tight text-zinc-100 flex items-center gap-2.5">
+          <History className="h-[22px] w-[22px] shrink-0 text-pink-500 md:h-6 md:w-6" size={24} />
           <span>Lịch sử xem tiếp</span>
         </h2>
 
         {historyItems.length > 0 && (
           <button
             onClick={handleClearAllHistory}
-            className="h-9 px-4 rounded-full border border-red-500/20 text-red-400 hover:bg-red-500/10 font-bold text-xs flex items-center gap-1.5 transition-all select-none cursor-pointer"
+            className="h-9 shrink-0 px-3 md:px-4 rounded-full border border-red-500/20 text-red-400 hover:bg-red-500/10 font-bold text-[11px] md:text-xs flex items-center gap-1.5 transition-all select-none cursor-pointer"
           >
             <Trash2 size={13} />
             <span>Xóa tất cả</span>
@@ -183,7 +183,7 @@ export default function UserHistoryPage() {
       )}
 
       {historyItems.length === 0 ? (
-        <div className="bg-[#12131b]/30 border border-zinc-900 rounded-3xl py-20 px-8 flex flex-col items-center justify-center gap-3 select-none text-center">
+        <div className="bg-[#12131b]/30 border border-zinc-900 rounded-2xl md:rounded-3xl py-14 md:py-20 px-5 md:px-8 flex flex-col items-center justify-center gap-3 select-none text-center">
           <History size={44} className="text-zinc-700" />
           <h4 className="text-base font-bold text-zinc-400">Lịch sử xem trống</h4>
           <p className="text-xs text-zinc-500 max-w-xs">
@@ -198,7 +198,7 @@ export default function UserHistoryPage() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-x-3 gap-y-4 md:gap-4">
             {displayedHistory.map((item) => (
               <HistoryItemCard
                 key={item.movieSlug}
@@ -292,7 +292,7 @@ function HistoryItemCard({
       className="group relative flex flex-col gap-2.5 cursor-pointer text-left"
     >
       {/* Poster card with X button overlay */}
-      <div className="relative aspect-[2/3] rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800/80 group-hover:border-zinc-700 transition-all select-none shadow-md">
+      <div className="relative aspect-[2/3] rounded-xl md:rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800/80 group-hover:border-zinc-700 transition-all select-none shadow-md">
         <ProgressiveImage
           src={imgSrc || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80"}
           alt={item.movieName}

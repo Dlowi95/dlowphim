@@ -167,20 +167,20 @@ export default function UserWatchlistPage() {
   };
 
   return (
-    <div className="space-y-6 select-none relative min-h-[60vh]">
+    <div className="space-y-5 md:space-y-6 select-none relative min-h-[60vh]">
       
       {/* MÀN HÌNH 1: HIỂN THỊ DANH SÁCH CÁC PLAYLISTS */}
       {!selectedPlaylist ? (
         <>
-          <div className="flex items-center justify-between border-b border-zinc-900 pb-3.5 gap-4">
-            <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight text-zinc-100 flex items-center gap-2.5">
-              <ListPlus className="text-pink-500" size={24} />
+          <div className="flex items-center justify-between border-b border-zinc-900 pb-3.5 gap-3">
+            <h2 className="min-w-0 text-lg md:text-2xl font-black uppercase tracking-tight text-zinc-100 flex items-center gap-2.5">
+              <ListPlus className="h-[22px] w-[22px] shrink-0 text-pink-500 md:h-6 md:w-6" size={24} />
               <span>Danh sách phát</span>
             </h2>
             
             <button
               onClick={() => setShowCreateModal(true)}
-              className="h-10 px-5 bg-pink-500 hover:bg-pink-600 active:scale-98 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-pink-500/10 transition-all cursor-pointer"
+              className="h-10 shrink-0 px-3.5 md:px-5 bg-pink-500 hover:bg-pink-600 active:scale-98 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-pink-500/10 transition-all cursor-pointer"
             >
               <Plus size={14} className="stroke-[3]" />
               <span>Thêm mới</span>
@@ -188,7 +188,7 @@ export default function UserWatchlistPage() {
           </div>
 
           {playlists.length === 0 ? (
-            <div className="bg-[#12131b]/30 border border-zinc-900 rounded-3xl py-20 px-8 flex flex-col items-center justify-center gap-3 text-center">
+            <div className="bg-[#12131b]/30 border border-zinc-900 rounded-2xl md:rounded-3xl py-14 md:py-20 px-5 md:px-8 flex flex-col items-center justify-center gap-3 text-center">
               <Folder size={48} className="text-zinc-800" />
               <h4 className="text-base font-bold text-zinc-400">Danh sách phát trống</h4>
               <p className="text-xs text-zinc-550 max-w-xs">
@@ -197,7 +197,7 @@ export default function UserWatchlistPage() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5 pt-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 md:gap-5 pt-2 md:pt-4">
                 {displayedPlaylists.map((playlist) => (
                   <div
                     key={playlist.id}
@@ -214,7 +214,7 @@ export default function UserWatchlistPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity shrink-0">
                       {/* Nút sửa */}
                       <button
                         onClick={(e) => {
@@ -280,7 +280,7 @@ export default function UserWatchlistPage() {
 
           {/* HIỂN THỊ PHIM TRONG PLAYLIST */}
           {loadError ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-3xl border border-red-500/15 bg-red-500/[0.03] px-8 py-20 text-center">
+            <div className="flex flex-col items-center justify-center gap-3 rounded-2xl md:rounded-3xl border border-red-500/15 bg-red-500/[0.03] px-5 md:px-8 py-14 md:py-20 text-center">
               <p className="text-sm font-bold text-zinc-300">{loadError}</p>
               <button
                 type="button"
@@ -291,7 +291,7 @@ export default function UserWatchlistPage() {
               </button>
             </div>
           ) : loadingMovies ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 py-10">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4 py-6 md:py-10">
               {Array.from({ length: 4 }).map((_, idx) => (
                 <div key={idx} className="flex flex-col gap-3.5 animate-pulse">
                   <div className="aspect-[2/3] bg-zinc-900 border border-zinc-800 rounded-2xl w-full" />
@@ -301,7 +301,7 @@ export default function UserWatchlistPage() {
               ))}
             </div>
           ) : playlistMovies.length === 0 ? (
-            <div className="bg-[#12131b]/30 border border-zinc-900 rounded-3xl py-20 px-8 flex flex-col items-center justify-center gap-3 text-center">
+            <div className="bg-[#12131b]/30 border border-zinc-900 rounded-2xl md:rounded-3xl py-14 md:py-20 px-5 md:px-8 flex flex-col items-center justify-center gap-3 text-center">
               <Folder size={44} className="text-zinc-800" />
               <h4 className="text-base font-bold text-zinc-400">Không có phim nào</h4>
               <p className="text-xs text-zinc-550 max-w-xs">
@@ -310,7 +310,7 @@ export default function UserWatchlistPage() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4.5 pt-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4.5 pt-2 md:pt-4">
                 {displayedMovies.map((movie) => (
                   <div key={movie.slug} className="group relative flex flex-col gap-2 bg-[#12131b]/30 border border-zinc-900/50 p-2.5 rounded-2xl hover:border-zinc-850 hover:bg-[#151621] transition-all">
                     <Link href={`/movie/${movie.slug}`} className="block relative aspect-[2/3] w-full rounded-xl overflow-hidden bg-zinc-900">
@@ -326,7 +326,7 @@ export default function UserWatchlistPage() {
                     {/* Nút xóa phim khỏi playlist */}
                     <button
                       onClick={(e) => handleRemoveMovie(e, movie.slug)}
-                      className="absolute top-4 right-4 w-7 h-7 rounded-full bg-black/80 backdrop-blur-md border border-zinc-800 hover:border-red-500/30 text-zinc-400 hover:text-red-500 flex items-center justify-center transition-all shadow-md cursor-pointer opacity-0 group-hover:opacity-100 z-10"
+                      className="absolute top-4 right-4 w-7 h-7 rounded-full bg-black/80 backdrop-blur-md border border-zinc-800 hover:border-red-500/30 text-zinc-300 md:text-zinc-400 hover:text-red-500 flex items-center justify-center transition-all shadow-md cursor-pointer opacity-100 md:opacity-0 md:group-hover:opacity-100 z-10"
                       title="Xóa khỏi danh sách"
                     >
                       <X size={14} className="stroke-[2.5]" />

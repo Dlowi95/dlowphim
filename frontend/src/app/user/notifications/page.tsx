@@ -199,12 +199,12 @@ export default function UserNotificationsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 md:space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-900 pb-5 text-left">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 md:gap-4 border-b border-zinc-900 pb-4 md:pb-5 text-left">
         <div>
-          <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight text-zinc-100 flex items-center gap-2.5">
-            <Bell className="text-pink-500" size={24} />
+          <h2 className="text-lg md:text-2xl font-black uppercase tracking-tight text-zinc-100 flex items-center gap-2.5">
+            <Bell className="h-[22px] w-[22px] text-pink-500 md:h-6 md:w-6" size={24} />
             <span>Thông báo của tôi</span>
           </h2>
           <p className="text-xs text-zinc-500 font-medium mt-1">
@@ -213,7 +213,7 @@ export default function UserNotificationsPage() {
         </div>
 
         {notifications.length > 0 && (
-          <div className="flex items-center gap-2 sm:self-end">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:self-end">
             <Button
               size="sm"
               variant="light"
@@ -241,12 +241,12 @@ export default function UserNotificationsPage() {
 
       {/* Content */}
       {loadingNotifs ? (
-        <div className="bg-[#12131b]/30 border border-zinc-900/60 rounded-3xl py-24 flex flex-col items-center justify-center gap-3">
+        <div className="bg-[#12131b]/30 border border-zinc-900/60 rounded-2xl md:rounded-3xl py-16 md:py-24 flex flex-col items-center justify-center gap-3">
           <Loader2 className="animate-spin text-pink-500" size={32} />
           <p className="text-xs text-zinc-500 font-semibold uppercase tracking-wider">Đang tải danh sách thông báo...</p>
         </div>
       ) : notifications.length === 0 ? (
-        <div className="bg-[#12131b]/30 border border-zinc-900/60 rounded-3xl py-24 px-8 flex flex-col items-center justify-center gap-3 select-none text-center animate-in fade-in duration-200">
+        <div className="bg-[#12131b]/30 border border-zinc-900/60 rounded-2xl md:rounded-3xl py-16 md:py-24 px-5 md:px-8 flex flex-col items-center justify-center gap-3 select-none text-center animate-in fade-in duration-200">
           <div className="p-4 bg-zinc-900/40 border border-zinc-800 rounded-full text-zinc-600 mb-2">
             <Bell size={40} className="stroke-[1.5]" />
           </div>
@@ -262,7 +262,7 @@ export default function UserNotificationsPage() {
               <h3 className="px-2 text-[11px] font-black uppercase tracking-[0.18em] text-zinc-500">
                 {groupLabel} <span className="text-zinc-700">· {items.length}</span>
               </h3>
-              <div className="bg-[#12131b]/50 border border-zinc-900 rounded-3xl overflow-hidden divide-y divide-zinc-900/60 shadow-lg">
+              <div className="bg-[#12131b]/50 border border-zinc-900 rounded-2xl md:rounded-3xl overflow-hidden divide-y divide-zinc-900/60 shadow-lg">
                 {items.map((notif) => {
                   let Icon = Info;
                   let iconColor = "text-sky-500 bg-sky-500/10 border-sky-500/10";
@@ -279,7 +279,7 @@ export default function UserNotificationsPage() {
                     <div
                       key={notif._id}
                       onClick={() => handleNotifClick(notif)}
-                      className={`group p-4 md:p-5 flex items-start gap-4 cursor-pointer hover:bg-zinc-800/20 active:bg-zinc-800/30 transition-all relative ${
+                      className={`group p-3.5 md:p-5 flex items-start gap-3 md:gap-4 cursor-pointer hover:bg-zinc-800/20 active:bg-zinc-800/30 transition-all relative ${
                         !notif.isRead
                           ? "bg-pink-500/[0.02]"
                           : "opacity-75 hover:opacity-100"
@@ -289,16 +289,16 @@ export default function UserNotificationsPage() {
                         <span className="absolute left-2.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-pink-500 shadow-lg shadow-pink-500/40" />
                       )}
 
-                      <div className={`p-3 rounded-2xl border shrink-0 flex items-center justify-center ${iconColor}`}>
+                      <div className={`p-2.5 md:p-3 rounded-xl md:rounded-2xl border shrink-0 flex items-center justify-center ${iconColor}`}>
                         <Icon size={18} />
                       </div>
 
                       <div className="flex-1 min-w-0 space-y-1">
-                        <div className="flex items-start justify-between gap-3">
-                          <span className={`text-xs md:text-sm font-extrabold ${!notif.isRead ? "text-white" : "text-zinc-300"}`}>
+                        <div className="flex items-start justify-between gap-2 md:gap-3">
+                          <span className={`min-w-0 line-clamp-2 text-xs md:text-sm font-extrabold ${!notif.isRead ? "text-white" : "text-zinc-300"}`}>
                             {notif.title}
                           </span>
-                          <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex items-center gap-1 md:gap-2 shrink-0">
                             <span className="text-[10px] md:text-xs font-semibold text-zinc-500 uppercase tracking-wide">
                               {formatTimeAgo(notif.createdAt)}
                             </span>
