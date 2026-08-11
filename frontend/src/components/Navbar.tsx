@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Navbar, NavbarBrand, NavbarContent, NavbarItem, Input, Button, useDisclosure, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Avatar, Popover, PopoverTrigger, PopoverContent } from "@heroui/react";
+import { Navbar, NavbarBrand, NavbarContent, NavbarItem, Input, Button, useDisclosure, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Avatar } from "@heroui/react";
 import { Search, User, Loader2, ChevronDown, Play, Bell, ChevronUp, Wallet, Heart, Plus, History, LogOut } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
@@ -12,7 +12,7 @@ import { searchMovies } from "@/utils/movieSearch";
 import { searchPeople, type PersonResult } from "@/utils/people";
 import { COUNTRIES, GENRES } from "@/constants/discovery";
 import MobileNavigation from "./MobileNavigation";
-import NotificationPreview from "./NotificationPreview";
+import DesktopNotificationBell from "./notifications/DesktopNotificationBell";
 
 export default function NavbarComponent() {
   const pathname = usePathname();
@@ -214,8 +214,7 @@ export default function NavbarComponent() {
         onOpenAuth={onOpen}
         notifications={recentNotifications}
         isLoadingNotifications={isLoadingNotifs}
-        isNotificationsOpen={isNotifPopoverOpen}
-        onNotificationsOpenChange={handleNotificationOpenChange}
+        onRequestNotifications={loadRecentNotifs}
         onReadAllNotifications={handleReadAllRecentNotifications}
         onSelectNotification={handleSelectRecentNotification}
         onViewAllNotifications={handleViewAllNotifications}
@@ -481,47 +480,15 @@ export default function NavbarComponent() {
             ) : user ? (
               <div className="flex items-center gap-4">
                 {/* Nút Chuông Thông Báo Popover (Tối ưu hóa bằng Popover để hiển thị hoàn hảo) */}
-                <Popover
-                  placement="bottom-end"
-                  offset={12}
-                  showArrow
+                <DesktopNotificationBell
+                  notifications={recentNotifications}
+                  isLoading={isLoadingNotifs}
+                  unreadCount={unreadNotificationsCount}
                   onOpenChange={handleNotificationOpenChange}
-                >
-                    <PopoverTrigger>
-                      <button
-                        type="button"
-                        className={
-                          unreadNotificationsCount > 0
-                            ? "bg-pink-500/10 hover:bg-pink-500/20 border border-pink-500/30 w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 relative cursor-pointer select-none animate-pulse text-pink-500"
-                            : "bg-[#1c203e]/60 hover:bg-[#23284e] border border-zinc-800/60 w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 relative cursor-pointer select-none text-white"
-                        }
-                      >
-                        <Bell
-                          size={18}
-                          className={
-                            unreadNotificationsCount > 0
-                              ? "text-pink-500 fill-pink-500"
-                              : "text-white fill-white"
-                          }
-                        />
-                        {unreadNotificationsCount > 0 && (
-                          <div className="absolute -top-0.5 -right-0.5 bg-red-600 text-white text-[8px] font-black h-3.5 min-w-[14px] px-0.5 rounded-full flex items-center justify-center border border-black shadow-md select-none z-10">
-                            {unreadNotificationsCount}
-                          </div>
-                        )}
-                      </button>
-                    </PopoverTrigger>
-                  <PopoverContent className="block w-[340px] rounded-3xl border border-zinc-800 bg-[#161a33] p-4 text-left text-white shadow-[0_25px_60px_rgba(0,0,0,0.8)]">
-                    <NotificationPreview
-                      notifications={recentNotifications}
-                      isLoading={isLoadingNotifs}
-                      unreadCount={unreadNotificationsCount}
-                      onReadAll={handleReadAllRecentNotifications}
-                      onSelect={handleSelectRecentNotification}
-                      onViewAll={handleViewAllNotifications}
-                    />
-                  </PopoverContent>
-                </Popover>
+                  onReadAll={handleReadAllRecentNotifications}
+                  onSelect={handleSelectRecentNotification}
+                  onViewAll={handleViewAllNotifications}
+                />
 
                 {/* Dropdown Avatar Premium */}
                 <Dropdown

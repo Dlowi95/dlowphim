@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import Cookies from "js-cookie";
 import { io } from "socket.io-client";
 import { getResilientSocketOptions } from "@/lib/socket-options";
+import MobileToast from "@/components/MobileToast";
 
 interface User {
   id: string;
@@ -28,7 +29,7 @@ interface AuthContextType {
   logout: () => void;
   showAuthToast: () => void;
   showToast: (message: string, type: "success" | "error" | "warning") => void;
-  toggleFavorite: (slug: string) => Promise<boolean>;
+  toggleFavorite: (slug: string) => Promise<boolean | null>;
   refreshUser: () => Promise<void>;
   createPlaylist: (name: string, options?: { silent?: boolean }) => Promise<string | null>;
   deletePlaylist: (playlistId: string) => Promise<boolean>;
@@ -259,10 +260,10 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     }
   }, [toast]);
 
-  const toggleFavorite = async (slug: string): Promise<boolean> => {
+  const toggleFavorite = async (slug: string): Promise<boolean | null> => {
     if (!user) {
       showAuthToast();
-      return false;
+      return null;
     }
     try {
       const token = Cookies.get("token");
@@ -300,7 +301,7 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     } catch (e) {
       console.error("Lỗi cập nhật yêu thích:", e);
     }
-    return false;
+    return null;
   };
 
   const createPlaylist = async (
@@ -745,15 +746,16 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
       {children}
       {mounted && typeof window !== "undefined" && createPortal(
         toast && (
-          <div 
-            style={{
-              position: "fixed",
-              bottom: "32px",
-              right: "32px",
-              zIndex: 999999,
-            }}
-            className="animate-toast-slide-up select-none"
-          >
+          <>
+            <div
+              style={{
+                position: "fixed",
+                bottom: "32px",
+                right: "32px",
+                zIndex: 999999,
+              }}
+              className="hidden md:block animate-toast-slide-up select-none"
+            >
             <style>{`
               @keyframes toast-progress-countdown {
                 from {
@@ -872,8 +874,10 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
                   }}
                 />
               </div>
+              </div>
             </div>
-          </div>
+            <MobileToast toast={toast} onClose={() => setToast(null)} />
+          </>
         ),
         document.body
       )}

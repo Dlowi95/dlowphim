@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { User, Loader2, Save, Upload, Image as ImageIcon, Camera, Check, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import MobileAccountView from "@/components/user/mobile/MobileAccountView";
 import Cookies from "js-cookie";
 
 const AVAILABLE_AVATARS = Array.from(
@@ -150,20 +151,46 @@ export default function UserAccountPage() {
   if (!user) return null;
 
   return (
-    <div id="thong-tin-tai-khoan" className="space-y-5 md:space-y-6 select-none relative scroll-mt-24">
+    <>
+      <div className="md:hidden">
+        <MobileAccountView
+          email={user.email}
+          displayName={displayName}
+          gender={gender}
+          avatar={avatar}
+          isSaving={isSaving}
+          hasChanges={hasChanges}
+          showAvatarModal={showAvatarModal}
+          availableAvatars={AVAILABLE_AVATARS}
+          onDisplayNameChange={setDisplayName}
+          onGenderChange={setGender}
+          onSubmit={handleSaveProfile}
+          onUploadClick={triggerFileSelect}
+          onOpenAvatarModal={() => setShowAvatarModal(true)}
+          onCloseAvatarModal={() => setShowAvatarModal(false)}
+          onAvatarSelect={(url) => {
+            setAvatar(url);
+            setShowAvatarModal(false);
+            showToast("Đã chọn ảnh có sẵn", "success");
+          }}
+        />
+      </div>
+
+      <div className="hidden md:block">
+        <div className="space-y-6 select-none relative">
       <div className="flex items-center justify-between border-b border-zinc-900 pb-3.5">
-        <h2 className="text-lg md:text-2xl font-black uppercase tracking-tight text-zinc-100 flex items-center gap-2.5">
-          <User className="h-[22px] w-[22px] text-pink-500 md:h-6 md:w-6" size={24} />
+        <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight text-zinc-100 flex items-center gap-2.5">
+          <User className="text-pink-500" size={24} />
           <span>Thông tin tài khoản</span>
         </h2>
       </div>
 
       {/* Bao bọc toàn bộ Grid 2 cột bằng thẻ form */}
-      <form onSubmit={handleSaveProfile} className="space-y-5 md:space-y-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-8 items-start">
+      <form onSubmit={handleSaveProfile} className="space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
 
           {/* Cột trái: Thông tin form (Col-span 2) */}
-          <div className="lg:col-span-2 bg-[#12131b]/60 border border-zinc-800/40 p-4 md:p-8 rounded-2xl md:rounded-3xl space-y-5 md:space-y-6 text-left shadow-md">
+          <div className="lg:col-span-2 bg-[#12131b]/60 border border-zinc-800/40 p-6 md:p-8 rounded-3xl space-y-6 text-left shadow-md">
 
             {/* Input Email (Disabled) */}
             <div className="space-y-1.5">
@@ -193,7 +220,7 @@ export default function UserAccountPage() {
             {/* Giới tính Radio Group */}
             <div className="space-y-2">
               <label className="text-xs font-black text-zinc-400 uppercase tracking-wider block">Giới tính</label>
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-3 md:gap-6 mt-1">
+              <div className="flex items-center gap-6 mt-1">
 
                 {/* Nam */}
                 <label className="flex items-center gap-2 cursor-pointer group">
@@ -203,7 +230,7 @@ export default function UserAccountPage() {
                     value="male"
                     checked={gender === "male"}
                     onChange={() => setGender("male")}
-                    className="w-4 h-4 text-pink-500 bg-zinc-900 border-zinc-800 focus:ring-pink-500 focus:ring-2 cursor-pointer"
+                    className="w-4 h-4 text-pink-500 bg-zinc-900 border-zinc-800 focus:ring-0 focus:ring-offset-0 cursor-pointer"
                   />
                   <span className="text-sm font-semibold text-zinc-300 group-hover:text-zinc-150 transition-colors">Nam</span>
                 </label>
@@ -216,7 +243,7 @@ export default function UserAccountPage() {
                     value="female"
                     checked={gender === "female"}
                     onChange={() => setGender("female")}
-                    className="w-4 h-4 text-pink-500 bg-zinc-900 border-zinc-800 focus:ring-pink-500 focus:ring-2 cursor-pointer"
+                    className="w-4 h-4 text-pink-500 bg-zinc-900 border-zinc-800 focus:ring-0 focus:ring-offset-0 cursor-pointer"
                   />
                   <span className="text-sm font-semibold text-zinc-300 group-hover:text-zinc-150 transition-colors">Nữ</span>
                 </label>
@@ -229,7 +256,7 @@ export default function UserAccountPage() {
                     value="other"
                     checked={gender === "other"}
                     onChange={() => setGender("other")}
-                    className="w-4 h-4 text-pink-500 bg-zinc-900 border-zinc-800 focus:ring-pink-500 focus:ring-2 cursor-pointer"
+                    className="w-4 h-4 text-pink-500 bg-zinc-900 border-zinc-800 focus:ring-0 focus:ring-offset-0 cursor-pointer"
                   />
                   <span className="text-sm font-semibold text-zinc-300 group-hover:text-zinc-150 transition-colors">Không xác định</span>
                 </label>
@@ -238,11 +265,11 @@ export default function UserAccountPage() {
           </div>
 
           {/* Cột phải: Quản lý Avatar bên phải */}
-          <div className="bg-[#12131b]/60 border border-zinc-800/40 p-4 md:p-8 rounded-2xl md:rounded-3xl flex flex-col items-center justify-center space-y-4 md:space-y-6 text-center shadow-md">
+          <div className="bg-[#12131b]/60 border border-zinc-800/40 p-6 md:p-8 rounded-3xl flex flex-col items-center justify-center space-y-6 text-center shadow-md">
             <div className="relative group/avatar cursor-pointer" onClick={triggerFileSelect}>
 
               {/* Vòng tròn Avatar to sang trọng */}
-              <div className="w-28 h-28 md:w-44 md:h-44 rounded-full overflow-hidden border-4 border-zinc-800 shadow-xl group-hover/avatar:border-pink-500 transition-all duration-300 relative bg-zinc-900">
+              <div className="w-36 h-36 md:w-44 md:h-44 rounded-full overflow-hidden border-4 border-zinc-800 shadow-xl group-hover/avatar:border-pink-500 transition-all duration-300 relative bg-zinc-900">
                 <img
                   src={avatar}
                   alt="Avatar Preview"
@@ -261,7 +288,7 @@ export default function UserAccountPage() {
             </div>
 
             {/* Nút bấm quản lý */}
-            <div className="flex flex-row md:flex-col gap-3 md:gap-3.5 w-full max-w-sm md:max-w-[200px]">
+            <div className="flex flex-col gap-3.5 w-full max-w-[200px]">
               {/* Uploader Input File */}
               <input
                 type="file"
@@ -295,11 +322,11 @@ export default function UserAccountPage() {
         </div>
 
         {/* Nút Cập nhật đứng riêng biệt bên dưới Grid ở góc bên phải */}
-        <div className="flex justify-stretch md:justify-end pt-1 md:pt-4">
+        <div className="flex justify-end pt-4">
           <button
             type="submit"
             disabled={isSaving || !hasChanges}
-            className="h-11 w-full md:w-auto px-8 bg-pink-500 hover:bg-pink-600 disabled:bg-zinc-800 disabled:text-zinc-500 disabled:cursor-not-allowed text-white font-extrabold text-sm rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-pink-500/10 active:scale-98 transition-all cursor-pointer"
+            className="h-11 px-8 bg-pink-500 hover:bg-pink-600 disabled:bg-zinc-800 disabled:text-zinc-500 disabled:cursor-not-allowed text-white font-extrabold text-sm rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-pink-500/10 active:scale-98 transition-all cursor-pointer"
           >
             {isSaving ? (
               <Loader2 size={16} className="animate-spin" />
@@ -313,13 +340,13 @@ export default function UserAccountPage() {
 
       {/* POPUP MODAL CHỌN AVATAR CÓ SẴN (Đã tối ưu hóa thanh cuộn) */}
       {showAvatarModal && (
-        <div className="fixed inset-0 z-[100] flex items-end md:items-center justify-center bg-black/80 backdrop-blur-sm p-3 md:p-4">
-          <div className="w-full max-w-xl max-h-[82dvh] overflow-hidden md:max-h-none md:overflow-visible bg-[#12131b] border border-zinc-800 rounded-2xl md:rounded-3xl p-4 md:p-6 shadow-2xl relative text-left animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-xl bg-[#12131b] border border-zinc-800 rounded-3xl p-6 shadow-2xl relative text-left animate-in fade-in zoom-in-95 duration-200">
             {/* Nút X đóng ở góc phải */}
             <button
               type="button"
               onClick={() => setShowAvatarModal(false)}
-              className="absolute top-4 right-4 md:top-5 md:right-5 text-zinc-500 hover:text-white transition-colors cursor-pointer"
+              className="absolute top-5 right-5 text-zinc-500 hover:text-white transition-colors cursor-pointer"
             >
               <X size={18} />
             </button>
@@ -329,7 +356,7 @@ export default function UserAccountPage() {
 
             {/* Hộp chứa cuộn dọc mượt mà giới hạn chiều cao */}
             <div className="max-h-[460px] overflow-y-auto pr-1 mb-2 no-scrollbar scroll-smooth">
-              <div className="grid grid-cols-4 sm:grid-cols-5 gap-2.5 md:gap-3.5">
+              <div className="grid grid-cols-5 gap-3.5">
                 {AVAILABLE_AVATARS.map((url, idx) => {
                   const isSelected = avatar === url;
                   return (
@@ -363,6 +390,8 @@ export default function UserAccountPage() {
           </div>
         </div>
       )}
-    </div>
+        </div>
+      </div>
+    </>
   );
 }

@@ -59,10 +59,9 @@ export default function UserFavoritePage() {
       tone: "danger",
     });
     if (!accepted) return;
-    const success = await toggleFavorite(slug);
-    if (success) {
+    const isStillFavorite = await toggleFavorite(slug);
+    if (isStillFavorite === false) {
       setFavoriteDetails((prev) => prev.filter((m) => m.slug !== slug));
-      showToast("Đã xóa phim khỏi danh sách yêu thích", "success");
     }
   };
 
