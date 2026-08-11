@@ -75,12 +75,23 @@ export default function UserNotificationsPage() {
   const [total, setTotal] = useState(0);
   const [isMutating, setIsMutating] = useState(false);
   const realtimeRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestRequestRef = useRef(0);
+  const inflightRequestsRef = useRef(new Map<number, Promise<any>>());
 
   const fetchNotifs = async (p = 1, showLoader = true) => {
+    const requestId = ++latestRequestRef.current;
     if (showLoader) setLoadingNotifs(true);
     try {
-      const data = await getUserNotifications(p, 15);
-      if (data) {
+      let request = inflightRequestsRef.current.get(p);
+      if (!request) {
+        request = getUserNotifications(p, 15);
+        inflightRequestsRef.current.set(p, request);
+        void request.finally(() => {
+          if (inflightRequestsRef.current.get(p) === request) inflightRequestsRef.current.delete(p);
+        });
+      }
+      const data = await request;
+      if (data && requestId === latestRequestRef.current) {
         setNotifications(data.items || []);
         setTotalPages(data.totalPages || 1);
         setTotal(data.total || 0);
@@ -89,14 +100,17 @@ export default function UserNotificationsPage() {
       console.error(e);
       showToast("Lỗi tải thông báo", "error");
     } finally {
-      if (showLoader) setLoadingNotifs(false);
+      if (showLoader && requestId === latestRequestRef.current) setLoadingNotifs(false);
     }
   };
 
   useEffect(() => {
     if (user) {
-      fetchNotifs(page);
+      void fetchNotifs(page);
     }
+    return () => {
+      latestRequestRef.current += 1;
+    };
   }, [user, page]);
 
   useEffect(() => {
@@ -332,6 +346,7 @@ export default function UserNotificationsPage() {
           {totalPages > 1 && (
             <div className="pt-8 flex justify-center">
               <Pagination
+                compactOnMobile
                 currentPage={page}
                 totalPages={totalPages}
                 onPageChange={(p) => setPage(p)}

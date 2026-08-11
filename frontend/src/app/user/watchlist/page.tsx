@@ -8,6 +8,7 @@ import Link from "next/link";
 import Pagination from "@/components/Pagination";
 import { getUserMovieSummaries, UserMovieSummary } from "@/utils/userMovieSummaries";
 import { useConfirmDialog } from "@/components/ConfirmDialog";
+import { fetchMovieArtwork, LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
 
 type MovieDetails = UserMovieSummary;
 
@@ -50,6 +51,16 @@ export default function UserWatchlistPage() {
 
   const totalMoviePages = Math.ceil(playlistMovies.length / moviesPerPage);
   const displayedMovies = playlistMovies.slice((movieCurrentPage - 1) * moviesPerPage, movieCurrentPage * moviesPerPage);
+
+  useEffect(() => {
+    const safeTotal = Math.max(1, totalPages);
+    if (currentPage > safeTotal) setCurrentPage(safeTotal);
+  }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    const safeTotal = Math.max(1, totalMoviePages);
+    if (movieCurrentPage > safeTotal) setMovieCurrentPage(safeTotal);
+  }, [movieCurrentPage, totalMoviePages]);
 
   // Đồng bộ lại selectedPlaylist khi user data thay đổi (ví dụ khi xóa phim khỏi playlist)
   useEffect(() => {
@@ -201,10 +212,16 @@ export default function UserWatchlistPage() {
                 {displayedPlaylists.map((playlist) => (
                   <div
                     key={playlist.id}
-                    onClick={() => setSelectedPlaylist(playlist)}
                     className="bg-[#12131b]/60 hover:bg-[#151621] border border-zinc-800/40 hover:border-pink-500/20 p-4 rounded-2xl cursor-pointer transition-all duration-300 relative group flex items-center justify-between shadow-sm hover:shadow-md hover:shadow-pink-500/5 hover:-translate-y-0.5"
                   >
-                    <div className="space-y-1 min-w-0 pr-8 text-left">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPlaylist(playlist)}
+                      aria-label={`Mở danh sách ${playlist.name}`}
+                      className="absolute inset-0 z-0 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-500"
+                    />
+
+                    <div className="pointer-events-none relative z-[1] space-y-1 min-w-0 pr-8 text-left">
                       <h3 className="font-extrabold text-sm text-zinc-200 group-hover:text-pink-500 transition-colors truncate">
                         {playlist.name}
                       </h3>
@@ -214,7 +231,7 @@ export default function UserWatchlistPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity shrink-0">
+                    <div className="relative z-10 flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity shrink-0">
                       {/* Nút sửa */}
                       <button
                         onClick={(e) => {
@@ -244,6 +261,7 @@ export default function UserWatchlistPage() {
               {totalPages > 1 && (
                 <div className="pt-8 flex justify-center">
                   <Pagination
+                    compactOnMobile
                     currentPage={currentPage}
                     totalPages={totalPages}
                     onPageChange={(page) => setCurrentPage(page)}
@@ -348,6 +366,7 @@ export default function UserWatchlistPage() {
               {totalMoviePages > 1 && (
                 <div className="pt-8 flex justify-center">
                   <Pagination
+                    compactOnMobile
                     currentPage={movieCurrentPage}
                     totalPages={totalMoviePages}
                     onPageChange={(page) => setMovieCurrentPage(page)}
@@ -362,16 +381,17 @@ export default function UserWatchlistPage() {
       {/* POPUP MODAL 1: TẠO DANH SÁCH MỚI */}
       {showCreateModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
-          <form onSubmit={handleCreatePlaylist} className="w-full max-w-sm bg-[#12131b] border border-zinc-800 rounded-3xl p-6 shadow-2xl relative text-left animate-in fade-in zoom-in-95 duration-200">
+          <form role="dialog" aria-modal="true" aria-labelledby="create-playlist-title" onSubmit={handleCreatePlaylist} className="w-full max-w-sm bg-[#12131b] border border-zinc-800 rounded-3xl p-6 shadow-2xl relative text-left animate-in fade-in zoom-in-95 duration-200">
             <button
               type="button"
               onClick={() => setShowCreateModal(false)}
+              aria-label="Đóng"
               className="absolute top-5 right-5 text-zinc-500 hover:text-white transition-colors"
             >
               <X size={18} />
             </button>
 
-            <h3 className="text-lg font-black text-zinc-200 tracking-tight uppercase mb-4 mt-1">Thêm danh sách mới</h3>
+            <h3 id="create-playlist-title" className="text-lg font-black text-zinc-200 tracking-tight uppercase mb-4 mt-1">Thêm danh sách mới</h3>
             
             <div className="space-y-4 mb-6">
               <input
@@ -407,16 +427,17 @@ export default function UserWatchlistPage() {
       {/* POPUP MODAL 2: SỬA TÊN DANH SÁCH */}
       {editingPlaylist && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
-          <form onSubmit={handleUpdateName} className="w-full max-w-sm bg-[#12131b] border border-zinc-800 rounded-3xl p-6 shadow-2xl relative text-left animate-in fade-in zoom-in-95 duration-200">
+          <form role="dialog" aria-modal="true" aria-labelledby="edit-playlist-title" onSubmit={handleUpdateName} className="w-full max-w-sm bg-[#12131b] border border-zinc-800 rounded-3xl p-6 shadow-2xl relative text-left animate-in fade-in zoom-in-95 duration-200">
             <button
               type="button"
               onClick={() => setEditingPlaylist(null)}
+              aria-label="Đóng"
               className="absolute top-5 right-5 text-zinc-500 hover:text-white transition-colors"
             >
               <X size={18} />
             </button>
 
-            <h3 className="text-lg font-black text-zinc-200 tracking-tight uppercase mb-4 mt-1">Sửa tên danh sách</h3>
+            <h3 id="edit-playlist-title" className="text-lg font-black text-zinc-200 tracking-tight uppercase mb-4 mt-1">Sửa tên danh sách</h3>
             
             <div className="space-y-4 mb-6">
               <input
@@ -457,9 +478,11 @@ export default function UserWatchlistPage() {
 function PlaylistMoviePoster({ movie }: { movie: MovieDetails }) {
   const fallbackSrc = getImageUrl(movie.thumb_url);
   const [src, setSrc] = useState(getImageUrl(movie.poster_url || movie.thumb_url));
+  const [fallbackAttempted, setFallbackAttempted] = useState(false);
 
   useEffect(() => {
     setSrc(getImageUrl(movie.poster_url || movie.thumb_url));
+    setFallbackAttempted(false);
   }, [movie.slug, movie.poster_url, movie.thumb_url]);
 
   return (
@@ -467,7 +490,16 @@ function PlaylistMoviePoster({ movie }: { movie: MovieDetails }) {
       src={src}
       alt={movie.name}
       onError={() => {
-        if (src !== fallbackSrc) setSrc(fallbackSrc);
+        if (src !== fallbackSrc) {
+          setSrc(fallbackSrc);
+          return;
+        }
+        if (!fallbackAttempted) {
+          setFallbackAttempted(true);
+          void fetchMovieArtwork({ slug: movie.slug, title: movie.origin_name || movie.name })
+            .then((data) => setSrc(data?.posterUrl || data?.backdropUrl || LOCAL_MOVIE_IMAGE_FALLBACK))
+            .catch(() => setSrc(LOCAL_MOVIE_IMAGE_FALLBACK));
+        }
       }}
       className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
       loading="lazy"

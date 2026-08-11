@@ -9,7 +9,7 @@ Tài liệu này lưu **trạng thái đã kiểm chứng** của từng route. 
 | Trang chủ | `app/page.tsx` và các row dùng chung | Hero/Anime có nhánh mobile | Có nhánh desktop | Đã xác minh production; không có request trùng do responsive |
 | Tìm kiếm | `app/search/page.tsx` | `MobileSearchBox` tải động và chỉ mount dưới `768px` | Navbar desktop | Đã xác minh production; page chỉ gọi danh sách một lần, gợi ý có cache/in-flight |
 | Lịch chiếu | Page lịch chiếu | Bố cục responsive cùng dữ liệu | Bố cục responsive cùng dữ liệu | Thấp: không có hai owner dữ liệu |
-| User | `app/user/layout.tsx` và từng page | `components/user/mobile/*` | Sidebar/form desktop | Thấp: view nhận chung auth/state |
+| User | `AuthContext` và từng page `app/user/*` | Navigation/account view mobile chỉ mount dưới `768px` | Sidebar/form desktop chỉ mount từ `768px` | Đã xác minh production; một owner auth/state, summary/artwork có cache và in-flight |
 | Chuông thông báo | `Navbar.tsx` | `MobileNotificationBell` | `DesktopNotificationBell` | Thấp: request chỉ chạy khi popup được mở |
 | Chi tiết phim | `MovieDetailClient.tsx` | `MobileMovieDetail` tải động | JSX desktop cũ | Đã khóa: chỉ một view được mount |
 
@@ -98,6 +98,38 @@ Bằng chứng runtime production ghi nhận ngày `2026-08-11`:
 | Console/runtime | Đạt | Audit chính production ở cả 8 breakpoint có `errors: []` và `sockets: []`. |
 | Kiểm tra mã | Đạt | TypeScript thành công, 7/7 test frontend liên quan thành công và production build hoàn tất sau thay đổi cuối. |
 
+### Tài khoản `/user/*`
+
+**Trạng thái: Đạt cho `/user/account`, `/user/favorite`, `/user/history`, `/user/watchlist` và `/user/notifications` trên mobile và desktop.**
+
+Phạm vi đã tối ưu:
+
+- `app/user/layout.tsx` vẫn là controller chung nhưng chỉ mount một navigation theo viewport: `MobileUserNavigation` dưới `768px`, sidebar desktop từ `768px`. Không còn hai cây avatar/menu cùng tồn tại và cùng tải tài nguyên.
+- `/user/account` chỉ mount một form tài khoản theo viewport. File input upload được đặt ở owner chung để cả hai view dùng cùng handler; mobile không còn phụ thuộc vào input nằm trong cây desktop ẩn.
+- Hook phân nhánh dùng cùng giá trị `window.innerWidth < 768` với breakpoint Tailwind. Lỗi vùng trống tại viewport CSS có phần thập phân quanh `767/768px` đã được loại bỏ.
+- Favorite, History và Watchlist dùng chung `getUserMovieSummaries`; slug được loại trùng, cache 10 phút, khóa in-flight và chia batch tối đa 50 phim. Không tạo một request owner riêng cho mobile.
+- Fallback artwork của Favorite, History và Watchlist đi qua cache/in-flight chung rồi về `/images/movie-placeholder.svg`; không gọi trực tiếp lặp lại endpoint logo và không phụ thuộc ảnh Unsplash khi nguồn chính lỗi.
+- Phân trang tự kẹp lại trang hợp lệ sau khi xóa dữ liệu; mobile dùng biến thể gọn, desktop giữ bố cục cũ.
+- Notifications khóa request đang bay theo trang và dùng request id để response cũ không ghi đè trang mới hoặc state sau unmount. Socket thông báo vẫn chỉ do `AuthContext` sở hữu một lần theo user và được gỡ listener/disconnect khi cleanup.
+- Modal avatar và playlist có `role="dialog"`, nhãn tiêu đề và nút đóng có tên truy cập. Card playlist có nút mở riêng, dùng được bằng bàn phím mà không lồng các nút sửa/xóa sai ngữ nghĩa.
+- Các route con trên mobile đều có nút “Quay lại trang tài khoản”; desktop tiếp tục dùng sidebar cũ và không nhận CSS vá toàn cục từ mobile.
+
+Bằng chứng runtime production ghi nhận ngày `2026-08-12` với tài khoản đăng nhập thật:
+
+| Nhóm | Kết quả | Bằng chứng |
+| --- | --- | --- |
+| Owner/DOM responsive | Đạt | `/user/account` mobile có 1 form nội dung hiển thị; desktop có form Navbar và đúng 1 form tài khoản. Mỗi viewport chỉ có một navigation user; không còn cây mobile và desktop mount đồng thời. |
+| Ma trận route/breakpoint | Đạt | Đã quét 5 route tại `360`, `390`, `440`, `767`, `768`, `1024`, `1440`, `1920px` (40 tổ hợp); `issues: []`. |
+| Ranh giới `767/768` | Đạt | `767px`: account có đúng 1 navigation mobile, các route con có đúng 1 nút quay lại và không có sidebar. `768px`: đúng 1 sidebar desktop, không có navigation/nút quay lại mobile; cả hai phía đều có nội dung. |
+| Overflow/ảnh | Đạt | Cả 40 tổ hợp có overflow ngang bằng `0`, `brokenImages: 0`, `transparentImages: 0`. Chi tiết playlist có 2 phim cũng không ảnh vỡ hoặc tràn ngang. |
+| Modal/tương tác không phá dữ liệu | Đạt | Modal avatar mobile hiển thị đủ 26 ảnh, 27 nút tính cả nút đóng, nằm trọn viewport và tự cuộn nội bộ. Modal tạo playlist focus đúng input, nằm trọn viewport; mở playlist “anime” tải đúng 2 card. |
+| API/cache | Đạt | Auth/state có một owner; summary và artwork đều loại request trùng bằng cache/in-flight. Notifications dùng một request in-flight mỗi trang và chặn response cũ. Không có page mobile nào tự tạo owner API thứ hai. |
+| Socket/listener | Đạt | Chỉ `AuthContext` khởi tạo namespace notifications theo `user.id`; cleanup gỡ toàn bộ listener và disconnect. Các view `user/*` không tự mở socket. |
+| Trạng thái dữ liệu | Đạt | Favorite và Notifications được kiểm tra ở empty state; History có 4 mục; Watchlist có 2 danh sách và playlist có 2 phim. Không thực hiện thao tác xóa thật để bảo toàn dữ liệu người dùng; các handler backend không bị thay đổi trong lượt tối ưu này. |
+| Console/build | Đạt | TypeScript thành công, 7/7 test frontend thành công, `next build` hoàn tất; toàn bộ route `user/*` được sinh thành công. |
+
+Route `/user` tiếp tục chuyển hướng về `/user/account`. Route `/user/vip` hiện là route chuyển hướng cũ về trang chủ, không có giao diện user riêng để audit responsive.
+
 ### Các route còn lại
 
-Lịch chiếu, `user/*`, chuông thông báo và chi tiết phim hiện mới có kiểm kê kiến trúc ở bảng đầu tài liệu. Chưa route nào trong nhóm này được đánh dấu **Đạt** cho đến khi có nhật ký runtime theo sáu nhóm bắt buộc trong tài liệu quy ước.
+Lịch chiếu, chuông thông báo và chi tiết phim hiện mới có kiểm kê kiến trúc ở bảng đầu tài liệu. Chưa route nào trong nhóm này được đánh dấu **Đạt** cho đến khi có nhật ký runtime theo sáu nhóm bắt buộc trong tài liệu quy ước.

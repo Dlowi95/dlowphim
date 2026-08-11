@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useEffect } from "react";
+import dynamic from "next/dynamic";
 import { useAuth } from "@/context/AuthContext";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import MobileUserNavigation from "@/components/user/mobile/MobileUserNavigation";
+import { useIsMobileViewport } from "@/hooks/useIsMobileViewport";
 import {
   Heart,
   Plus,
@@ -16,9 +17,14 @@ import {
   AlertCircle,
 } from "lucide-react";
 
+const MobileUserNavigation = dynamic(() => import("@/components/user/mobile/MobileUserNavigation"), {
+  ssr: false,
+});
+
 export default function UserLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
   const pathname = usePathname();
+  const isMobileViewport = useIsMobileViewport();
 
   useEffect(() => {
     if (!loading && !user) {
@@ -104,12 +110,12 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
       <div className="container mx-auto px-4 md:px-6 max-w-7xl flex-grow flex flex-col">
         <div className="flex flex-col gap-5 md:gap-8 lg:flex-row items-start flex-grow w-full">
 
-          <div className="w-full md:hidden">
+          {isMobileViewport && <div className="w-full md:hidden">
             <MobileUserNavigation isAccountPage={isAccountPage} user={user} menuItems={menuItems} onLogout={logout} />
-          </div>
+          </div>}
           
           {/* SIDEBAR */}
-          <div className="hidden md:flex w-full lg:w-[280px] bg-[#12131b] border border-zinc-800/40 rounded-3xl p-6 flex-col justify-between shrink-0 select-none">
+          {!isMobileViewport && <div className="hidden md:flex w-full lg:w-[280px] bg-[#12131b] border border-zinc-800/40 rounded-3xl p-6 flex-col justify-between shrink-0 select-none">
             <div className="space-y-6">
               <h3 className="text-lg font-black text-zinc-300 tracking-tight px-1 uppercase">
                 Quản lý tài khoản
@@ -178,7 +184,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
                 <span>Thoát</span>
               </button>
             </div>
-          </div>
+          </div>}
 
           {/* CONTENT AREA */}
           <div className="min-w-0 flex-1 w-full">

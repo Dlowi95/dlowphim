@@ -10,6 +10,7 @@ import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
 import ProgressiveImage from "@/components/ProgressiveImage";
 import { getUserMovieSummaries, UserMovieSummary } from "@/utils/userMovieSummaries";
 import { useConfirmDialog } from "@/components/ConfirmDialog";
+import { fetchMovieArtwork, LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
 
 interface HistoryItem {
   movieSlug: string;
@@ -142,6 +143,10 @@ export default function UserHistoryPage() {
   const totalPages = Math.max(1, Math.ceil(historyItems.length / itemsPerPage));
   const displayedHistory = historyItems.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -214,6 +219,7 @@ export default function UserHistoryPage() {
           {totalPages > 1 && (
             <div className="pt-8 flex justify-center">
               <Pagination
+                compactOnMobile
                 currentPage={currentPage}
                 totalPages={totalPages}
                 onPageChange={(page) => setCurrentPage(page)}
@@ -245,33 +251,22 @@ function HistoryItemCard({
 
   useEffect(() => {
     const url = getImageUrl(detail?.poster_url || detail?.thumb_url);
-    if (url) {
-      setImgSrc(url);
-    } else {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-      fetch(`${API_URL}/movies/logo/${item.movieSlug}?title=${encodeURIComponent(item.movieName)}`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (data && (data.posterUrl || data.backdropUrl)) {
-            setImgSrc(data.posterUrl || data.backdropUrl);
-          }
-        })
-        .catch(() => {});
-    }
+    setImgSrc(url);
+    setAttemptCount(0);
   }, [item.movieSlug, detail?.poster_url, detail?.thumb_url]);
 
   const handleImgError = () => {
     if (attemptCount < 2) {
-      setAttemptCount(attemptCount + 1);
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-      fetch(`${API_URL}/movies/logo/${item.movieSlug}?title=${encodeURIComponent(item.movieName)}`)
-        .then((res) => (res.ok ? res.json() : null))
+      setAttemptCount((value) => value + 1);
+      fetchMovieArtwork({ slug: item.movieSlug, title: item.movieName })
         .then((data) => {
           if (data && (data.posterUrl || data.backdropUrl)) {
-            setImgSrc(data.posterUrl || data.backdropUrl);
+            setImgSrc(data.posterUrl || data.backdropUrl || LOCAL_MOVIE_IMAGE_FALLBACK);
+          } else {
+            setImgSrc(LOCAL_MOVIE_IMAGE_FALLBACK);
           }
         })
-        .catch(() => {});
+        .catch(() => setImgSrc(LOCAL_MOVIE_IMAGE_FALLBACK));
     }
   };
 
@@ -294,7 +289,7 @@ function HistoryItemCard({
       {/* Poster card with X button overlay */}
       <div className="relative aspect-[2/3] rounded-xl md:rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800/80 group-hover:border-zinc-700 transition-all select-none shadow-md">
         <ProgressiveImage
-          src={imgSrc || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80"}
+          src={imgSrc || LOCAL_MOVIE_IMAGE_FALLBACK}
           alt={item.movieName}
           onError={handleImgError}
           referrerPolicy="no-referrer"

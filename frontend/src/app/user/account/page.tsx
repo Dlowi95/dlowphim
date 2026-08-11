@@ -1,10 +1,15 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
+import dynamic from "next/dynamic";
 import { User, Loader2, Save, Upload, Image as ImageIcon, Camera, Check, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import MobileAccountView from "@/components/user/mobile/MobileAccountView";
 import Cookies from "js-cookie";
+import { useIsMobileViewport } from "@/hooks/useIsMobileViewport";
+
+const MobileAccountView = dynamic(() => import("@/components/user/mobile/MobileAccountView"), {
+  ssr: false,
+});
 
 const AVAILABLE_AVATARS = Array.from(
   { length: 26 },
@@ -13,6 +18,7 @@ const AVAILABLE_AVATARS = Array.from(
 
 export default function UserAccountPage() {
   const { user, showToast, refreshUser } = useAuth();
+  const isMobileViewport = useIsMobileViewport();
   const [displayName, setDisplayName] = useState("");
   const [gender, setGender] = useState("other");
   const [avatar, setAvatar] = useState("");
@@ -152,7 +158,17 @@ export default function UserAccountPage() {
 
   return (
     <>
-      <div className="md:hidden">
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        accept="image/*"
+        className="hidden"
+        aria-hidden="true"
+        tabIndex={-1}
+      />
+
+      {isMobileViewport && <div className="md:hidden">
         <MobileAccountView
           email={user.email}
           displayName={displayName}
@@ -174,9 +190,9 @@ export default function UserAccountPage() {
             showToast("Đã chọn ảnh có sẵn", "success");
           }}
         />
-      </div>
+      </div>}
 
-      <div className="hidden md:block">
+      {!isMobileViewport && <div className="hidden md:block">
         <div className="space-y-6 select-none relative">
       <div className="flex items-center justify-between border-b border-zinc-900 pb-3.5">
         <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight text-zinc-100 flex items-center gap-2.5">
@@ -289,15 +305,6 @@ export default function UserAccountPage() {
 
             {/* Nút bấm quản lý */}
             <div className="flex flex-col gap-3.5 w-full max-w-[200px]">
-              {/* Uploader Input File */}
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                accept="image/*"
-                className="hidden"
-              />
-
               {/* Nút chọn ảnh từ thiết bị */}
               <button
                 type="button"
@@ -341,7 +348,7 @@ export default function UserAccountPage() {
       {/* POPUP MODAL CHỌN AVATAR CÓ SẴN (Đã tối ưu hóa thanh cuộn) */}
       {showAvatarModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-xl bg-[#12131b] border border-zinc-800 rounded-3xl p-6 shadow-2xl relative text-left animate-in fade-in zoom-in-95 duration-200">
+          <div role="dialog" aria-modal="true" aria-labelledby="desktop-avatar-title" className="w-full max-w-xl bg-[#12131b] border border-zinc-800 rounded-3xl p-6 shadow-2xl relative text-left animate-in fade-in zoom-in-95 duration-200">
             {/* Nút X đóng ở góc phải */}
             <button
               type="button"
@@ -351,7 +358,7 @@ export default function UserAccountPage() {
               <X size={18} />
             </button>
 
-            <h3 className="text-lg font-black text-zinc-200 tracking-tight uppercase mb-1">Đổi ảnh đại diện</h3>
+            <h3 id="desktop-avatar-title" className="text-lg font-black text-zinc-200 tracking-tight uppercase mb-1">Đổi ảnh đại diện</h3>
             <p className="text-xs text-zinc-550 font-medium mb-5">Danh sách các avatar hoạt hình có sẵn của hệ thống</p>
 
             {/* Hộp chứa cuộn dọc mượt mà giới hạn chiều cao */}
@@ -391,7 +398,7 @@ export default function UserAccountPage() {
         </div>
       )}
         </div>
-      </div>
+      </div>}
     </>
   );
 }

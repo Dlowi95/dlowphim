@@ -2,16 +2,21 @@
 
 import { useSyncExternalStore } from "react";
 
-const MOBILE_VIEWPORT_QUERY = "(max-width: 767px)";
+const MOBILE_BREAKPOINT_PX = 768;
 
 function subscribe(callback: () => void) {
-  const mediaQuery = window.matchMedia(MOBILE_VIEWPORT_QUERY);
-  mediaQuery.addEventListener("change", callback);
-  return () => mediaQuery.removeEventListener("change", callback);
+  window.addEventListener("resize", callback);
+  window.visualViewport?.addEventListener("resize", callback);
+  return () => {
+    window.removeEventListener("resize", callback);
+    window.visualViewport?.removeEventListener("resize", callback);
+  };
 }
 
 function getSnapshot() {
-  return window.matchMedia(MOBILE_VIEWPORT_QUERY).matches;
+  // Tailwind's `md` branch starts when the rounded CSS viewport is 768px.
+  // Reading the same value avoids fractional matchMedia overlap/gaps at 767/768px.
+  return window.innerWidth < MOBILE_BREAKPOINT_PX;
 }
 
 function getServerSnapshot() {

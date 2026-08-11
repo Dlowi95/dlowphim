@@ -8,6 +8,7 @@ import Link from "next/link";
 import Pagination from "@/components/Pagination";
 import { getUserMovieSummaries, UserMovieSummary } from "@/utils/userMovieSummaries";
 import { useConfirmDialog } from "@/components/ConfirmDialog";
+import { fetchMovieArtwork, LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
 
 type MovieDetails = UserMovieSummary;
 
@@ -71,6 +72,10 @@ export default function UserFavoritePage() {
   const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedMovies = favoriteDetails.slice(startIndex, startIndex + itemsPerPage);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const handlePrevPage = () => {
     if (currentPage > 1) setCurrentPage(currentPage - 1);
@@ -136,6 +141,7 @@ export default function UserFavoritePage() {
             {totalPages > 1 && (
               <div className="pt-8 flex justify-center">
                 <Pagination
+                  compactOnMobile
                   currentPage={currentPage}
                   totalPages={totalPages}
                   onPageChange={(page) => setCurrentPage(page)}
@@ -175,18 +181,16 @@ function FavoriteMovieCard({
 
     if (attemptCount < 2) {
       setAttemptCount(2);
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-      fetch(`${API_URL}/movies/logo/${movie.slug}?title=${encodeURIComponent(movie.origin_name || movie.name)}`)
-        .then((res) => (res.ok ? res.json() : null))
+      fetchMovieArtwork({ slug: movie.slug, title: movie.origin_name || movie.name })
         .then((data) => {
           if (data && (data.posterUrl || data.backdropUrl)) {
-            setImgSrc(data.posterUrl || data.backdropUrl);
+            setImgSrc(data.posterUrl || data.backdropUrl || LOCAL_MOVIE_IMAGE_FALLBACK);
           } else {
-            setImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+            setImgSrc(LOCAL_MOVIE_IMAGE_FALLBACK);
           }
         })
         .catch(() => {
-          setImgSrc("https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&q=80");
+          setImgSrc(LOCAL_MOVIE_IMAGE_FALLBACK);
         });
     }
   };
