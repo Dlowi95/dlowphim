@@ -755,6 +755,170 @@ export class MoviesService {
     return data;
   }
 
+  async getDailyShowtimes(requestedDate = '', requestedLimit = 60): Promise<any> {
+    const timeZone = 'Asia/Ho_Chi_Minh';
+    const today = this.formatDateInTimeZone(new Date(), timeZone);
+    const date = requestedDate || today;
+    const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(date)
+      ? new Date(`${date}T00:00:00.000Z`)
+      : null;
+    if (!parsedDate || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) {
+      throw new BadRequestException('Ngày lịch chiếu phải có định dạng YYYY-MM-DD');
+    }
+
+    const limit = Math.min(100, Math.max(1, Math.floor(Number(requestedLimit) || 60)));
+    const settings = await this.settingsService.getSettings();
+    const { activeId } = this.getMovieSourceIds(settings);
+    const cacheKey = `${activeId}:showtimes:${date}:${limit}`;
+    const cached = this.catalogCache.get(cacheKey);
+    if (cached && cached.expiry > Date.now()) {
+      return { ...cached.data, cache: { hit: true, ttlSeconds: 600 } };
+    }
+
+    if (date > today) {
+      const items = await this.getTmdbDailyAirings(date, settings, limit);
+      const data = {
+        status: true,
+        availability: items.length > 0 ? 'ready' : 'empty',
+        date,
+        timeZone,
+        source: 'tmdb',
+        scheduleType: 'scheduled',
+        items,
+        totalItems: items.length,
+        fallback: { used: false, reason: null },
+        cache: { hit: false, ttlSeconds: 600 },
+      };
+      this.setCatalogCache(cacheKey, data, 10 * 60 * 1000);
+      return data;
+    }
+
+    // Nguồn phim không có API lịch phát sóng riêng. Sáu trang mới nhất đủ bao phủ
+    // khoảng một tuần cập nhật gần đây, rồi được nhóm theo giờ Việt Nam.
+    const pageResults = await Promise.all(
+      Array.from({ length: 6 }, (_, index) => index + 1).map((page) =>
+        this.fetchMovieListWithFallback(
+          `/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=64`,
+          settings,
+        ),
+      ),
+    );
+
+    const seen = new Set<string>();
+    const items = pageResults
+      .flatMap((result) => {
+        const payload = result.payload;
+        const sourceId = payload?._sourceId || activeId;
+        return this.getCatalogItems(payload).map((movie: any) =>
+          this.normalizeCatalogMovie(movie, payload, sourceId),
+        );
+      })
+      .filter((movie: any) => {
+        if (!movie?.slug || seen.has(movie.slug)) return false;
+        const modifiedAt = movie?.modified?.time || movie?.modifiedAt;
+        const modifiedDate = this.formatDateInTimeZone(new Date(modifiedAt), timeZone);
+        if (!modifiedAt || modifiedDate !== date) return false;
+        seen.add(movie.slug);
+        return true;
+      })
+      .sort((left: any, right: any) => {
+        const leftTime = Date.parse(left?.modified?.time || left?.modifiedAt || '') || 0;
+        const rightTime = Date.parse(right?.modified?.time || right?.modifiedAt || '') || 0;
+        return rightTime - leftTime;
+      })
+      .slice(0, limit);
+
+    const data = {
+      status: true,
+      availability: items.length > 0 ? 'ready' : 'empty',
+      date,
+      timeZone,
+      source: pageResults[0]?.payload?._sourceId || activeId,
+      scheduleType: 'updated',
+      items,
+      totalItems: items.length,
+      fallback: {
+        used: pageResults.some((result) => result.fallbackUsed),
+        reason: pageResults.find((result) => result.fallbackReason)?.fallbackReason || null,
+      },
+      cache: { hit: false, ttlSeconds: 600 },
+    };
+    this.setCatalogCache(cacheKey, data, 10 * 60 * 1000);
+    return data;
+  }
+
+  private async getTmdbDailyAirings(date: string, settings: any, limit: number): Promise<any[]> {
+    const apiKey = settings?.tmdbApiKey || '591c025bb1641315ae087330271132bc';
+    const params = new URLSearchParams({
+      api_key: apiKey,
+      language: 'vi-VN',
+      sort_by: 'popularity.desc',
+      include_adult: 'false',
+      'air_date.gte': date,
+      'air_date.lte': date,
+      page: '1',
+    });
+    const response = await this.safeFetchTmdb(`https://api.themoviedb.org/3/discover/tv?${params.toString()}`);
+    if (!response?.ok) return [];
+    const payload = await response.json();
+    const candidates = (Array.isArray(payload?.results) ? payload.results : [])
+      .filter((item: any) => item?.id && (item?.poster_path || item?.backdrop_path))
+      .slice(0, Math.min(20, limit));
+    const details = await Promise.all(
+      candidates.map(async (item: any) => {
+        const detailResponse = await this.safeFetchTmdb(
+          `https://api.themoviedb.org/3/tv/${item.id}?api_key=${apiKey}&language=vi-VN`,
+        );
+        if (!detailResponse?.ok) return null;
+        const detail = await detailResponse.json();
+        const nextEpisode = detail?.next_episode_to_air;
+        if (!nextEpisode || String(nextEpisode.air_date || '').slice(0, 10) !== date) return null;
+        const name = detail.name || item.name || detail.original_name || item.original_name;
+        const originName = detail.original_name || item.original_name || name;
+        return {
+          _id: `tmdb-tv-${item.id}`,
+          slug: `tmdb-tv-${item.id}-${this.generateSlug(originName || name || 'series')}`,
+          name,
+          origin_name: originName,
+          poster_url: detail.poster_path || item.poster_path
+            ? `https://image.tmdb.org/t/p/w500${detail.poster_path || item.poster_path}`
+            : '',
+          thumb_url: detail.backdrop_path || item.backdrop_path
+            ? `https://image.tmdb.org/t/p/w780${detail.backdrop_path || item.backdrop_path}`
+            : '',
+          episode_current: `Tập ${nextEpisode.episode_number}`,
+          episode_name: nextEpisode.name || '',
+          season_number: Number(nextEpisode.season_number) || undefined,
+          air_date: date,
+          scheduled: true,
+          quality: 'TMDB',
+          lang: 'Sắp phát sóng',
+          tmdb: { id: String(item.id), type: 'tv', vote_average: Number(item.vote_average) || 0 },
+        };
+      }),
+    );
+    const seen = new Set<string>();
+    return details
+      .filter((item: any) => {
+        if (!item?.slug || seen.has(item.slug)) return false;
+        seen.add(item.slug);
+        return true;
+      })
+      .slice(0, limit);
+  }
+
+  private formatDateInTimeZone(value: Date, timeZone: string): string {
+    if (Number.isNaN(value.getTime())) return '';
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(value);
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+  }
+
   async getDiscoveryHealth(): Promise<any> {
     const settings = await this.settingsService.getSettings();
     const configuredSources = Array.isArray(settings?.movieSources) ? settings.movieSources : [];

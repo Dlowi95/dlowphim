@@ -228,4 +228,75 @@ describe('MoviesService catalog', () => {
       expect.objectContaining({ id: 'phimapi', failures: 2, circuitOpen: true }),
     ]));
   });
+
+  it('groups daily showtimes in Vietnam time and removes duplicate slugs', async () => {
+    const service = createService();
+    const fetchSpy = jest.spyOn(service, 'fetchOphimProxy').mockResolvedValue({
+      status: true,
+      _sourceId: 'phimapi',
+      data: {
+        items: [
+          {
+            slug: 'phim-cung-ngay',
+            name: 'Phim Cùng Ngày',
+            episode_current: 'Tập 8',
+            modified: { time: '2026-08-10T18:30:00.000Z' },
+          },
+          {
+            slug: 'phim-ngay-truoc',
+            name: 'Phim Ngày Trước',
+            modified: { time: '2026-08-10T10:30:00.000Z' },
+          },
+        ],
+      },
+    });
+
+    const result = await service.getDailyShowtimes('2026-08-11', 100);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(6);
+    expect(result.date).toBe('2026-08-11');
+    expect(result.timeZone).toBe('Asia/Ho_Chi_Minh');
+    expect(result.items.map((movie: any) => movie.slug)).toEqual(['phim-cung-ngay']);
+    expect(result.totalItems).toBe(1);
+  });
+
+  it('rejects an invalid daily showtime date', async () => {
+    const service = createService();
+    await expect(service.getDailyShowtimes('2026-02-31')).rejects.toThrow('YYYY-MM-DD');
+  });
+
+  it('uses the exact TMDB next episode for a future day', async () => {
+    const service = createService();
+    const tmdbSpy = jest.spyOn(service as any, 'safeFetchTmdb')
+      .mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          results: [{ id: 42, name: 'Series A', poster_path: '/series-a.jpg', vote_average: 8 }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          id: 42,
+          name: 'Series A',
+          original_name: 'Series A Original',
+          poster_path: '/series-a.jpg',
+          next_episode_to_air: { episode_number: 9, season_number: 2, air_date: '2099-08-12' },
+        }),
+      });
+
+    const result = await service.getDailyShowtimes('2099-08-12', 20);
+
+    expect(tmdbSpy).toHaveBeenCalledTimes(2);
+    expect(result.source).toBe('tmdb');
+    expect(result.scheduleType).toBe('scheduled');
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        slug: 'tmdb-tv-42-series-a-original',
+        episode_current: 'Tập 9',
+        air_date: '2099-08-12',
+        scheduled: true,
+      }),
+    ]);
+  });
 });

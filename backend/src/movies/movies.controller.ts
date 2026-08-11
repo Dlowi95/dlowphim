@@ -129,6 +129,14 @@ export class MoviesController {
     return this.moviesService.getDiscoveryHealth();
   }
 
+  @Get('showtimes')
+  async getDailyShowtimes(
+    @Query('date') date = '',
+    @Query('limit') limit = '60',
+  ) {
+    return this.moviesService.getDailyShowtimes(date, Number(limit));
+  }
+
   @Get('people/:personId/movies')
   async getPersonMovies(
     @Param('personId') personId: string,
