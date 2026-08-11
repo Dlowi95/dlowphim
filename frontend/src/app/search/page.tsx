@@ -9,6 +9,7 @@ import DiscoverySourceNotice from "@/components/discovery/DiscoverySourceNotice"
 import { cleanSlug } from "@/utils/movieUtils";
 import { searchMovies } from "@/utils/movieSearch";
 import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
+import MobileSearchBox from "@/components/search/mobile/MobileSearchBox";
 
 function SearchContent() {
   const params = useSearchParams();
@@ -99,9 +100,10 @@ function SearchContent() {
   };
 
   return (
-    <main className="min-h-screen bg-black px-5 pb-20 pt-28 text-white">
+    <main className="min-h-screen bg-black px-4 pb-28 pt-6 text-white md:px-5 md:pb-20 md:pt-28">
       <div className="mx-auto max-w-7xl">
-        <header className="mb-7 border-b border-zinc-900 pb-5">
+        <MobileSearchBox initialQuery={keyword} />
+        <header className="mb-5 border-b border-zinc-900 pb-5 md:mb-7">
           <p className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-[0.22em] text-pink-500"><Search size={14} /> Tìm kiếm DlowPhim</p>
           <h1 className="text-2xl font-black md:text-4xl">{title}</h1>
           {!loading && keyword && <p className="mt-2 text-sm text-zinc-500">Tìm thấy {movies.length} phim trên trang này</p>}
