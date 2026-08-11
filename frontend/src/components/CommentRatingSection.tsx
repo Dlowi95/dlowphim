@@ -64,6 +64,8 @@ interface CommentRatingSectionProps {
   isTrailerOnly?: boolean;
   /** Đồng bộ điểm trung bình cho khu vực hiển thị bên ngoài component. */
   onRatingChange?: (average: number) => void;
+  /** Bố cục gọn dành riêng cho trang chi tiết phim trên mobile. */
+  mobileCompact?: boolean;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -75,6 +77,7 @@ export default function CommentRatingSection({
   showTabs = true,
   isTrailerOnly = false,
   onRatingChange,
+  mobileCompact = false,
 }: CommentRatingSectionProps) {
   const { user, showToast } = useAuth();
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -541,12 +544,12 @@ export default function CommentRatingSection({
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div id="movie-comments" className="pt-6 border-t border-zinc-900/60 space-y-5">
+    <div id="movie-comments" className={`${mobileCompact ? "pt-5 space-y-4" : "pt-6 space-y-5"} border-t border-zinc-900/60`}>
       {/* ── Header + Tab switcher ── */}
-      <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
+      <div className={`flex items-center justify-between border-b border-zinc-900 pb-3 ${mobileCompact ? "gap-3" : ""}`}>
         <div className="flex items-center gap-2">
           <MessageSquare size={18} className="text-zinc-100" />
-          <h3 className="text-base md:text-lg font-bold text-white select-none">
+          <h3 className={`${mobileCompact ? "text-[15px] leading-tight" : "text-base md:text-lg"} font-bold text-white select-none`}>
             {activeTab === "comment" ? `${title} (${comments.length})` : "Đánh giá phim"}
           </h3>
         </div>
@@ -1178,9 +1181,9 @@ export default function CommentRatingSection({
       {activeTab === "rating" && (
         <div className="space-y-6">
           {/* Rating summary */}
-          <div className="flex items-center gap-6 p-5 bg-[#13141d] rounded-2xl border border-zinc-900">
+          <div className={`${mobileCompact ? "grid grid-cols-[96px_1fr] items-center gap-3.5 p-4" : "flex items-center gap-6 p-5"} bg-[#13141d] rounded-2xl border border-zinc-900`}>
             <div className="text-center shrink-0">
-              <div className="text-5xl font-black text-white tabular-nums leading-none">
+              <div className={`${mobileCompact ? "text-[42px]" : "text-5xl"} font-black text-white tabular-nums leading-none`}>
                 {ratingData.average > 0 ? ratingData.average.toFixed(1) : "—"}
               </div>
               <div className="text-[10px] font-bold text-zinc-500 mt-1.5 uppercase tracking-wider">/ 10 điểm</div>
@@ -1188,8 +1191,8 @@ export default function CommentRatingSection({
                 {ratingData.count} lượt đánh giá
               </div>
             </div>
-            <div className="flex-1 space-y-1.5">
-              <div className="flex gap-1 flex-wrap">
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className={mobileCompact ? "grid w-fit grid-cols-5 gap-1.5" : "flex gap-1 flex-wrap"}>
                 {Array.from({ length: 10 }).map((_, i) => (
                   <Star
                     key={i}
@@ -1220,7 +1223,7 @@ export default function CommentRatingSection({
             </p>
 
             {user ? (
-              <div className="flex gap-1.5 flex-wrap" onMouseLeave={() => setHoverStar(0)}>
+              <div className={mobileCompact ? "grid grid-cols-5 gap-2" : "flex gap-1.5 flex-wrap"} onMouseLeave={() => setHoverStar(0)}>
                 {Array.from({ length: 10 }).map((_, i) => {
                   const val = i + 1;
                   const isHighlighted =
@@ -1231,8 +1234,8 @@ export default function CommentRatingSection({
                       disabled={submittingRating}
                       onMouseEnter={() => setHoverStar(val)}
                       onClick={() => handleSubmitRating(val)}
-                      className={`w-10 h-10 rounded-xl font-black text-sm transition-all border-none cursor-pointer select-none ${isHighlighted
-                        ? "bg-pink-500 text-white shadow-md shadow-pink-500/20 scale-110"
+                      className={`${mobileCompact ? "h-11 w-full" : "w-10 h-10"} rounded-xl font-black text-sm transition-all border-none cursor-pointer select-none ${isHighlighted
+                        ? `bg-pink-500 text-white shadow-md shadow-pink-500/20 ${mobileCompact ? "scale-100" : "scale-110"}`
                         : "bg-[#1b1d2a] text-zinc-500 hover:bg-pink-500/20 hover:text-pink-400"
                         } ${submittingRating ? "opacity-50 cursor-not-allowed" : ""}`}
                     >

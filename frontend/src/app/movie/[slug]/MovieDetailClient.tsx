@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Sparkles, Tv, HelpCircle, Send, Plus, MessageSquare, Image, Users, Flame, ExternalLink, Compass, Check, BellRing } from "lucide-react";
 import CommentRatingSection from "@/components/CommentRatingSection";
@@ -13,8 +13,9 @@ import Cookies from "js-cookie";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import { normalizeEpisodeKey } from "@/utils/episodeUtils";
 import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
+import MobileMovieDetail, { type MobileMovieSection } from "./MobileMovieDetail";
 
-interface Episode {
+export interface Episode {
   name: string;
   slug: string;
   filename: string;
@@ -22,12 +23,12 @@ interface Episode {
   link_m3u8: string;
 }
 
-interface Server {
+export interface Server {
   server_name: string;
   server_data: Episode[];
 }
 
-interface MovieDetail {
+export interface MovieDetail {
   _id: string;
   name: string;
   slug: string;
@@ -60,9 +61,14 @@ interface MovieDetail {
   };
 }
 
+const subscribeMobileViewport = (callback: () => void) => {
+  const media = window.matchMedia("(max-width: 767px)");
+  media.addEventListener("change", callback);
+  return () => media.removeEventListener("change", callback);
+};
 
-
-
+const getMobileViewportSnapshot = () => window.matchMedia("(max-width: 767px)").matches;
+const getMobileViewportServerSnapshot = () => false;
 
 export default function MovieDetailClient({ slug }: { slug: string }) {
   const router = useRouter();
@@ -76,6 +82,11 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
   const [creditsLoaded, setCreditsLoaded] = useState(false);
   const [loadingCredits, setLoadingCredits] = useState(false);
   const [averageRating, setAverageRating] = useState<number | null>(null);
+  const isMobileViewport = useSyncExternalStore(
+    subscribeMobileViewport,
+    getMobileViewportSnapshot,
+    getMobileViewportServerSnapshot,
+  );
   const [reminderActive, setReminderActive] = useState(false);
   const [reminderLoading, setReminderLoading] = useState(false);
   const isUpcomingMovie = Boolean(movie && (
@@ -88,6 +99,7 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
   const isFavorite = user?.favorites?.includes(movie?.slug || "") || false;
   const [shareCopied, setShareCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<"episodes" | "gallery" | "actors" | "recommendations">("episodes");
+  const [mobileActiveSection, setMobileActiveSection] = useState<MobileMovieSection>("episodes");
   const [selectedEpisodeBatch, setSelectedEpisodeBatch] = useState<number>(0);
   const [localWatchHistory, setLocalWatchHistory] = useState<any[]>([]);
 
@@ -160,6 +172,7 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
         setLoadingRelated(false);
         setAverageRating(null);
         setActiveTab("episodes");
+        setMobileActiveSection("episodes");
         setSelectedEpisodeBatch(0); // Reset episode batch on movie change
 
         const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -341,7 +354,7 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
 
   // Chỉ tải credits TMDB khi người dùng thật sự mở tab Diễn viên.
   useEffect(() => {
-    if (activeTab !== "actors" || !movie || creditsLoaded || loadingCredits) return;
+    if ((activeTab !== "actors" && mobileActiveSection !== "actors") || !movie || creditsLoaded || loadingCredits) return;
     const controller = new AbortController();
 
     async function fetchCredits() {
@@ -371,7 +384,7 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
 
     fetchCredits();
     return () => controller.abort();
-  }, [activeTab, creditsLoaded, movie, slug]);
+  }, [activeTab, creditsLoaded, mobileActiveSection, movie, slug]);
 
   useEffect(() => {
     const tmdbId = movie?.tmdb?.id;
@@ -397,7 +410,7 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
       const handleScrollToComments = () => {
         if (window.location.hash === "#movie-comments") {
           setTimeout(() => {
-            const el = document.getElementById("movie-comments");
+            const el = document.getElementById(isMobileViewport ? "mobile-movie-comments" : "movie-comments");
             if (el) {
               el.scrollIntoView({ behavior: "smooth", block: "start" });
             }
@@ -410,12 +423,12 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
       window.addEventListener("hashchange", handleScrollToComments);
       return () => window.removeEventListener("hashchange", handleScrollToComments);
     }
-  }, [loading, movie]);
+  }, [isMobileViewport, loading, movie]);
 
   // 2. Fetch phim liên quan dựa trên thể loại đầu tiên của phim hiện tại
   useEffect(() => {
     if (
-      activeTab !== "recommendations" ||
+      (activeTab !== "recommendations" && mobileActiveSection !== "recommendations") ||
       relatedLoaded ||
       !movie ||
       !movie.category ||
@@ -450,7 +463,7 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, movie, relatedLoaded]);
+  }, [activeTab, mobileActiveSection, movie, relatedLoaded]);
 
 
 
@@ -627,6 +640,50 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
   const isTrailerOnly = isUpcomingMovie || hasNoEpisodes;
 
   return (
+    <>
+      <MobileMovieDetail
+        movie={movie}
+        slug={slug}
+        cleanedName={cleanedName}
+        cleanedOrigin={cleanedOrigin}
+        backdropSrc={tmdbImages?.backdrop || getImageUrl(movie.poster_url || movie.thumb_url)}
+        posterSrc={tmdbImages?.poster || getImageUrl(movie.thumb_url || movie.poster_url)}
+        movieScore={movieScore}
+        movieAgeRating={movieAgeRating}
+        isTrailerOnly={isTrailerOnly}
+        isFavorite={isFavorite}
+        reminderActive={reminderActive}
+        reminderLoading={reminderLoading}
+        shareCopied={shareCopied}
+        currentEpisodeName={currentHistory?.episodeName}
+        continueLabel={currentHistory ? formatContinueEpisode(currentHistory.episodeName) : "Xem ngay"}
+        playlists={user?.playlists}
+        playlistBusyId={playlistBusyId}
+        newPlaylistName={newPlaylistName}
+        isCreatingPlaylist={isCreatingPlaylist}
+        tmdbCredits={tmdbCredits}
+        loadingCredits={loadingCredits}
+        relatedMovies={relatedMovies}
+        loadingRelated={loadingRelated}
+        activeSection={mobileActiveSection}
+        showComments={isMobileViewport}
+        onWatchNow={handleWatchNow}
+        onWatchServer={handleWatchServer}
+        onWatchEpisode={handleWatchEpisode}
+        onToggleFavorite={handleToggleFavorite}
+        onToggleReminder={handleToggleReminder}
+        onShare={handleShare}
+        onTogglePlaylist={handleTogglePlaylist}
+        onCreatePlaylistSubmit={handleQuickCreatePlaylist}
+        onNewPlaylistNameChange={setNewPlaylistName}
+        onCreatingPlaylistChange={setIsCreatingPlaylist}
+        onCategory={(categorySlug) => router.push(`/the-loai/${categorySlug}`)}
+        onActor={(actorName) => router.push(`/search?keyword=${encodeURIComponent(actorName)}`)}
+        onSectionChange={setMobileActiveSection}
+        onRatingChange={setAverageRating}
+      />
+
+      <div className="hidden md:block">
     <div className="w-full flex-grow flex flex-col bg-[#07070a] text-white pb-16 relative overflow-hidden">
 
       {/* 1. CINEMATIC BANNER */}
@@ -1196,13 +1253,17 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
           )}
 
           {/* 4. BÌNH LUẬN & ĐÁNH GIÁ - Component dùng chung */}
-          <CommentRatingSection
-            slug={slug}
-            isTrailerOnly={isTrailerOnly}
-            onRatingChange={setAverageRating}
-          />
+          {!isMobileViewport && (
+            <CommentRatingSection
+              slug={slug}
+              isTrailerOnly={isTrailerOnly}
+              onRatingChange={setAverageRating}
+            />
+          )}
         </div>
       </div>
     </div>
+      </div>
+    </>
   );
 }
