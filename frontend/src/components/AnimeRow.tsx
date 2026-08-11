@@ -35,6 +35,9 @@ interface AnimeFeature {
 const FALLBACK_IMAGE =
   "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=1200&q=80";
 
+const MOBILE_ANIME_LIMIT = 15;
+const MOBILE_INITIAL_PRELOAD_COUNT = 6;
+
 const FALLBACK_ANIME: Movie[] = [
   {
     _id: "anime-fallback-1",
@@ -256,9 +259,9 @@ export default function AnimeRow() {
         setMovies(uniqueItems);
         if (uniqueItems[0]) await activateMovie(uniqueItems[0], { initial: true });
 
-        // Prepare the small mobile carousel ahead of interaction. Keep concurrency
-        // deliberately low so artwork never competes aggressively with the page hero.
-        const mobileCandidates = uniqueItems.slice(1, 6);
+        // Prepare only the first mobile slides ahead of interaction. The remaining
+        // slides load lazily from the neighbor-prefetch effect as the user swipes.
+        const mobileCandidates = uniqueItems.slice(1, MOBILE_INITIAL_PRELOAD_COUNT);
         void (async () => {
           for (let index = 0; index < mobileCandidates.length; index += 2) {
             await Promise.all(
@@ -367,7 +370,7 @@ export default function AnimeRow() {
     const deltaY = clientY - mobileSwipeRef.current.startY;
     if (Math.abs(deltaX) <= Math.abs(deltaY)) return false;
 
-    const mobileMovies = movies.slice(0, 6);
+    const mobileMovies = movies.slice(0, MOBILE_ANIME_LIMIT);
     const currentIndex = mobileMovies.findIndex(
       (item) => item.slug === featureRef.current?.movie.slug,
     );
@@ -385,7 +388,7 @@ export default function AnimeRow() {
   const finishMobileSwipe = (clientX: number, clientY: number) => {
     const swipe = { ...mobileSwipeRef.current };
     resetMobileSwipe();
-    const mobileMovies = movies.slice(0, 6);
+    const mobileMovies = movies.slice(0, MOBILE_ANIME_LIMIT);
     if (!swipe.tracking || pendingSlug || mobileMovies.length < 2) return;
 
     const deltaX = clientX - swipe.startX;
@@ -484,7 +487,7 @@ export default function AnimeRow() {
     await toggleFavoriteCtx(movie.slug);
   };
 
-  const mobileMovies = movies.slice(0, 6);
+  const mobileMovies = movies.slice(0, MOBILE_ANIME_LIMIT);
   const activeMobileIndex = Math.max(
     0,
     mobileMovies.findIndex((item) => item.slug === movie.slug),
@@ -790,7 +793,12 @@ function DesktopAnimeFeature(props: {
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[2] h-1/4 bg-gradient-to-t from-[#111219] to-transparent" />
 
       <div className="relative z-10 flex w-[52%] flex-col pr-4">
-        <h4 className="line-clamp-2 text-3xl font-black leading-tight text-zinc-100">{props.title}</h4>
+        <h4
+          title={props.title}
+          className="block max-w-full truncate whitespace-nowrap text-3xl font-black leading-tight text-zinc-100"
+        >
+          {props.title}
+        </h4>
         <p className="mt-1.5 line-clamp-1 text-[13px] font-bold text-pink-500">{props.originName}</p>
         <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] font-bold text-zinc-300">
           <span className="rounded border border-amber-500/50 bg-amber-500/10 px-1.5 py-0.5 text-amber-400">IMDb {props.imdbScore}</span>
@@ -802,7 +810,7 @@ function DesktopAnimeFeature(props: {
         {!!props.genres.length && <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-zinc-500">{props.genres.join(" • ")}</p>}
         <p className="mt-4 line-clamp-4 max-w-[92%] text-sm font-medium leading-relaxed text-zinc-400">{props.description}</p>
         <div className="mt-6 flex items-center gap-4">
-          <button onClick={props.onWatch} className="flex h-14 w-14 items-center justify-center rounded-full bg-pink-500 text-white shadow-[0_4px_20px_rgba(236,72,153,0.45)] transition-transform hover:scale-105">
+          <button onClick={props.onWatch} className="flex h-14 w-14 items-center justify-center rounded-full bg-pink-500 text-white transition-transform hover:scale-105">
             <Play size={20} className="ml-0.5 fill-current" />
           </button>
           <button onClick={props.onFavorite} className="flex h-12 w-12 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900/50 text-zinc-300">
