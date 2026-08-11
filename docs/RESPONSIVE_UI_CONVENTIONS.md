@@ -1,75 +1,98 @@
 # Quy ước giao diện responsive của DlowPhim
 
-Tài liệu này là hợp đồng giao diện cho các lần tối ưu tiếp theo. Mục tiêu quan trọng nhất: sửa mobile không được làm thay đổi bố cục, kích thước hoặc cơ chế điều khiển đã ổn định trên desktop.
+Tài liệu này là hợp đồng chống regression. Mục tiêu quan trọng nhất: sửa mobile không được làm thay đổi bố cục, kích thước hoặc cơ chế điều khiển đã ổn định trên desktop.
 
 ## 1. Breakpoint chuẩn
 
-- Mobile: `320px–767px` (CSS mặc định, không có prefix).
+- Mobile: `320px–767px`.
 - Desktop/tablet ngang: từ `768px` trở lên (`md:`).
-- Chỉ dùng `lg:` và `xl:` để tinh chỉnh desktop rộng, không dùng chúng để sửa lỗi mobile.
-- Kích thước bắt buộc kiểm tra: `360`, `390`, `430/440`, `768`, `1024`, `1440` và `1920px`.
-- Không viết giao diện chỉ đúng cho một máy cố định như `400px` hoặc `430px`.
+- Chỉ dùng `lg:` và `xl:` để tinh chỉnh desktop rộng.
+- Bắt buộc kiểm tra: `360`, `390`, `430/440`, `768`, `1024`, `1440` và `1920px`.
+- Không tối ưu riêng cho một thiết bị cố định.
 
-## 2. Tách cấu trúc mobile và desktop
+## 2. Kiến trúc bắt buộc
 
-Khi mobile và desktop khác nhau về cấu trúc, phải dùng hai nhánh riêng:
+Khi mobile và desktop khác nhau về cấu trúc, phải tách thành component/file riêng. Tên khuyến nghị:
 
-```tsx
-<div className="md:hidden">Giao diện mobile</div>
-<div className="hidden md:block">Giao diện desktop</div>
+```text
+FeatureController.tsx       dữ liệu, state và handler dùng chung
+DesktopFeatureView.tsx      giao diện desktop đang ổn định
+mobile/MobileFeatureView.tsx giao diện mobile độc lập
 ```
 
-- Không dùng JavaScript đo `window.innerWidth` chỉ để đổi bố cục.
-- Không sửa DOM dùng chung nếu thay đổi đó làm desktop bị co, tràn hoặc đổi vị trí.
-- Chỉ tái sử dụng các phần nhỏ không phụ thuộc bố cục: badge, nút, dữ liệu phim, formatter và xử lý ảnh lỗi.
+- Controller là nơi duy nhất gọi API, giữ state nghiệp vụ và tạo handler.
+- View chỉ nhận dữ liệu/callback qua props; không tự gọi lại cùng API.
+- Không sao chép logic yêu thích, danh sách, lịch sử, đánh giá hoặc bình luận sang hai view.
+- Khi một view có ảnh ưu tiên, socket, timer, observer hoặc effect nặng, **chỉ được mount một view theo breakpoint**. Không dùng `hidden` để che một cây React vẫn đang hoạt động.
+- `matchMedia` chỉ được dùng tại ranh giới mount của hai view độc lập. Không dùng JavaScript để tinh chỉnh khoảng cách, cỡ chữ hoặc bố cục nhỏ.
+- View mobile lớn phải được `dynamic import`; desktop không tải chunk mobile khi không sử dụng.
+- Nhánh desktop cũ được coi là “đóng băng”. Một yêu cầu chỉ sửa mobile không được sửa JSX/class của nhánh desktop.
 
-## 3. Hợp đồng từng khu vực trang chủ
+Với markup nhỏ, không có effect/API/socket/ảnh ưu tiên, có thể dùng CSS thuần:
 
-### Anime
+```tsx
+<div className="md:hidden">Mobile nhỏ, thuần hiển thị</div>
+<div className="hidden md:block">Desktop nhỏ, thuần hiển thị</div>
+```
 
-- Desktop: một khung tối lớn gồm **hai tầng trong normal flow**.
-  1. Tầng trên là nội dung bên trái và backdrop bên phải, có gradient mờ giao nhau.
-  2. Tầng dưới là dải poster riêng, có đường phân cách phía trên.
-- Poster desktop tuyệt đối không được `absolute` đè lên backdrop.
-- Mobile dùng card/slider riêng và không được thay class của nhánh desktop.
+## 3. Hợp đồng dữ liệu và hiệu năng
 
-### Phim sắp chiếu và phim chiếu rạp
+- Mỗi tài nguyên chỉ có một owner tải dữ liệu.
+- Bình luận chỉ tạo một component/socket ở mọi thời điểm.
+- Credits, gallery và đề xuất chỉ tải khi người dùng mở tab tương ứng; mở lại tab không gọi lại nếu dữ liệu đã có.
+- Request phải có cleanup/abort khi đổi route. Không thêm state loading vào dependency nếu chính effect đó thay đổi state loading.
+- Không preload ảnh của nhánh giao diện đang không được mount.
+- Dùng khung ảnh ổn định để tránh layout shift; backdrop ngang, poster dọc và luôn có fallback cùng kích thước.
 
-- Mobile: cuộn ngang tự nhiên bằng cảm ứng, có snap và card hiển thị khoảng hai phim.
-- Desktop: giữ kích thước card desktop, kéo chuột/nút điều hướng; tắt snap bằng `md:snap-none`.
-- Không đưa chiều rộng card mobile vào class desktop và ngược lại.
+## 4. Hợp đồng từng khu vực
 
-### Top 10 và các hàng phim
+### Trang chủ
 
-- Mobile ưu tiên native horizontal scroll, vùng chạm tối thiểu `40px`.
-- Desktop giữ carousel chuột/nút và khoảng cách hiện có.
-- Badge dùng component chung; phần bố cục card có thể tách riêng cho hai breakpoint.
+- Anime mobile dùng card/slider riêng; desktop giữ khung hai tầng và dải poster trong normal flow.
+- Phim sắp chiếu, phim chiếu rạp và Top 10 trên mobile ưu tiên native horizontal scroll, touch và snap.
+- Desktop giữ carousel chuột/nút hiện có. Không đưa chiều rộng card mobile vào class desktop.
 
-## 4. Quy ước carousel
+### Tìm kiếm
 
-- Container mobile: `overflow-x-auto`, `touch-pan-x`, snap hợp lý; không chặn `pointermove` mặc định nếu chưa thật sự cần.
-- Container desktop: thêm `md:snap-none`; chỉ bật drag chuột trên desktop.
-- Nút trái/phải không được thay đổi số lượng card visible khi chuyển breakpoint ngoài thiết kế.
-- Khi bấm nút, dịch theo đúng một card nếu yêu cầu sản phẩm là đi từng phim.
+- Desktop giữ ô tìm kiếm và gợi ý trong navbar.
+- Mobile dùng `MobileSearchBox`; kết quả tìm kiếm và request danh sách vẫn do page/controller dùng chung quản lý.
+- Không để hai ô tìm kiếm cùng phát request cho một thao tác người dùng.
 
-## 5. Quy ước ảnh
+### User và thông báo
 
-- Backdrop dùng tỉ lệ ngang và `object-cover`; poster dùng tỉ lệ dọc.
-- Giữ kích thước khung ổn định trước khi ảnh tải để tránh layout shift.
-- Không hiện ảnh nguồn thấp rồi đổi sang TMDB sau 1–2 giây trên cùng slide; chỉ reveal ảnh cuối sau khi preload xong.
-- Luôn có fallback nhưng fallback không được thay đổi kích thước card.
+- Component mobile nằm trong `components/user/mobile` hoặc file có tiền tố `Mobile`.
+- Desktop sidebar/form giữ nguyên component desktop.
+- Chuông mobile và desktop có view riêng nhưng dùng cùng dữ liệu/handler từ navbar; chỉ tải thông báo khi mở popup.
+- Toast mobile phải nằm trong nhánh `md:hidden`; toast desktop không nhận class vị trí của mobile.
 
-## 6. Checklist trước khi hoàn tất
+### Chi tiết phim
 
-- [ ] So sánh desktop trước và sau tại `1440px`.
+- `MovieDetailClient` là controller duy nhất.
+- `MobileMovieDetail` là chunk mobile độc lập và chỉ được mount dưới `768px`.
+- Desktop dùng nguyên nhánh JSX cũ và không được mount trên mobile.
+- Bình luận luôn xuất hiện một lần; tab diễn viên/ảnh/đề xuất không được làm mất bình luận.
+
+## 5. Carousel và thao tác chạm
+
+- Mobile: `overflow-x-auto`, `touch-pan-x`, vùng chạm tối thiểu `40px`, snap khi phù hợp.
+- Không chặn `pointermove` nếu không thật sự cần.
+- Desktop: drag chuột/nút điều hướng; dùng `md:snap-none` nếu chung container.
+- Nút điều hướng dịch đúng một card khi yêu cầu sản phẩm là đi từng phim.
+
+## 6. Checklist bắt buộc trước khi hoàn tất
+
+- [ ] So sánh desktop trước/sau tại `1440px` và `1920px`.
 - [ ] Kiểm tra mobile tại `360`, `390` và `430/440px`.
-- [ ] Vuốt thật trên mobile cho mọi carousel đã sửa.
-- [ ] Kéo chuột và bấm nút carousel trên desktop.
-- [ ] Kiểm tra không có thanh cuộn ngang toàn trang.
-- [ ] Kiểm tra tiêu đề dài có ellipsis/line-clamp và không đẩy vỡ card.
-- [ ] Chạy production build.
-- [ ] Chỉ kết luận hoàn tất sau khi desktop và mobile đều qua kiểm tra.
+- [ ] Kiểm tra mốc biên `767px` và `768px`.
+- [ ] Không có thanh cuộn ngang toàn trang.
+- [ ] Tiêu đề dài có ellipsis/line-clamp và không đẩy vỡ card.
+- [ ] DOM chỉ có một view đối với feature nặng.
+- [ ] Network không có request API trùng do hai view.
+- [ ] Chỉ có một kết nối/socket bình luận.
+- [ ] Mở lại tab lazy không gọi lại request đã tải thành công.
+- [ ] Chạy TypeScript, test liên quan và production build.
+- [ ] Chỉ kết luận hoàn tất sau khi desktop lẫn mobile đều qua kiểm tra.
 
 ## 7. Nguyên tắc chống regression
 
-Nếu yêu cầu chỉ nhắc tới mobile, mọi thay đổi layout phải nằm trong nhánh `md:hidden` hoặc class không prefix đi kèm class khôi phục rõ ràng từ `md:`. Nếu cần thay cấu trúc desktop, phải coi đó là một thay đổi riêng và kiểm tra lại bằng ảnh trước/sau.
+Nếu yêu cầu chỉ nhắc tới mobile, mọi thay đổi layout phải nằm trong file/component mobile hoặc class mobile có class khôi phục rõ ràng từ `md:`. Nếu cần thay cấu trúc desktop, coi đó là thay đổi riêng, xin đúng phạm vi và kiểm tra ảnh trước/sau.

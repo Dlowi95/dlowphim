@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useState, useSyncExternalStore } from "react";
+import React, { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Sparkles, Tv, HelpCircle, Send, Plus, MessageSquare, Image, Users, Flame, ExternalLink, Compass, Check, BellRing } from "lucide-react";
 import CommentRatingSection from "@/components/CommentRatingSection";
@@ -13,7 +14,17 @@ import Cookies from "js-cookie";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import { normalizeEpisodeKey } from "@/utils/episodeUtils";
 import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
-import MobileMovieDetail, { type MobileMovieSection } from "./MobileMovieDetail";
+import { useIsMobileViewport } from "@/hooks/useIsMobileViewport";
+import type { MobileMovieSection } from "./MobileMovieDetail";
+
+const MobileMovieDetail = dynamic(() => import("./MobileMovieDetail"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex min-h-[60vh] items-center justify-center bg-black text-pink-500 md:hidden">
+      <Loader2 className="animate-spin" size={28} />
+    </div>
+  ),
+});
 
 export interface Episode {
   name: string;
@@ -61,15 +72,6 @@ export interface MovieDetail {
   };
 }
 
-const subscribeMobileViewport = (callback: () => void) => {
-  const media = window.matchMedia("(max-width: 767px)");
-  media.addEventListener("change", callback);
-  return () => media.removeEventListener("change", callback);
-};
-
-const getMobileViewportSnapshot = () => window.matchMedia("(max-width: 767px)").matches;
-const getMobileViewportServerSnapshot = () => false;
-
 export default function MovieDetailClient({ slug }: { slug: string }) {
   const router = useRouter();
   const { user, toggleFavorite: toggleFavoriteCtx, createPlaylist, toggleMovieInPlaylist, showAuthToast, showToast } = useAuth();
@@ -82,11 +84,7 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
   const [creditsLoaded, setCreditsLoaded] = useState(false);
   const [loadingCredits, setLoadingCredits] = useState(false);
   const [averageRating, setAverageRating] = useState<number | null>(null);
-  const isMobileViewport = useSyncExternalStore(
-    subscribeMobileViewport,
-    getMobileViewportSnapshot,
-    getMobileViewportServerSnapshot,
-  );
+  const isMobileViewport = useIsMobileViewport();
   const [reminderActive, setReminderActive] = useState(false);
   const [reminderLoading, setReminderLoading] = useState(false);
   const isUpcomingMovie = Boolean(movie && (
@@ -639,8 +637,8 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
   const hasNoEpisodes = !movie.episodes || movie.episodes.length === 0 || movie.episodes[0]?.server_data?.length === 0;
   const isTrailerOnly = isUpcomingMovie || hasNoEpisodes;
 
-  return (
-    <>
+  if (isMobileViewport) {
+    return (
       <MobileMovieDetail
         movie={movie}
         slug={slug}
@@ -666,7 +664,7 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
         relatedMovies={relatedMovies}
         loadingRelated={loadingRelated}
         activeSection={mobileActiveSection}
-        showComments={isMobileViewport}
+        showComments
         onWatchNow={handleWatchNow}
         onWatchServer={handleWatchServer}
         onWatchEpisode={handleWatchEpisode}
@@ -682,7 +680,10 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
         onSectionChange={setMobileActiveSection}
         onRatingChange={setAverageRating}
       />
+    );
+  }
 
+  return (
       <div className="hidden md:block">
     <div className="w-full flex-grow flex flex-col bg-[#07070a] text-white pb-16 relative overflow-hidden">
 
@@ -1264,6 +1265,5 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
       </div>
     </div>
       </div>
-    </>
   );
 }
