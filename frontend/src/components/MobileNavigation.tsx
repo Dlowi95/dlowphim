@@ -156,32 +156,39 @@ export default function MobileNavigation({
 
       <nav
         aria-label="Điều hướng chính trên điện thoại"
-        className="fixed inset-x-0 bottom-0 z-[70] px-3 pb-[max(0.65rem,env(safe-area-inset-bottom))] md:hidden"
+        className="fixed inset-x-0 bottom-0 z-[70] px-4 pb-[max(0.8rem,env(safe-area-inset-bottom))] md:hidden"
       >
-        <div className="relative mx-auto h-[4.75rem] w-full max-w-[31rem] rounded-[1.7rem] border border-white/15 bg-[#17171d]/95 px-1.5 shadow-[0_-8px_34px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+        <div className="relative mx-auto h-[4.45rem] w-full max-w-[27rem] rounded-[1.15rem] border border-white/[0.09] bg-[#0d0d15]/95 px-2 shadow-[0_18px_45px_rgba(0,0,0,0.55),0_3px_14px_rgba(0,0,0,0.38)] backdrop-blur-2xl">
           <div className="grid h-full grid-cols-4">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = isItemActive(pathname, item.section);
             const isProtectedAccount =
               item.section === "account" && !isAuthenticated;
-            const controlClassName = `relative flex min-w-0 flex-col items-center justify-end gap-1 rounded-[1.25rem] px-1 pb-2 pt-3.5 transition-colors duration-200 ${
+            const controlClassName = `group relative flex min-w-0 items-center justify-center rounded-2xl px-1 outline-none transition-colors duration-300 focus-visible:bg-white/[0.07] focus-visible:text-white ${
               active
-                ? "text-pink-300"
-                : "text-zinc-400 active:bg-white/[0.07] active:text-white"
+                ? "text-pink-500"
+                : "text-zinc-400 active:bg-white/[0.06] active:text-white"
             }`;
             const content = (
               <>
                 <span
-                  className={`absolute flex size-[3.65rem] items-center justify-center rounded-full transition-all duration-200 ${
+                  aria-hidden="true"
+                  className={`flex items-center justify-center rounded-full transition-[top,width,height,color,background-color,box-shadow,transform] duration-300 ease-out ${
                     active
-                      ? "-top-6 border border-white/90 bg-white text-pink-500 shadow-[0_12px_28px_rgba(0,0,0,0.45)] ring-4 ring-[#17171d]"
-                      : "top-3 text-current"
+                      ? "absolute -top-[1.15rem] size-[3.9rem] border-[5px] border-[#e8e8eb] bg-white text-pink-500 shadow-[0_7px_0_#0d0d15,0_12px_22px_rgba(0,0,0,0.44)] ring-4 ring-[#0d0d15]"
+                      : "size-11 text-current group-active:scale-90"
                   }`}
                 >
-                  <Icon size={active ? 24 : 21} strokeWidth={active ? 2.6 : 2} />
+                  <Icon size={active ? 20 : 22} strokeWidth={active ? 2.35 : 2} />
                 </span>
-                <span className="max-w-full truncate text-[10px] font-bold leading-none">
+                <span
+                  className={
+                    active
+                      ? "absolute inset-x-1 bottom-2.5 truncate text-center text-[10px] font-extrabold leading-none text-white"
+                      : "sr-only"
+                  }
+                >
                   {item.label}
                 </span>
               </>
@@ -194,6 +201,7 @@ export default function MobileNavigation({
                   type="button"
                   disabled={isAuthLoading}
                   onClick={onOpenAuth}
+                  aria-label={item.label}
                   className={`${controlClassName} disabled:opacity-50`}
                 >
                   {content}
@@ -205,6 +213,8 @@ export default function MobileNavigation({
               <Link
                 key={item.section}
                 href={item.href}
+                aria-current={active ? "page" : undefined}
+                aria-label={item.label}
                 className={controlClassName}
               >
                 {content}
