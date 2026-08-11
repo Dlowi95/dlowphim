@@ -158,20 +158,29 @@ export default function MobileNavigation({
         aria-label="Điều hướng chính trên điện thoại"
         className="fixed inset-x-0 bottom-0 z-[70] px-3 pb-[max(0.65rem,env(safe-area-inset-bottom))] md:hidden"
       >
-        <div className="mx-auto grid w-full max-w-[31rem] grid-cols-4 gap-1 rounded-[1.7rem] border border-white/15 bg-[#17171d]/92 p-1.5 shadow-[0_-8px_34px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+        <div className="relative mx-auto h-[4.75rem] w-full max-w-[31rem] rounded-[1.7rem] border border-white/15 bg-[#17171d]/95 px-1.5 shadow-[0_-8px_34px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+          <div className="grid h-full grid-cols-4">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = isItemActive(pathname, item.section);
             const isProtectedAccount =
               item.section === "account" && !isAuthenticated;
-            const controlClassName = `relative flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-[1.25rem] px-1 transition-all duration-200 ${
+            const controlClassName = `relative flex min-w-0 flex-col items-center justify-end gap-1 rounded-[1.25rem] px-1 pb-2 pt-3.5 transition-colors duration-200 ${
               active
-                ? "-translate-y-1 bg-pink-500 text-white shadow-[0_8px_22px_rgba(236,72,153,0.3)]"
+                ? "text-pink-300"
                 : "text-zinc-400 active:bg-white/[0.07] active:text-white"
             }`;
             const content = (
               <>
-                <Icon size={20} strokeWidth={active ? 2.5 : 2} />
+                <span
+                  className={`absolute flex size-[3.65rem] items-center justify-center rounded-full transition-all duration-200 ${
+                    active
+                      ? "-top-6 border border-white/90 bg-white text-pink-500 shadow-[0_12px_28px_rgba(0,0,0,0.45)] ring-4 ring-[#17171d]"
+                      : "top-3 text-current"
+                  }`}
+                >
+                  <Icon size={active ? 24 : 21} strokeWidth={active ? 2.6 : 2} />
+                </span>
                 <span className="max-w-full truncate text-[10px] font-bold leading-none">
                   {item.label}
                 </span>
@@ -202,6 +211,7 @@ export default function MobileNavigation({
               </Link>
             );
           })}
+          </div>
         </div>
       </nav>
     </>

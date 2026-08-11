@@ -75,7 +75,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <div
       className={`flex min-h-screen flex-col bg-black ${
         showMobileNavigation
-          ? "pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-0"
+              ? "pb-[calc(6.25rem+env(safe-area-inset-bottom))] md:pb-0"
           : ""
       }`}
     >
