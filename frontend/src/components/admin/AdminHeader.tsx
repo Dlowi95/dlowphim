@@ -103,8 +103,8 @@ export default function AdminHeader({
           <button
             onClick={() => setShowNotif(!showNotif)}
             className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer border-none ${showNotif
-                ? "bg-pink-500/15 text-pink-400 shadow-[inset_0_0_0_1px_rgba(236,72,153,0.3)]"
-                : "bg-white/[0.04] hover:bg-white/[0.07] text-zinc-500 hover:text-zinc-200"
+              ? "bg-pink-500/15 text-pink-400 shadow-[inset_0_0_0_1px_rgba(236,72,153,0.3)]"
+              : "bg-white/[0.04] hover:bg-white/[0.07] text-zinc-500 hover:text-zinc-200"
               }`}
           >
             <Bell size={14} />
@@ -140,14 +140,14 @@ export default function AdminHeader({
                           key={notif._id}
                           onClick={() => handleMarkAsRead(notif._id, notif.targetTab)}
                           className={`p-2.5 rounded-xl cursor-pointer flex gap-2.5 items-start text-left transition-all ${!notif.isRead
-                              ? "bg-pink-500/[0.07] hover:bg-pink-500/[0.11] shadow-[inset_0_0_0_1px_rgba(236,72,153,0.15)]"
-                              : "bg-white/[0.025] hover:bg-white/[0.04]"
+                            ? "bg-pink-500/[0.07] hover:bg-pink-500/[0.11] shadow-[inset_0_0_0_1px_rgba(236,72,153,0.15)]"
+                            : "bg-white/[0.025] hover:bg-white/[0.04]"
                             }`}
                         >
                           <div
                             className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${notif.type === "comment_report"
-                                ? "bg-red-500/10 text-red-400"
-                                : "bg-amber-500/10 text-amber-400"
+                              ? "bg-red-500/10 text-red-400"
+                              : "bg-amber-500/10 text-amber-400"
                               }`}
                           >
                             <AlertTriangle size={11} />

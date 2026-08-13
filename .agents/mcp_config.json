@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "gitnexus": {
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": [
+        "D:\\dlowphim\\.gitnexus-pilot-tool\\node_modules\\gitnexus\\dist\\cli\\index.js",
+        "mcp"
+      ],
+      "env": {
+        "GITNEXUS_HOME": "D:\\dlowphim\\.gitnexus-pilot-tool\\registry-main",
+        "GITNEXUS_SKIP_OPTIONAL_GRAMMARS": "1"
+      }
+    }
+  }
+}

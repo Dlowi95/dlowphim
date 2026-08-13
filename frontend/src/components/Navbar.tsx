@@ -361,11 +361,11 @@ export default function NavbarComponent() {
         </NavbarContent>
 
         {/* CỤM BÊN PHẢI: LINKS MENU VÀ NÚT THÀNH VIÊN */}
-        <NavbarContent className="hidden lg:flex gap-8 font-semibold text-sm items-center" justify="end">
+        <NavbarContent className="hidden md:flex gap-3 lg:gap-8 font-semibold text-sm items-center" justify="end">
 
           {/* THỂ LOẠI (Dropdown) */}
           <NavbarItem
-            className="relative py-4"
+            className="relative hidden py-4 lg:flex"
             onMouseEnter={() => {
               setIsGenreOpen(true);
               setIsCountryOpen(false);
@@ -409,7 +409,7 @@ export default function NavbarComponent() {
           </NavbarItem>
 
           {/* PHIM LẺ */}
-          <NavbarItem>
+          <NavbarItem className="hidden lg:flex">
             <Link
               href="/phim-le"
               className="text-zinc-300 hover:text-pink-500 font-bold tracking-wide transition-colors duration-200"
@@ -419,7 +419,7 @@ export default function NavbarComponent() {
           </NavbarItem>
 
           {/* PHIM BỘ */}
-          <NavbarItem>
+          <NavbarItem className="hidden lg:flex">
             <Link
               href="/phim-bo"
               className="text-zinc-300 hover:text-pink-500 font-bold tracking-wide transition-colors duration-200"
@@ -430,7 +430,7 @@ export default function NavbarComponent() {
 
           {/* QUỐC GIA (Dropdown) */}
           <NavbarItem
-            className="relative py-4"
+            className="relative hidden py-4 lg:flex"
             onMouseEnter={() => {
               setIsCountryOpen(true);
               setIsGenreOpen(false);

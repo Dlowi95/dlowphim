@@ -1,0 +1,4 @@
+interface:
+  display_name: "DlowPhim Production Workflow"
+  short_description: "Safe, verified DlowPhim implementation workflow"
+  default_prompt: "Use $dlowphim-production-workflow to implement this scoped DlowPhim task and return production verification evidence."

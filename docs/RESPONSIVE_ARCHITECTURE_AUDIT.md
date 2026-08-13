@@ -130,6 +130,25 @@ Bằng chứng runtime production ghi nhận ngày `2026-08-12` với tài kho�
 
 Route `/user` tiếp tục chuyển hướng về `/user/account`. Route `/user/vip` hiện là route chuyển hướng cũ về trang chủ, không có giao diện user riêng để audit responsive.
 
+### Chuông thông báo
+
+**Trạng thái: Đạt trên mobile và desktop.**
+
+- `Navbar.tsx` là owner duy nhất của dữ liệu xem nhanh và các handler đọc/chọn/xem tất cả; `MobileNotificationBell` và `DesktopNotificationBell` chỉ là hai view responsive dùng chung props.
+- Mobile chỉ mount dưới `768px` và hiển thị bottom-sheet/popup portal riêng. Desktop mount từ `768px` và dùng popover riêng; tại mọi breakpoint chỉ có đúng một nút chuông hiển thị.
+- Cụm tài khoản desktop xuất hiện từ `md`, còn các liên kết điều hướng rộng chỉ xuất hiện từ `lg`; cách tách này loại bỏ khoảng hở `768–1023px` mà không nhân đôi bell, API hoặc socket.
+- Dữ liệu xem nhanh chỉ được yêu cầu khi popup mở. Socket thông báo tiếp tục do `AuthContext` sở hữu; hai view chuông không tự tạo socket.
+
+Bằng chứng runtime ghi nhận ngày `2026-08-13` với tài khoản đăng nhập thật:
+
+| Nhóm | Kết quả | Bằng chứng |
+| --- | --- | --- |
+| Breakpoint/DOM | Đạt | `390`, `767`, `768`, `1024`, `1440px`: mỗi mốc có đúng 1 nút “Mở thông báo gần đây”. Dưới `768px` mở đúng `aside`; từ `768px` mở đúng popover/dialog desktop. |
+| Ranh giới `767/768` | Đạt | `767px`: chỉ navigation/bell mobile. `768px`: mobile unmount, sidebar và bell desktop hiện; không còn khoảng trống chuông tại `768–1023px`. |
+| Overflow/console | Đạt | Popup mở ở cả 5 breakpoint có overflow ngang bằng `0` và không có console error. |
+| Ownership/socket | Đạt | Một owner dữ liệu/handler trong Navbar; socket duy nhất ở `AuthContext`; không có socket trong hai bell view. |
+| Tương tác | Đạt | Popup mobile có overlay/nút đóng; cả hai view hiển thị empty state và nút xem tất cả mà không điều hướng hoặc sửa dữ liệu trong lượt audit. |
+
 ### Các route còn lại
 
-Lịch chiếu, chuông thông báo và chi tiết phim hiện mới có kiểm kê kiến trúc ở bảng đầu tài liệu. Chưa route nào trong nhóm này được đánh dấu **Đạt** cho đến khi có nhật ký runtime theo sáu nhóm bắt buộc trong tài liệu quy ước.
+Lịch chiếu và chi tiết phim hiện mới có kiểm kê kiến trúc ở bảng đầu tài liệu. Chưa route nào trong nhóm này được đánh dấu **Đạt** cho đến khi có nhật ký runtime theo sáu nhóm bắt buộc trong tài liệu quy ước.
