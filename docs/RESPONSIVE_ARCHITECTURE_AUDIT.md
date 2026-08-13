@@ -149,6 +149,29 @@ Bằng chứng runtime ghi nhận ngày `2026-08-13` với tài khoản đăng n
 | Ownership/socket | Đạt | Một owner dữ liệu/handler trong Navbar; socket duy nhất ở `AuthContext`; không có socket trong hai bell view. |
 | Tương tác | Đạt | Popup mobile có overlay/nút đóng; cả hai view hiển thị empty state và nút xem tất cả mà không điều hướng hoặc sửa dữ liệu trong lượt audit. |
 
+### Lịch chiếu
+
+**Trạng thái: Đạt trên mobile và desktop.**
+
+- `ScheduleClient.tsx` là owner duy nhất của dữ liệu và trạng thái lịch chiếu ở client. Mobile và desktop dùng chung một cây DOM responsive; không mount hai view, không nhân đôi API hoặc socket.
+- Tuần hiện tại luôn được tính từ Thứ Hai đến Chủ Nhật theo `Asia/Ho_Chi_Minh`; phép dịch ngày đã được kiểm tra cả trường hợp giao tháng và giao năm.
+- Cache client theo ngày và `AbortController` ngăn request cũ ghi đè ngày được chọn cuối. Backend cache theo nguồn/ngày/limit trong 10 phút; cache miss ngày quá khứ hoặc hiện tại gọi 6 trang catalog, còn ngày tương lai gọi 1 request TMDB discover và `N` request detail với `0 <= N <= 20`.
+- Poster có fallback tĩnh qua `getBestMovieImage` và fallback runtime qua `onError` sang `/images/movie-placeholder.svg`; handler có chặn lặp khi chính placeholder lỗi.
+
+Bằng chứng runtime ghi nhận ngày `2026-08-13`:
+
+| Nhóm | Kết quả | Bằng chứng |
+| --- | --- | --- |
+| Breakpoint/DOM | Đạt | `360`, `390`, `767`, `768`, `1024`, `1440px`: đúng một cây lịch chiếu; grid lần lượt chuyển `1/1/2/2/3/4` cột. |
+| Tuần/timezone | Đạt | Đúng 7 ngày cố định Thứ Hai–Chủ Nhật theo giờ Việt Nam; ngày hiện tại và trạng thái chọn đúng, thuật toán xử lý giao tháng/năm. |
+| Overflow | Đạt | `scrollWidth === clientWidth` ở cả 6 breakpoint. Thanh ngày chỉ cuộn ngang trong container tại màn hình hẹp và không gây tràn toàn trang. |
+| API/cache/lifecycle | Đạt | Ngày chưa cache phát đúng 1 request `/movies/showtimes`; quay lại ngày đã tải không gọi lại API. Click nhanh 7 ngày hủy request cũ và chỉ dữ liệu ngày cuối được hiển thị. |
+| Ảnh | Đạt | URL poster hợp lệ nhưng trả 404 được đổi sang SVG cục bộ; placeholder tải thành công với `naturalWidth > 0`, không còn broken image và không phát sinh request showtimes mới. |
+| Socket/listener | Đạt | Không mở WebSocket và không tạo resize listener. Responsive dùng CSS breakpoint; `scrollIntoView` chỉ chạy khi `selectedDate` đổi. |
+| Console/build | Đạt | Không có lỗi console hoặc hydration trong matrix runtime. TypeScript frontend thành công, 7/7 test utility frontend qua, 12/12 test `movies-catalog.spec.ts` backend qua, frontend và backend production build thành công. Route `/lich-chieu` sinh tĩnh ở `4.62 kB`. |
+
+Giới hạn kiểm thử: 7 test frontend hiện tại chỉ bao phủ tiện ích episode/playback, chưa có unit hoặc E2E test trực tiếp cho `ScheduleClient`; trạng thái **Đạt** dựa trên runtime matrix, backend catalog tests và production build nêu trên.
+
 ### Các route còn lại
 
-Lịch chiếu và chi tiết phim hiện mới có kiểm kê kiến trúc ở bảng đầu tài liệu. Chưa route nào trong nhóm này được đánh dấu **Đạt** cho đến khi có nhật ký runtime theo sáu nhóm bắt buộc trong tài liệu quy ước.
+Chi tiết phim hiện mới có kiểm kê kiến trúc ở bảng đầu tài liệu và chưa được đánh dấu **Đạt** cho đến khi có nhật ký runtime theo sáu nhóm bắt buộc trong tài liệu quy ước.

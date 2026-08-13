@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, Film } from "lucide-react";
 import { cleanMovieName, getBestMovieImage } from "@/utils/movieUtils";
+import { LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 const TIME_ZONE = "Asia/Ho_Chi_Minh";
@@ -244,6 +245,13 @@ export default function ScheduleClient() {
                     src={getBestMovieImage(movie, "poster")}
                     alt=""
                     loading="lazy"
+                    decoding="async"
+                    onError={(e) => {
+                      const fallback = LOCAL_MOVIE_IMAGE_FALLBACK;
+                      if (!e.currentTarget.src.endsWith(fallback)) {
+                        e.currentTarget.src = fallback;
+                      }
+                    }}
                     className="h-full w-full object-cover"
                   />
                 </div>
