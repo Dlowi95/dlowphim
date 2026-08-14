@@ -79,8 +79,17 @@ export default function CommentRatingSection({
   onRatingChange,
   mobileCompact = false,
 }: CommentRatingSectionProps) {
-  const { user, showToast } = useAuth();
+  const { user, loading, showToast } = useAuth();
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
+  const handleAvatarError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const fallback = "/images/avatars/default.png";
+    const currentSrc = e.currentTarget.src;
+    if (currentSrc && (currentSrc.endsWith(fallback) || currentSrc === fallback)) {
+      return;
+    }
+    e.currentTarget.src = fallback;
+  };
 
   // Comment states
   const [comments, setComments] = useState<Comment[]>([]);
@@ -129,7 +138,7 @@ export default function CommentRatingSection({
   // ── Fetch data ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!slug) return;
+    if (!slug || loading) return;
 
     let disposed = false;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -210,11 +219,12 @@ export default function CommentRatingSection({
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       socket.disconnect();
     };
-  }, [slug, API_URL]);
+  }, [slug, API_URL, loading, user?.id]);
 
   useEffect(() => {
-    if (!slug || !showTabs || isTrailerOnly) return;
+    if (!slug || !showTabs || isTrailerOnly || loading) return;
     const controller = new AbortController();
+    let isCurrentRequest = true;
 
     async function fetchRating() {
       try {
@@ -227,18 +237,25 @@ export default function CommentRatingSection({
         });
         if (res.ok) {
           const data: RatingData = await res.json();
-          setRatingData(data);
-          onRatingChange?.(data.average);
+          if (isCurrentRequest) {
+            setRatingData(data);
+            onRatingChange?.(data.average);
+          }
         }
       } catch (err: any) {
-        if (err?.name !== "AbortError") console.error("Lỗi lấy đánh giá:", err);
+        if (isCurrentRequest && err?.name !== "AbortError") {
+          console.error("Lỗi lấy đánh giá:", err);
+        }
       }
     }
 
     setRatingData({ average: 0, count: 0, userRating: null });
     fetchRating();
-    return () => controller.abort();
-  }, [slug, API_URL, showTabs, isTrailerOnly, onRatingChange]);
+    return () => {
+      isCurrentRequest = false;
+      controller.abort();
+    };
+  }, [slug, API_URL, showTabs, isTrailerOnly, onRatingChange, loading, user?.id]);
 
   // Tự động cuộn xuống khu vực bình luận nếu URL chứa hash #movie-comments
   useEffect(() => {
@@ -592,6 +609,7 @@ export default function CommentRatingSection({
                         : ""
                       }`}
                     referrerPolicy="no-referrer"
+                    onError={handleAvatarError}
                   />
                 ) : (
                   <img
@@ -601,6 +619,7 @@ export default function CommentRatingSection({
                         ? "ring-2 ring-pink-500 ring-offset-2 ring-offset-[#0d0e13] shadow-[0_0_10px_rgba(236,72,153,0.5)]"
                         : ""
                       }`}
+                    onError={handleAvatarError}
                   />
                 )}
                 <div className="flex flex-col text-left">
@@ -735,6 +754,7 @@ export default function CommentRatingSection({
                                 : ""
                               }`}
                             referrerPolicy="no-referrer"
+                            onError={handleAvatarError}
                           />
                         ) : (
                           <img
@@ -744,6 +764,7 @@ export default function CommentRatingSection({
                                 ? "ring-2 ring-pink-500 ring-offset-[1.5px] ring-offset-[#0d0e13] shadow-[0_0_8px_rgba(236,72,153,0.45)]"
                                 : ""
                               }`}
+                            onError={handleAvatarError}
                           />
                         )}
 
@@ -938,6 +959,7 @@ export default function CommentRatingSection({
                                         : ""
                                       }`}
                                     referrerPolicy="no-referrer"
+                                    onError={handleAvatarError}
                                   />
                                 ) : (
                                   <img
@@ -947,6 +969,7 @@ export default function CommentRatingSection({
                                         ? "ring-2 ring-pink-500 ring-offset-1 ring-offset-[#0d0e13] shadow-[0_0_8px_rgba(236,72,153,0.45)]"
                                         : ""
                                       }`}
+                                    onError={handleAvatarError}
                                   />
                                 )}
 

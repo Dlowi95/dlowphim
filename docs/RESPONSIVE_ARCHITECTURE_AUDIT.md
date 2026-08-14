@@ -172,6 +172,61 @@ Bằng chứng runtime ghi nhận ngày `2026-08-13`:
 
 Giới hạn kiểm thử: 7 test frontend hiện tại chỉ bao phủ tiện ích episode/playback, chưa có unit hoặc E2E test trực tiếp cho `ScheduleClient`; trạng thái **Đạt** dựa trên runtime matrix, backend catalog tests và production build nêu trên.
 
+### Bình luận, đánh giá và avatar dùng chung
+
+**Trạng thái: Đạt cho component dùng chung trên `/movie/[slug]` và `/watch/[slug]`.**
+
+- `CommentRatingSection.tsx` tiếp tục là owner duy nhất của comments, ratings và socket phòng bình luận. Không tạo owner riêng cho mobile, desktop, trang chi tiết hoặc trang xem phim.
+- Effect comments và ratings chờ `AuthContext` hoàn tất loading rồi mới tải. Dependency dùng `user?.id`, không dùng object `user`, nên login/logout/đổi tài khoản tải lại dữ liệu cá nhân hóa đúng một lần mà không chạy lại khi chỉ reference của cùng user thay đổi.
+- Cleanup comments hủy request, timer, interval, visibility listener và socket cũ. Effect ratings vừa abort vừa có cờ request hiện hành, nên response của phiên auth cũ không thể ghi đè `userRating` hoặc điểm trung bình của phiên mới.
+- Avatar user hiện hành, comment gốc và reply đều fallback về `/images/avatars/default.png`. Loop guard so sánh `src` hiện tại thay vì lưu cờ lâu dài trên DOM node, nên cùng một thẻ ảnh được React tái sử dụng vẫn fallback được cho URL mới mà không lặp khi chính fallback lỗi.
+- JSX, class, kích thước avatar, ring admin và bố cục desktop/mobile không thay đổi.
+
+Bằng chứng runtime ghi nhận ngày `2026-08-14`:
+
+| Nhóm | Kết quả | Bằng chứng |
+| --- | --- | --- |
+| Route/breakpoint | Đạt | Cả `/movie/[slug]` và `/watch/[slug]` tại `390`, `767`, `768`, `1440px` đều có đúng 1 `CommentRatingSection`, không overflow ngang và không console error. |
+| Initial auth loading | Đạt | Trong khi auth loading: 0 request comments, 0 request ratings. Sau auth ready, `/movie` phát đúng 1 comments + 1 ratings; `/watch` phát đúng 1 comments và 0 ratings vì chủ động dùng `showTabs={false}`. |
+| Auth transition | Đạt | User A → User B không reload tạo delta đúng `+1` comments và `+1` ratings (tổng mỗi loại là 2). Kịch bản response User A bị delay kết thúc với `finalRenderedUserRating: 9` của User B và `staleOldResponseOverwroteState: false`. |
+| Socket lifecycle | Đạt | Mỗi route/viewport có 1 socket active; auth transition và crossing `767/768` disconnect socket cũ trước khi kết nối socket mới; peak và final active socket đều bằng 1. |
+| Avatar fallback | Đạt | Avatar user, comment gốc và reply bị ép 404 đều về asset cục bộ với `complete: true`, `naturalWidth: 120`, `broken: false`. Test tái sử dụng cùng DOM node cho URL lỗi thứ hai vẫn fallback thành công; 2 lần lỗi riêng tạo đúng 2 lượt tải fallback, không có vòng lặp. |
+| Kiểm tra mã | Đạt | TypeScript thành công, 7/7 test episode/playback qua và production build hoàn tất; `/movie/[slug]` là `14.3 kB`, `/watch/[slug]` là `23.5 kB`. |
+
+Giới hạn đo đạc: Playwright không bắt riêng telemetry `abort` ở thời điểm micro-task, nhưng cleanup source có cả `AbortController` và cờ vô hiệu hóa; delayed-response test chứng minh response cũ không ghi đè state mới. Test frontend hiện chưa có unit riêng cho component bình luận.
+
+### Chi tiết phim `/movie/[slug]`
+
+**Trạng thái: Đạt một phần trên mobile; desktop giữ nguyên giao diện và các hạng mục shared/desktop còn hoãn.**
+
+Phạm vi Phase 1 đã hoàn thành:
+
+- `MovieDetailClient.tsx` tiếp tục là owner duy nhất của dữ liệu phim. Dưới `768px` chỉ mount `MobileMovieDetail` được tải động; từ `768px` chỉ mount JSX desktop cũ. Không có hai cây chi tiết phim, hai comment section hoặc hai owner API cùng hoạt động.
+- Credits chỉ tải khi tab Diễn viên được kích hoạt. Request có `AbortController` và cờ request hiện hành, nên đóng/mở lại tab không kẹt spinner, lỗi HTTP kết thúc loading và response của slug cũ không thể ghi diễn viên vào phim mới.
+- Backdrop, poster, gallery và sticky-watch trên mobile có fallback runtime về `/images/movie-placeholder.svg`; ảnh diễn viên lỗi về `/images/avatars/default.png`. Handler chặn vòng lặp khi chính fallback lỗi.
+- Modal playlist mobile khóa cuộn `body`, tự cuộn nội bộ, khôi phục overflow khi đóng/unmount và tự đóng khi slug thay đổi. Cache batch tập cũng được reset theo slug.
+- JSX và class giao diện desktop không thay đổi trong Phase 1.
+
+Bằng chứng runtime ghi nhận ngày `2026-08-14`:
+
+| Nhóm | Kết quả | Bằng chứng |
+| --- | --- | --- |
+| Breakpoint/DOM | Đạt | `360`, `390`, `767px`: đúng 1 root mobile; `768`, `1024`, `1440px`: đúng 1 root desktop. Mỗi mốc có đúng 1 comment section. |
+| Overflow/console | Đạt | Cả 6 breakpoint có `scrollWidth === clientWidth`, không có ảnh hỏng trong lượt matrix và không có console error. |
+| Credits lifecycle | Đạt | Hủy rồi mở lại tạo request mới và hiển thị 14 diễn viên; HTTP 500 không kẹt spinner; đổi slug trong lúc request trễ không làm rò diễn viên phim cũ. |
+| Fallback ảnh mobile | Đạt | Backdrop, poster, gallery và sticky poster lỗi đều tải SVG cục bộ (`naturalWidth: 300`); ảnh diễn viên lỗi tải avatar mặc định (`naturalWidth: 120`); tất cả có `complete: true`. |
+| Modal playlist mobile | Đạt | Tại `390x844`, `body.style.overflow` đổi `"" → "hidden" → ""`; cuộn overlay không đổi `window.scrollY`; modal nằm trong viewport; đổi slug đóng modal và trả overflow. |
+| API/socket | Đạt trong phạm vi Phase 1 | Credits vẫn lazy-load; chỉ một responsive view và một comment section được mount. Crossing `767/768` remount đúng view, không tạo hai owner đồng thời. |
+| Kiểm tra mã | Đạt | `next build` thành công; `/movie/[slug]` có bundle `14.3 kB`; TypeScript thành công; 7/7 test episode/playback qua. |
+
+Các hạng mục chưa cho phép nâng route lên **Đạt production hoàn toàn**:
+
+- [x] Đồng bộ trạng thái comment/rating khi auth thay đổi mà không reload; đã kiểm chứng trên cả `/movie` và `/watch`.
+- [x] Chuẩn hóa fallback avatar user/comment/reply trong component shared mà không đổi layout desktop/mobile.
+- [ ] Bổ sung fallback ảnh cho nhánh desktop mà không làm thay đổi giao diện desktop.
+- [ ] Bổ sung test trực tiếp cho route/modal/credits; 7 test hiện tại chỉ bao phủ tiện ích episode và playback.
+- [ ] Kiểm tra bổ sung bằng bàn phím vật lý và Safari/iOS thật cho focus/scroll-lock của modal.
+
 ### Các route còn lại
 
-Chi tiết phim hiện mới có kiểm kê kiến trúc ở bảng đầu tài liệu và chưa được đánh dấu **Đạt** cho đến khi có nhật ký runtime theo sáu nhóm bắt buộc trong tài liệu quy ước.
+Chi tiết phim là route duy nhất trong bảng hiện còn trạng thái **Đạt một phần**; chỉ được nâng lên **Đạt** sau khi các hạng mục shared/desktop ở trên có diff, runtime matrix và kiểm tra hồi quy tương ứng.

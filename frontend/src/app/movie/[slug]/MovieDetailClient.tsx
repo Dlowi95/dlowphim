@@ -352,8 +352,12 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
 
   // Chỉ tải credits TMDB khi người dùng thật sự mở tab Diễn viên.
   useEffect(() => {
-    if ((activeTab !== "actors" && mobileActiveSection !== "actors") || !movie || creditsLoaded || loadingCredits) return;
+    const creditsActive = activeTab === "actors" || mobileActiveSection === "actors";
+    if (!creditsActive) return;
+    if (!movie || creditsLoaded) return;
+
     const controller = new AbortController();
+    let isCurrentRequest = true;
 
     async function fetchCredits() {
       setLoadingCredits(true);
@@ -368,12 +372,16 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
         );
         if (res.ok) {
           const data = await res.json();
-          setTmdbCredits(Array.isArray(data) ? data : []);
+          if (isCurrentRequest) {
+            setTmdbCredits(Array.isArray(data) ? data : []);
+          }
         }
       } catch (err: any) {
-        if (err?.name !== "AbortError") console.error("Lỗi tải diễn viên TMDB:", err);
+        if (isCurrentRequest && err?.name !== "AbortError") {
+          console.error("Lỗi tải diễn viên TMDB:", err);
+        }
       } finally {
-        if (!controller.signal.aborted) {
+        if (isCurrentRequest) {
           setCreditsLoaded(true);
           setLoadingCredits(false);
         }
@@ -381,7 +389,11 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
     }
 
     fetchCredits();
-    return () => controller.abort();
+    return () => {
+      isCurrentRequest = false;
+      controller.abort();
+      setLoadingCredits(false);
+    };
   }, [activeTab, creditsLoaded, mobileActiveSection, movie, slug]);
 
   useEffect(() => {

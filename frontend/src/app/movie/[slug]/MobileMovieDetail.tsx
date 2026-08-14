@@ -27,6 +27,7 @@ import HalftoneOverlay from "@/components/HalftoneOverlay";
 import { getImageUrl } from "@/utils/movieUtils";
 import { normalizeEpisodeKey } from "@/utils/episodeUtils";
 import type { MovieDetail, Server } from "./MovieDetailClient";
+import { LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
 
 interface PlaylistItem {
   id: string;
@@ -157,7 +158,31 @@ export default function MobileMovieDetail({
 
   useEffect(() => {
     setEpisodeBatches({});
+    setPlaylistOpen(false);
   }, [slug]);
+
+  useEffect(() => {
+    if (!playlistOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [playlistOpen]);
+
+  const handleMovieImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const fallback = LOCAL_MOVIE_IMAGE_FALLBACK;
+    if (!e.currentTarget.src.endsWith(fallback)) {
+      e.currentTarget.src = fallback;
+    }
+  };
+
+  const handleActorImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const fallback = "/images/avatars/default.png";
+    if (!e.currentTarget.src.endsWith(fallback)) {
+      e.currentTarget.src = fallback;
+    }
+  };
 
   const scrollTo = (id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -212,6 +237,7 @@ export default function MobileMovieDetail({
           alt={cleanedName}
           referrerPolicy="no-referrer"
           priority
+          onError={handleMovieImageError}
           className="h-full w-full object-cover object-center opacity-80"
         />
         <HalftoneOverlay />
@@ -233,6 +259,8 @@ export default function MobileMovieDetail({
               referrerPolicy="no-referrer"
               loading="eager"
               fetchPriority="high"
+              decoding="async"
+              onError={handleMovieImageError}
               className="h-full w-full object-cover"
             />
           </div>
@@ -437,7 +465,7 @@ export default function MobileMovieDetail({
               {(tmdbCredits.length ? tmdbCredits : movie.actor?.filter(Boolean).map((name, index) => ({ id: index, name }))).slice(0, 14).map((actor: any, index: number) => (
                 <button type="button" key={actor.id || `${actor.name}-${index}`} onClick={() => onActor(actor.name)} className="w-[84px] shrink-0 snap-start text-center">
                   <div className="mx-auto h-[72px] w-[72px] overflow-hidden rounded-full border-2 border-zinc-800 bg-zinc-900">
-                    {actor.profileUrl ? <img src={actor.profileUrl} alt={actor.name} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-pink-500/30 to-violet-500/20 text-lg font-black text-pink-300">{actor.name?.[0]?.toUpperCase() || "?"}</div>}
+                    {actor.profileUrl ? <img src={actor.profileUrl} alt={actor.name} decoding="async" onError={handleActorImageError} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-pink-500/30 to-violet-500/20 text-lg font-black text-pink-300">{actor.name?.[0]?.toUpperCase() || "?"}</div>}
                   </div>
                   <p className="mt-2 line-clamp-2 text-[10px] font-extrabold leading-4 text-zinc-300">{actor.name}</p>
                   {actor.character && <p className="line-clamp-1 text-[9px] text-zinc-600">{actor.character}</p>}
@@ -454,7 +482,7 @@ export default function MobileMovieDetail({
           <div className="-mx-4 mt-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 no-scrollbar touch-pan-x">
             {[backdropSrc, getImageUrl(movie.poster_url || movie.thumb_url), posterSrc].filter((value, index, list) => value && list.indexOf(value) === index).map((image, index) => (
               <div key={`${image}-${index}`} className="aspect-[16/10] w-[78vw] max-w-[330px] shrink-0 snap-center overflow-hidden rounded-2xl border border-white/[0.08] bg-zinc-900">
-                <img src={image} alt={`${cleanedName} ${index + 1}`} className="h-full w-full object-cover" />
+                <img src={image} alt={`${cleanedName} ${index + 1}`} decoding="async" onError={handleMovieImageError} className="h-full w-full object-cover" />
               </div>
             ))}
           </div>
@@ -486,7 +514,7 @@ export default function MobileMovieDetail({
 
       {!isTrailerOnly && showStickyWatch && (
         <div className="fixed inset-x-3 bottom-[calc(5.7rem+env(safe-area-inset-bottom))] z-[60] mx-auto flex max-w-md items-center gap-2.5 rounded-2xl border border-white/10 bg-[#11121a]/95 p-2 shadow-2xl backdrop-blur-xl">
-          <img src={posterSrc} alt="" className="h-11 w-8 shrink-0 rounded-lg object-cover" />
+          <img src={posterSrc} alt="" decoding="async" onError={handleMovieImageError} className="h-11 w-8 shrink-0 rounded-lg object-cover" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-[11px] font-black text-zinc-100">{cleanedName}</p>
             <p className="truncate text-[9px] font-bold text-zinc-600">{currentEpisodeName ? continueLabel : "Sẵn sàng xem phim"}</p>
