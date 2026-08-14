@@ -227,10 +227,128 @@ input[type="range"].volume-slider::-moz-range-thumb:hover {
   width: 100% !important;
 }
 
+/* Watch player settings: use the same dark visual language as the app. */
+#watch-player-section .plyr {
+  --plyr-menu-background: rgba(15, 16, 23, 0.97);
+  --plyr-menu-color: #f4f4f5;
+  --plyr-menu-arrow-color: #a1a1aa;
+  --plyr-menu-back-border-color: #2a2d3a;
+  --plyr-menu-back-border-shadow-color: transparent;
+  --plyr-menu-shadow: 0 16px 38px rgba(0, 0, 0, 0.48);
+  --plyr-menu-radius: 12px;
+  --plyr-badge-background: #3f3f46;
+}
+
+#watch-player-section .plyr__menu__container {
+  background: rgba(15, 16, 23, 0.97) !important;
+  color: #f4f4f5 !important;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  backdrop-filter: blur(14px);
+}
+
+#watch-player-section .plyr__menu {
+  z-index: 40 !important;
+}
+
+#watch-player-section .plyr__menu__container .plyr__control {
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+#watch-player-section .plyr__menu__container .plyr__menu__value {
+  color: #a1a1aa;
+}
+
+#watch-player-section .plyr__menu__container .plyr__badge {
+  margin-left: 6px;
+}
+
 .plyr__video-wrapper {
   height: 100% !important;
   width: 100% !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
+}
+
+/* Watch player: keep the phone control row readable without changing desktop. */
+@media (max-width: 767.98px) {
+  #watch-player-section .plyr__menu__container {
+    max-width: calc(100vw - 32px);
+    margin-bottom: 8px;
+    padding: 4px !important;
+  }
+
+  #watch-player-section .plyr__menu__container > div {
+    max-height: 180px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+
+  #watch-player-section .plyr__menu__container [role="menu"] {
+    padding: 2px !important;
+  }
+
+  #watch-player-section .plyr__menu__container .plyr__control {
+    min-height: 23px;
+    padding: 2px 7px !important;
+    font-size: 10px !important;
+    line-height: 1.2 !important;
+  }
+
+  #watch-player-section .plyr__menu__container .plyr__control--back {
+    margin: 0 0 1px !important;
+    padding-left: 22px !important;
+  }
+
+  #watch-player-section .plyr__menu__container .plyr__control--back::after {
+    left: 9px !important;
+  }
+
+  #watch-player-section .plyr__menu__container .plyr__control[role="menuitemradio"]::before {
+    height: 12px !important;
+    width: 12px !important;
+    margin-right: 6px !important;
+  }
+
+  #watch-actions-bar .watch-action-button {
+    min-height: 44px;
+    gap: 2px !important;
+  }
+
+  #watch-actions-bar .watch-action-button > svg {
+    height: 13px;
+    width: 13px;
+  }
+
+  #watch-player-section .plyr__controls {
+    gap: 2px !important;
+    padding: 8px !important;
+  }
+
+  #watch-player-section .plyr__controls [data-plyr="rewind"],
+  #watch-player-section .plyr__controls [data-plyr="fast-forward"],
+  #watch-player-section .plyr__controls [data-plyr="pip"] {
+    display: none !important;
+  }
+
+  #watch-player-section .plyr__progress__container {
+    min-width: 48px !important;
+  }
+
+  #watch-player-section .plyr__volume {
+    min-width: 0 !important;
+    width: auto !important;
+  }
+
+  #watch-player-section .plyr__volume input[type="range"] {
+    width: 42px !important;
+    min-width: 42px !important;
+    max-width: 42px !important;
+  }
+
+  #watch-player-section .plyr__time--duration {
+    display: none !important;
+  }
 }

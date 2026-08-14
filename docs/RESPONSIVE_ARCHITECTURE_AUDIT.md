@@ -250,6 +250,45 @@ Bằng chứng runtime ghi nhận ngày `2026-08-14`:
 
 Giới hạn kiểm thử: frontend hiện chưa có unit hoặc E2E test chuyên biệt cho route hồ sơ diễn viên; trạng thái **Đạt** dựa trên runtime matrix, thử nghiệm race/fallback có chủ đích và production build nêu trên.
 
+### Danh mục phim bộ và phim lẻ `/phim-bo`, `/phim-le`
+
+**Trạng thái: Đạt trên mobile và desktop.**
+
+- `MovieCatalogPage` là data owner duy nhất cho danh sách, loading, error, filter và pagination; mỗi mount chỉ gọi một `GET /movies/catalog`. Hai route dùng chung controller, không mount hai view responsive và không mở WebSocket.
+- `MovieCard` giữ nguyên thứ tự fallback ảnh nguồn → poster/thumb thay thế → `fetchMovieArtwork` → `/images/movie-placeholder.svg`. Phase 2 bổ sung nhánh cuối khi URL artwork bên ngoài tiếp tục lỗi và guard khi đã ở placeholder nội bộ; không đổi JSX, class, aspect ratio hay layout desktop/mobile.
+- Forced-failure đã block toàn bộ ảnh ngoài origin và full-scroll lazy images: `/phim-bo` 20/20 card, `/phim-le` 24/24 card đều về placeholder tại `390`, `767`, `768`, `1440px`; broken/transparent/overflow đều bằng `0`, request placeholder hữu hạn.
+- Normal-network tại `390` và `1440px` sau tải mới, full-scroll và reload: broken/transparent/resource/application-console error đều `0`; mỗi mount/reload đúng một catalog request, overflow `0`, WebSocket `0`.
+- Mock 15 trang đã thao tác thật input jump `2`, back và forward; request cuối dùng `page=2` cho cả hai route. HTTP 500 hiển thị retry, click thật phát đúng request thứ hai và khôi phục card. Empty response kết thúc loading, hiện empty branch và có `0` card.
+- Ba vòng Next navigation thật ghi nhận mỗi mount thêm đúng 4 `mousedown` + 4 `keydown`, mỗi unmount gỡ đúng 4; sau mỗi vòng active count ổn định, tổng remove `12` mỗi loại, không rò listener.
+- TypeScript, 7/7 test episode/playback và production build đều thành công. Bằng chứng chi tiết: `.codex-logs/anti-handoffs/catalog-series-feature-phase2.runtime.json` và báo cáo Phase 2 cùng thư mục ignored.
+
+Giới hạn kiểm thử: fallback hiện được chứng minh bằng Playwright runtime artifact nhưng chưa có E2E test tương ứng được commit vào repository.
+
+### Trang xem phim `/watch/[slug]` — tối ưu giao diện mobile
+
+**Trạng thái: Đạt cho phạm vi giao diện responsive; audit lifecycle/API playback vẫn đang chờ Phase riêng.**
+
+- `/watch/[slug]` tiếp tục là data owner duy nhất của phim, nguồn phát, tập và trạng thái player; lượt tối ưu này không thêm API owner, socket, listener hay component responsive thứ hai.
+- Mobile header và bottom navigation được khôi phục cho route `/watch`; các route toàn màn hình thật sự (`/watch-together/room`, `/watch-together/create`, admin) vẫn giữ chính sách ẩn navigation.
+- Dưới `768px`, phần breadcrumb “Bạn đang xem” bị lặp được ẩn, tiêu đề player rút gọn một dòng, card thông tin phim chuyển thành bố cục ngang gọn và mô tả dài không lặp lại. `MovieReleaseStatus` đã được gỡ khỏi route ở cả mobile lẫn desktop, đồng thời loại bỏ request trì hoãn không còn cần thiết.
+- Hàng hành động mobile dùng một hàng 5 hoặc 6 cột nhỏ gọn theo số nút; cụm nguồn dùng nhãn ngắn “Âm thanh” và “Máy chủ”. Player mobile ẩn rewind, fast-forward, PiP và duration dư thừa; volume slider cố định `42px`. Từ `768px`, toàn bộ control và kích thước desktop cũ được giữ lại.
+- Plyr bật rõ `clickToPlay`; chạm vào vùng video chuyển `pause → play → pause`, trong khi thao tác menu cài đặt không đổi trạng thái phát. Menu tốc độ/chất lượng dùng nền tối, được nén còn tối đa `180px` trên mobile và nằm trên overlay tiêu đề để không che các lựa chọn đầu.
+- Phim nhiều tập giữ nút “Danh sách tập”. Mobile dùng bottom sheet qua portal, còn desktop tiếp tục dùng side drawer cũ; cả hai dùng chung state và dữ liệu. Mobile chia tối đa 60 tập mỗi nhóm, nên phim 180 tập chỉ mount 60 nút tập thay vì toàn bộ danh sách.
+
+Bằng chứng runtime ghi nhận ngày `2026-08-14`:
+
+| Nhóm | Kết quả | Bằng chứng |
+| --- | --- | --- |
+| Breakpoint/navigation | Đạt | `360`, `390`, `430`, `767px`: đúng 1 mobile header + 1 bottom navigation; `768`, `1024`, `1440`, `1920px`: mobile navigation ẩn và desktop header hiện. |
+| DOM/overflow | Đạt | Cả 8 breakpoint có đúng 1 `#watch-player-section`, phần Bình luận vẫn hiện, không ảnh hỏng và không overflow ngang. |
+| Player controls | Đạt | Mobile: rewind/PiP ẩn, volume bằng `42px`, tap vùng video cho chuỗi `pause → play → pause`; menu tốc độ có đủ 6 lựa chọn nhìn thấy, đổi `1.25×` cập nhật playback rate; menu chất lượng đổi `1440p → Tự động` và phản ánh đúng nhãn. Desktop giữ bộ control cũ. |
+| Nội dung mobile | Đạt | Không còn dòng “Bạn đang xem” bị lặp; trạng thái phát hành không còn ở cả hai giao diện. Action bar phim nhiều tập có 6 cột bằng nhau, cao khoảng `52.8px` tại `390px`, không overflow ngang. |
+| Danh sách tập | Đạt | Bottom sheet tại `390px` rộng `380px`, cao tối đa `72dvh`, không overflow ngang. Phim 180 tập hiển thị các nhóm `1–60`, `61–120`, `121–180`; mỗi lần chỉ mount 60 nút, chọn Tập 61 đóng sheet và cập nhật URL đúng. |
+| Chế độ rạp | Đạt | Bật chế độ rạp khóa cuộn body, player ở lớp `z-80` cao hơn bottom navigation `z-70`, không overflow; thoát chế độ rạp khôi phục overflow. |
+| Console/build | Đạt | TypeScript thành công, 7/7 test episode/playback qua và production build hoàn tất; `/watch/[slug]` là `23 kB`, First Load JS `144 kB`. |
+
+Giới hạn còn lại: lượt này chủ ý không thay đổi lifecycle tải phim, fallback request, reset server/tập hay closure history/HLS theo auth. Các rủi ro đó phải được audit và sửa trong Phase playback riêng trước khi nâng toàn bộ route `/watch/[slug]` lên **Đạt production hoàn toàn**.
+
 ### Các route còn lại
 
-Chi tiết phim là route duy nhất trong bảng hiện còn trạng thái **Đạt một phần**; chỉ được nâng lên **Đạt** sau khi các hạng mục shared/desktop ở trên có diff, runtime matrix và kiểm tra hồi quy tương ứng. Các danh mục public như `/phim-bo` và `/phim-le` chưa được phép kết luận production trước khi hoàn tất audit riêng.
+Chi tiết phim là route duy nhất trong bảng hiện còn trạng thái **Đạt một phần**; chỉ được nâng lên **Đạt** sau khi các hạng mục shared/desktop ở trên có diff, runtime matrix và kiểm tra hồi quy tương ứng. Audit production riêng của `/phim-bo` và `/phim-le` đã hoàn tất trong Phase 2 nêu trên.

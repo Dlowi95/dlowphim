@@ -1,0 +1,29 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+
+  "model": "openai-compatible/deepseek/deepseek-v4-flash",
+
+  "provider": {
+    "openai-compatible": {
+      "options": {
+        "baseURL": "https://api.xkiro.com/v1"
+      },
+
+      "models": {
+        "deepseek/deepseek-v4-flash": {
+          "name": "DeepSeek V4 Flash",
+          "tool_call": true,
+
+          "headers": {
+            "Authorization": "Bearer {env:sk-xt-e90e9777e38139d21609194f65425e96e2f88655b2c14d0c}"
+          },
+
+          "limit": {
+            "context": 900000,
+            "output": 65000
+          }
+        }
+      }
+    }
+  }
+}

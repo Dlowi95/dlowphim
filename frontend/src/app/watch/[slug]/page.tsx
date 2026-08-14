@@ -7,7 +7,6 @@ import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Send, Sparkles, Tv
 import CommentRatingSection from "@/components/CommentRatingSection";
 import EpisodeSelector from "@/components/EpisodeSelector";
 import EmbedCompatibilityPlayer from "@/components/EmbedCompatibilityPlayer";
-import MovieReleaseStatus from "@/components/MovieReleaseStatus";
 import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
 import MovieCard from "@/components/MovieCard";
 import { useAuth } from "@/context/AuthContext";
@@ -15,6 +14,7 @@ import Cookies from "js-cookie";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import { useSmartStreamServer } from "@/hooks/useSmartStreamServer";
 import { useHlsPlaybackTelemetry } from "@/hooks/useHlsPlaybackTelemetry";
+import { useIsMobileViewport } from "@/hooks/useIsMobileViewport";
 import ProgressiveImage from "@/components/ProgressiveImage";
 import { destroyHlsInstance, loadHlsLibrary, WATCH_HLS_CONFIG } from "@/utils/hlsLoader";
 import { normalizeEpisodeKey } from "@/utils/episodeUtils";
@@ -72,8 +72,11 @@ interface RatingData {
   userRating: number | null;
 }
 
+const MOBILE_EPISODE_BATCH_SIZE = 60;
+
 function WatchContent({ slug }: { slug: string }) {
   const router = useRouter();
+  const isMobileViewport = useIsMobileViewport();
   const searchParams = useSearchParams();
   const queryEp = searchParams.get("ep") || "";
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -745,6 +748,11 @@ function WatchContent({ slug }: { slug: string }) {
     reportBuffering,
     onPlaybackHealthy: () => setStreamStatus("idle"),
   });
+  const mobileEpisodeBatchCount = Math.ceil(sortedEpisodes.length / MOBILE_EPISODE_BATCH_SIZE);
+  const mobileVisibleEpisodes = sortedEpisodes.slice(
+    selectedEpisodeBatch * MOBILE_EPISODE_BATCH_SIZE,
+    (selectedEpisodeBatch + 1) * MOBILE_EPISODE_BATCH_SIZE,
+  );
 
   const prefetchNextEpisodeManifest = (currentTime: number, duration: number) => {
     if (
@@ -873,10 +881,12 @@ function WatchContent({ slug }: { slug: string }) {
 
   // 2.2. Đồng bộ batch hiển thị tập phim
   useEffect(() => {
-    if (activeEpisodeIndex >= 0) {
-      setSelectedEpisodeBatch(Math.floor(activeEpisodeIndex / 100));
-    }
-  }, [activeEpisodeIndex]);
+    const activeEpisodeName = episodesData[activeEpisodeIndex]?.name;
+    const sortedActiveIndex = sortedEpisodes.findIndex((episode) => episode.name === activeEpisodeName);
+    setSelectedEpisodeBatch(
+      Math.floor(Math.max(0, sortedActiveIndex) / MOBILE_EPISODE_BATCH_SIZE),
+    );
+  }, [activeEpisodeIndex, activeServerIndex, episodesData.length]);
 
   // 2.5. HLS + Plyr.io dynamic initialization
   useEffect(() => {
@@ -1056,6 +1066,7 @@ function WatchContent({ slug }: { slug: string }) {
 
             // Khởi tạo trình phát Plyr
             const player = new PlyrClass(video, {
+              clickToPlay: true,
               controls: [
                 "play-large", "rewind", "play", "fast-forward", "progress", "current-time",
                 "duration", "mute", "volume", "settings", "pip", "fullscreen"
@@ -1127,6 +1138,7 @@ function WatchContent({ slug }: { slug: string }) {
           } catch (e) { }
 
           const player = new PlyrClass(video, {
+            clickToPlay: true,
             controls: [
               "play-large", "rewind", "play", "fast-forward", "progress", "current-time",
               "duration", "mute", "volume", "settings", "pip", "fullscreen"
@@ -1409,7 +1421,7 @@ function WatchContent({ slug }: { slug: string }) {
   }
 
   return (
-    <div className="w-full flex-grow flex flex-col bg-[#07070a] text-white pb-16 relative overflow-hidden pt-24">
+    <div className="w-full flex-grow flex flex-col bg-[#07070a] text-white pb-16 relative overflow-hidden pt-4 md:pt-24">
       {/* BACKGROUND BLURRED */}
       <div className="absolute top-0 left-0 right-0 h-[60vh] overflow-hidden pointer-events-none select-none z-0">
         <ProgressiveImage
@@ -1425,7 +1437,7 @@ function WatchContent({ slug }: { slug: string }) {
         }`}>
 
         {/* Nút Quay lại trang Chi tiết */}
-        <div className="flex items-center justify-between select-none">
+        <div className="hidden items-center justify-between select-none md:flex">
           <button
             onClick={() => router.push(`/movie/${movie.slug}`)}
             className="flex items-center gap-1.5 text-zinc-500 hover:text-white text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer bg-transparent border-none"
@@ -1448,25 +1460,26 @@ function WatchContent({ slug }: { slug: string }) {
           }`}
         >
           <div
-            className={`flex items-center justify-between gap-3 ${cinemaMode ? "relative z-50 mx-auto w-full" : "pb-2.5"}`}
+            className={`flex items-center justify-between gap-2 md:gap-3 ${cinemaMode ? "relative z-50 mx-auto w-full" : "pb-2.5"}`}
             style={cinemaMode ? { maxWidth: "min(96vw, 145vh)" } : undefined}
           >
-            <div className="flex items-center gap-2 text-left">
-              <Film size={18} className="text-pink-500" />
-              <h3 className="text-base md:text-lg font-bold uppercase tracking-tight">
+            <div className="flex min-w-0 flex-1 items-center gap-2 text-left">
+              <Film size={16} className="shrink-0 text-pink-500 md:size-[18px]" />
+              <h3 className="min-w-0 truncate text-sm font-bold uppercase tracking-tight md:text-lg">
                 Đang phát: {cleanedName} {activeEpisode ? `(${formatEpisodeLabel(activeEpisode.name)})` : ""}
               </h3>
             </div>
 
             <button
               onClick={() => setCinemaMode(!cinemaMode)}
-              className={`text-xs font-bold px-3 py-1.5 rounded-lg border-none transition-all cursor-pointer flex items-center gap-1.5 ${cinemaMode
+              className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border-none px-2.5 py-1.5 text-[11px] font-bold transition-all md:px-3 md:text-xs ${cinemaMode
                   ? "bg-pink-500 text-white shadow-md shadow-pink-500/20 z-50"
                   : "bg-[#1b1d2a] text-zinc-400 hover:text-white"
                 }`}
             >
-              <span>{cinemaMode ? "Thoát chế độ rạp" : "Chế Độ Rạp Chiếu"}</span>
-              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded leading-none transition-all ${cinemaMode
+              <span className="md:hidden">{cinemaMode ? "Thoát" : "Rạp"}</span>
+              <span className="hidden md:inline">{cinemaMode ? "Thoát chế độ rạp" : "Chế Độ Rạp Chiếu"}</span>
+              <span className={`hidden text-[9px] font-bold px-1.5 py-0.5 rounded leading-none transition-all md:inline ${cinemaMode
                   ? "text-white bg-white/20"
                   : "text-zinc-500 bg-[#252839]"
                 }`}>
@@ -1587,7 +1600,7 @@ function WatchContent({ slug }: { slug: string }) {
               )}
 
               {/* Hover Overlay kiểu CobePhim */}
-              <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-black/80 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 ease-in-out p-4 flex items-center justify-between pointer-events-none z-30 select-none">
+              <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-black/80 via-black/40 to-transparent opacity-100 transition-opacity duration-300 ease-in-out p-4 flex items-center justify-between pointer-events-none z-[2] select-none md:opacity-0 md:group-hover:opacity-100">
                 {/* Cột trái: Tên phim, phần và tập */}
                 <div className="flex flex-col text-left pointer-events-auto">
                   <h4 className="text-sm md:text-base font-extrabold text-white tracking-tight leading-tight">{cleanedName}</h4>
@@ -1610,8 +1623,114 @@ function WatchContent({ slug }: { slug: string }) {
                 )}
               </div>
 
-              {/* Episode Drawer Panel (Right Side Overlay) */}
-              {episodesData.length > 1 && (
+              {/* Episode list: a bottom sheet on mobile, the existing side drawer on desktop. */}
+              {episodesData.length > 1 && isMobileViewport && mounted && createPortal(
+                <div
+                  className={`fixed inset-0 z-[100] transition-visibility duration-200 ${showEpisodeDrawer ? "visible" : "invisible"}`}
+                  aria-hidden={!showEpisodeDrawer}
+                >
+                  <button
+                    type="button"
+                    aria-label="Đóng danh sách tập"
+                    onClick={() => setShowEpisodeDrawer(false)}
+                    className={`absolute inset-0 cursor-default border-none bg-black/70 backdrop-blur-[2px] transition-opacity duration-200 ${showEpisodeDrawer ? "opacity-100" : "opacity-0"}`}
+                  />
+
+                  <section
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Danh sách tập"
+                    className={`absolute inset-x-0 bottom-0 flex max-h-[72dvh] flex-col rounded-t-[28px] border-t border-white/10 bg-[#11121a] shadow-[0_-24px_70px_rgba(0,0,0,0.62)] transition-transform duration-300 ease-out ${showEpisodeDrawer ? "translate-y-0" : "translate-y-full"}`}
+                  >
+                    <div className="mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-full bg-zinc-700" />
+                    <div className="flex shrink-0 items-center justify-between gap-3 px-5 pb-3 pt-3">
+                      <div className="min-w-0 text-left">
+                        <h3 className="text-base font-extrabold text-white">Danh sách tập</h3>
+                        <p className="mt-0.5 truncate text-[11px] font-semibold text-zinc-500">
+                          {cleanedName} · {episodesData.length} tập
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowEpisodeDrawer(false)}
+                        className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border-none bg-zinc-800 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-white"
+                        aria-label="Đóng"
+                      >
+                        <X size={17} />
+                      </button>
+                    </div>
+
+                    <div className="flex shrink-0 items-center justify-between gap-3 border-y border-white/[0.06] bg-black/15 px-5 py-3">
+                      <label htmlFor="mobile-watch-server" className="text-[11px] font-bold text-zinc-500">
+                        Bản phát
+                      </label>
+                      <select
+                        id="mobile-watch-server"
+                        value={activeServerIndex}
+                        onChange={(event) => chooseServer(Number(event.target.value), "manual")}
+                        className="min-w-0 max-w-[70%] rounded-lg border border-zinc-700 bg-[#1b1d2a] px-3 py-2 text-xs font-bold text-zinc-200 outline-none focus:border-pink-500"
+                      >
+                        {servers.map((_, index) => (
+                          <option key={`mobile-drawer-server-${index}`} value={index}>
+                            {serverDisplayLabels[index] || `Máy chủ ${index + 1}`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {mobileEpisodeBatchCount > 1 && (
+                      <div className="flex shrink-0 gap-2 overflow-x-auto px-5 pb-1 pt-3 scrollbar-none">
+                        {Array.from({ length: mobileEpisodeBatchCount }).map((_, batchIndex) => {
+                          const start = batchIndex * MOBILE_EPISODE_BATCH_SIZE + 1;
+                          const end = Math.min((batchIndex + 1) * MOBILE_EPISODE_BATCH_SIZE, sortedEpisodes.length);
+                          const isActive = selectedEpisodeBatch === batchIndex;
+
+                          return (
+                            <button
+                              type="button"
+                              key={`mobile-episode-batch-${batchIndex}`}
+                              onClick={() => setSelectedEpisodeBatch(batchIndex)}
+                              className={`shrink-0 rounded-lg border px-3 py-1.5 text-[10px] font-extrabold transition-colors ${isActive
+                                  ? "border-pink-500 bg-pink-500 text-white"
+                                  : "border-zinc-800 bg-[#191a24] text-zinc-400"
+                                }`}
+                            >
+                              {start}–{end}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <div className="grid flex-1 grid-cols-3 content-start gap-2 overflow-y-auto px-5 py-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] overscroll-contain">
+                      {mobileVisibleEpisodes.map((episode, index) => {
+                        const originalIndex = episodesData.findIndex((item) => item.name === episode.name);
+                        const isActive = originalIndex === activeEpisodeIndex;
+
+                        return (
+                          <button
+                            type="button"
+                            key={`mobile-drawer-episode-${selectedEpisodeBatch}-${index}`}
+                            onClick={() => {
+                              setShowEpisodeDrawer(false);
+                              handleSelectEpisode(episode.name);
+                            }}
+                            className={`min-h-11 truncate rounded-xl border px-2 py-2.5 text-xs font-extrabold transition-colors ${isActive
+                                ? "border-pink-500 bg-pink-500 text-white shadow-lg shadow-pink-500/20"
+                                : "border-zinc-800 bg-[#191a24] text-zinc-300 hover:border-zinc-700 hover:text-white"
+                              }`}
+                          >
+                            {formatEpisodeLabel(episode.name)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                </div>,
+                document.body,
+              )}
+
+              {episodesData.length > 1 && !isMobileViewport && (
                 <div
                   className={`absolute top-0 right-0 bottom-0 w-80 bg-[#13141f]/95 border-l border-zinc-900 z-40 flex flex-col transition-transform duration-300 ease-in-out shadow-2xl select-none ${showEpisodeDrawer ? "translate-x-0" : "translate-x-full"
                     }`}
@@ -1713,24 +1832,24 @@ function WatchContent({ slug }: { slug: string }) {
 
             {/* Actions Control Bar directly below the player */}
             {!cinemaMode && (
-              <div className={`w-full bg-[#0d0e13]/90 px-3 py-2 md:py-2.5 flex flex-wrap items-center justify-between gap-3 text-[11px] md:text-xs select-none border-b border-zinc-900/40 ${cinemaMode ? "rounded-b-2xl" : ""}`}>
-                <div className="flex flex-wrap items-center gap-3">
+              <div id="watch-actions-bar" className={`grid w-full ${episodesData.length > 1 && playerType === "hls" ? "grid-cols-6" : "grid-cols-5"} items-stretch gap-0 border-b border-zinc-900/40 bg-[#0d0e13]/90 px-1 py-1 text-[9px] select-none md:flex md:flex-wrap md:items-center md:justify-between md:gap-3 md:px-3 md:py-2.5 md:text-xs ${cinemaMode ? "rounded-b-2xl" : ""}`}>
+                <div className="contents md:flex md:flex-wrap md:items-center md:gap-3">
                   <button
                     onClick={handleToggleFavorite}
-                    className={`flex items-center gap-1 transition-all cursor-pointer bg-transparent border-none hover:bg-zinc-800/30 px-2 py-1 rounded-lg ${isFavorite ? "text-pink-500" : "text-zinc-400 hover:text-white"
+                    className={`watch-action-button flex min-w-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-none bg-transparent px-1 py-1.5 transition-all hover:bg-zinc-800/30 md:flex-row md:px-2 md:py-1 ${isFavorite ? "text-pink-500" : "text-zinc-400 hover:text-white"
                       }`}
                   >
                     <Heart size={14} className={isFavorite ? "fill-pink-500 text-pink-500" : ""} />
-                    <span>Yêu thích</span>
+                    <span className="max-w-full truncate">Yêu thích</span>
                   </button>
 
-                  <div className="relative">
+                  <div className="relative min-w-0">
                     <button
                       onClick={() => setShowPlaylistDropdown(!showPlaylistDropdown)}
-                      className="flex items-center gap-1 text-zinc-400 hover:text-white transition-all cursor-pointer bg-transparent border-none hover:bg-zinc-800/30 px-2 py-1 rounded-lg"
+                      className="watch-action-button flex w-full min-w-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-none bg-transparent px-1 py-1.5 text-zinc-400 transition-all hover:bg-zinc-800/30 hover:text-white md:flex-row md:px-2 md:py-1"
                     >
                       <Plus size={14} />
-                      <span>Thêm vào</span>
+                      <span className="max-w-full truncate">Thêm vào</span>
                     </button>
 
                     {/* Dropdown list các danh sách phát */}
@@ -1810,10 +1929,10 @@ function WatchContent({ slug }: { slug: string }) {
                   {episodesData.length > 1 && playerType === "hls" && (
                     <button
                       onClick={() => setAutoplayNext(!autoplayNext)}
-                      className="flex items-center gap-1 text-zinc-400 hover:text-white transition-all cursor-pointer bg-transparent border-none hover:bg-zinc-800/30 px-2 py-1 rounded-lg"
+                      className="watch-action-button flex min-w-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-none bg-transparent px-1 py-1.5 text-zinc-400 transition-all hover:bg-zinc-800/30 hover:text-white md:flex-row md:px-2 md:py-1"
                     >
-                      <span>Chuyển tập</span>
-                      <span className={`text-[8px] font-bold ml-1 px-1 py-0.2 rounded border leading-none transition-colors ${autoplayNext
+                      <span className="max-w-full truncate">Chuyển tập</span>
+                      <span className={`rounded border px-1 py-0.5 text-[8px] font-bold leading-none transition-colors md:ml-1 ${autoplayNext
                           ? "border-pink-500 text-pink-500 bg-pink-500/5 shadow-[0_0_8px_rgba(236,72,153,0.2)]"
                           : "border-zinc-700 text-zinc-500 bg-transparent"
                         }`}>
@@ -1825,10 +1944,11 @@ function WatchContent({ slug }: { slug: string }) {
 
                   <button
                     onClick={handleShare}
-                    className="flex items-center gap-1 text-zinc-400 hover:text-white transition-all cursor-pointer bg-transparent border-none hover:bg-zinc-800/30 px-2 py-1 rounded-lg"
+                    className="watch-action-button flex min-w-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-none bg-transparent px-1 py-1.5 text-zinc-400 transition-all hover:bg-zinc-800/30 hover:text-white md:flex-row md:px-2 md:py-1"
                   >
                     <Send size={14} className="rotate-45 -translate-y-0.5" />
-                    <span>{shareCopied ? "Đã sao chép link" : "Chia sẻ"}</span>
+                    <span className="max-w-full truncate md:hidden">{shareCopied ? "Đã chép" : "Chia sẻ"}</span>
+                    <span className="hidden md:inline">{shareCopied ? "Đã sao chép link" : "Chia sẻ"}</span>
                   </button>
 
                   <button
@@ -1839,20 +1959,20 @@ function WatchContent({ slug }: { slug: string }) {
                       }
                       router.push(`/watch-together/create/${movie.slug}`);
                     }}
-                    className="flex items-center gap-1 text-zinc-400 hover:text-white transition-all cursor-pointer bg-transparent border-none hover:bg-zinc-800/30 px-2 py-1 rounded-lg"
+                    className="watch-action-button flex min-w-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-none bg-transparent px-1 py-1.5 text-zinc-400 transition-all hover:bg-zinc-800/30 hover:text-white md:flex-row md:px-2 md:py-1"
                   >
                     <Users size={14} />
-                    <span>Xem chung</span>
+                    <span className="max-w-full truncate">Xem chung</span>
                   </button>
 
                 </div>
 
                 <button
                   onClick={() => setShowReportModal(true)}
-                  className="flex items-center gap-1 text-zinc-500 hover:text-pink-500 transition-all cursor-pointer ml-auto bg-transparent border-none hover:bg-zinc-800/30 px-2 py-1 rounded-lg"
+                  className="watch-action-button flex min-w-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-none bg-transparent px-1 py-1.5 text-zinc-500 transition-all hover:bg-zinc-800/30 hover:text-pink-500 md:ml-auto md:flex-row md:px-2 md:py-1"
                 >
                   <Flag size={14} />
-                  <span>Báo lỗi</span>
+                  <span className="max-w-full truncate">Báo lỗi</span>
                 </button>
               </div>
             )}
@@ -1867,9 +1987,9 @@ function WatchContent({ slug }: { slug: string }) {
           <div className="lg:col-span-2 space-y-6">
 
             {/* Thẻ thông tin nhanh của phim */}
-            <div className="flex flex-col sm:flex-row gap-5 bg-[#0d0e13]/30 p-5 rounded-2xl">
+            <div className="flex flex-row gap-3 rounded-2xl bg-[#0d0e13]/30 p-3 md:gap-5 md:p-5">
               {/* Poster */}
-              <div className="w-24 sm:w-28 aspect-[2/3] shrink-0 rounded-xl overflow-hidden shadow-md bg-zinc-900">
+              <div className="w-20 aspect-[2/3] shrink-0 overflow-hidden rounded-xl bg-zinc-900 shadow-md sm:w-28">
                 <img
                   src={tmdbPoster || getImageUrl(movie.poster_url || movie.thumb_url)}
                   alt={cleanedName}
@@ -1879,13 +1999,13 @@ function WatchContent({ slug }: { slug: string }) {
               </div>
 
               {/* Chi tiết */}
-              <div className="flex-1 space-y-3">
+              <div className="min-w-0 flex-1 space-y-2 md:space-y-3">
                 <div>
-                  <h2 className="text-xl md:text-2xl font-black text-white leading-tight">
+                  <h2 className="line-clamp-2 text-base font-black leading-tight text-white md:text-2xl">
                     {cleanedName}
                   </h2>
                   {movie.origin_name && (
-                    <h3 className="text-xs font-extrabold text-pink-500 uppercase tracking-wide mt-0.5">
+                    <h3 className="mt-0.5 truncate text-[10px] font-extrabold uppercase tracking-wide text-pink-500 md:text-xs">
                       {movie.origin_name}
                     </h3>
                   )}
@@ -1921,7 +2041,7 @@ function WatchContent({ slug }: { slug: string }) {
                 )}
 
                 {/* Đoạn mô tả tóm tắt */}
-                <p className="text-zinc-400 text-xs leading-relaxed font-semibold">
+                <p className="hidden text-xs font-semibold leading-relaxed text-zinc-400 md:block">
                   {movie.content ? (() => {
                     const cleanDesc = movie.content.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
                     return cleanDesc.length > 160 ? cleanDesc.slice(0, 160) + "..." : cleanDesc;
@@ -1941,28 +2061,15 @@ function WatchContent({ slug }: { slug: string }) {
             </div>
 
             {/* Unified Sources & Episodes Selection Panel */}
-            <div className="bg-[#0d0e13]/30 p-5 rounded-2xl border border-zinc-900/60 space-y-5">
-              <MovieReleaseStatus
-                slug={movie.slug}
-                title={movie.name}
-                originTitle={movie.origin_name}
-                movieType={movie.type}
-                movieStatus={movie.status}
-                episodeCurrent={movie.episode_current}
-                episodeTotal={movie.episode_total}
-                tmdbId={movie.tmdb?.id}
-                tmdbType={movie.tmdb?.type}
-                compact
-                delayMs={1500}
-              />
-
+            <div className="space-y-4 rounded-2xl border border-zinc-900/60 bg-[#0d0e13]/30 p-3 md:space-y-5 md:p-5">
               {/* Chọn bản dịch và máy chủ; tên nhà cung cấp/công nghệ chỉ dùng nội bộ. */}
               {servers.length > 0 && (
                 <div className="space-y-4">
                   <div className="space-y-2.5">
-                    <span className="block text-xs font-black text-zinc-455 uppercase tracking-wider">
-                      Chọn bản dịch:
-                      <span className="ml-2 normal-case text-[10px] font-semibold text-zinc-600">
+                    <span className="block text-xs font-black uppercase tracking-wider text-zinc-455">
+                      <span className="md:hidden">Âm thanh:</span>
+                      <span className="hidden md:inline">Chọn bản dịch:</span>
+                      <span className="ml-2 hidden normal-case text-[10px] font-semibold text-zinc-600 md:inline">
                         Tự động ghi nhớ lựa chọn
                       </span>
                     </span>
@@ -1971,7 +2078,7 @@ function WatchContent({ slug }: { slug: string }) {
                         <button
                           key={`audio-track-${audioTrack}`}
                           onClick={() => chooseAudioTrack(audioTrack)}
-                          className={`px-4 py-2 text-xs font-black rounded-xl transition-all border-none cursor-pointer ${
+                          className={`cursor-pointer rounded-xl border-none px-3 py-2 text-xs font-black transition-all md:px-4 ${
                             activeAudioTrack === audioTrack
                               ? "bg-pink-500 text-white shadow-md shadow-pink-500/20"
                               : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-zinc-800 hover:text-white"
@@ -1984,8 +2091,9 @@ function WatchContent({ slug }: { slug: string }) {
                   </div>
 
                   <div className="space-y-2.5">
-                    <span className="block text-xs font-black text-zinc-455 uppercase tracking-wider">
-                      Chọn máy chủ:
+                    <span className="block text-xs font-black uppercase tracking-wider text-zinc-455">
+                      <span className="md:hidden">Máy chủ:</span>
+                      <span className="hidden md:inline">Chọn máy chủ:</span>
                     {isProbingServers && (
                       <span className="ml-2 normal-case text-[10px] text-emerald-400">
                           Đang chọn máy chủ tốt nhất...
@@ -1995,7 +2103,7 @@ function WatchContent({ slug }: { slug: string }) {
                     <div className="flex flex-wrap gap-2.5">
                       <button
                         onClick={() => chooseServer(recommendedServerIndex, "auto")}
-                        className={`px-4 py-2 text-xs font-black rounded-xl transition-all border-none cursor-pointer ${
+                        className={`cursor-pointer rounded-xl border-none px-3 py-2 text-xs font-black transition-all md:px-4 ${
                           sourceSelectionMode === "auto"
                             ? "bg-pink-500 text-white shadow-md shadow-pink-500/20"
                             : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-zinc-800 hover:text-white"
@@ -2007,7 +2115,7 @@ function WatchContent({ slug }: { slug: string }) {
                         <button
                           key={`friendly-server-${serverIndex}`}
                           onClick={() => chooseServer(serverIndex, "manual")}
-                          className={`px-4 py-2 text-xs font-black rounded-xl transition-all border-none cursor-pointer ${
+                          className={`cursor-pointer rounded-xl border-none px-3 py-2 text-xs font-black transition-all md:px-4 ${
                             sourceSelectionMode === "manual" && activeServerIndex === serverIndex
                               ? "bg-pink-500 text-white shadow-md shadow-pink-500/20"
                               : "bg-[#1b1d2a] text-[#a0a5c0] hover:bg-zinc-800 hover:text-white"

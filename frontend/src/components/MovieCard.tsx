@@ -61,6 +61,8 @@ export default function MovieCard({ movie, aspect = "landscape", variant = "defa
   }, [movie.slug, movie.poster_url, movie.thumb_url, aspect]);
 
   const handleImageError = () => {
+    if (imgSrc === LOCAL_MOVIE_IMAGE_FALLBACK) return;
+
     const alternateUrl = aspect === "portrait" ? movie.poster_url : movie.thumb_url;
     if (attemptCount === 0 && alternateUrl && movie.poster_url && movie.thumb_url && movie.poster_url !== movie.thumb_url) {
       setAttemptCount(1);
@@ -84,7 +86,10 @@ export default function MovieCard({ movie, aspect = "landscape", variant = "defa
         .catch(() => {
           setImgSrc(LOCAL_MOVIE_IMAGE_FALLBACK);
         });
+      return;
     }
+
+    setImgSrc(LOCAL_MOVIE_IMAGE_FALLBACK);
   };
 
   const handleMouseEnter = (e: React.MouseEvent) => {

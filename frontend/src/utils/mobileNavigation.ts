@@ -4,7 +4,6 @@ function matchesRouteOrChild(pathname: string, route: string) {
 
 const MOBILE_NAV_HIDDEN_ROUTES = [
   "/sys-dlowadmin",
-  "/watch",
   "/watch-together/room",
   "/watch-together/create",
 ];
