@@ -57,11 +57,20 @@ export default function PersonMovieCard({ movie }: { movie: any }) {
     }
   };
 
+  const handlePosterError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const fallback = "/images/movie-placeholder.svg";
+    const currentSrc = e.currentTarget.src;
+    if (currentSrc && (currentSrc.endsWith(fallback) || currentSrc === fallback)) {
+      return;
+    }
+    e.currentTarget.src = fallback;
+  };
+
   return (
     <button type="button" onClick={findPlayableMovie} className="group w-full text-left" aria-label={`Tìm bản xem ${movie.name}`}>
       <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-zinc-900">
         {movie.poster_url ? (
-          <img src={movie.poster_url} alt={movie.name} className="h-full w-full object-cover transition duration-300 group-hover:scale-105" loading="lazy" />
+          <img src={movie.poster_url} alt={movie.name} className="h-full w-full object-cover transition duration-300 group-hover:scale-105" loading="lazy" onError={handlePosterError} />
         ) : (
           <div className="flex h-full items-center justify-center text-zinc-700"><Film size={36} /></div>
         )}

@@ -12,6 +12,7 @@ Tài liệu này lưu **trạng thái đã kiểm chứng** của từng route. 
 | User | `AuthContext` và từng page `app/user/*` | Navigation/account view mobile chỉ mount dưới `768px` | Sidebar/form desktop chỉ mount từ `768px` | Đã xác minh production; một owner auth/state, summary/artwork có cache và in-flight |
 | Chuông thông báo | `Navbar.tsx` | `MobileNotificationBell` | `DesktopNotificationBell` | Thấp: request chỉ chạy khi popup được mở |
 | Chi tiết phim | `MovieDetailClient.tsx` | `MobileMovieDetail` tải động | JSX desktop cũ | Đã khóa: chỉ một view được mount |
+| Hồ sơ diễn viên | `app/dien-vien/[id]/page.tsx` | Cùng một cây responsive | Cùng một cây responsive | Đã xác minh production; một owner dữ liệu, không socket |
 
 ## Quyết định kỹ thuật
 
@@ -227,6 +228,28 @@ Các hạng mục chưa cho phép nâng route lên **Đạt production hoàn to�
 - [ ] Bổ sung test trực tiếp cho route/modal/credits; 7 test hiện tại chỉ bao phủ tiện ích episode và playback.
 - [ ] Kiểm tra bổ sung bằng bàn phím vật lý và Safari/iOS thật cho focus/scroll-lock của modal.
 
+### Hồ sơ diễn viên `/dien-vien/[id]`
+
+**Trạng thái: Đạt trên mobile và desktop.**
+
+- `app/dien-vien/[id]/page.tsx` là owner duy nhất của dữ liệu hồ sơ và danh sách phim, gọi `GET /movies/people/:personId/movies?page=:page`. Route dùng một cây DOM responsive, không tách owner mobile/desktop và không mở Socket.IO.
+- Effect tải dữ liệu có `AbortController`. Khi đổi nhanh từ ID `1244732` sang `18897`, request cũ bị hủy và kết quả cuối là “Thành Long”; response cũ không ghi đè state mới.
+- `PersonMovieCard.tsx` chỉ gọi `GET /movies/resolved-detail/:slug` khi người dùng chọn một phim để dò bản phát; không tải resolution cho toàn bộ card lúc render.
+- Avatar diễn viên lỗi chuyển về `/images/avatars/default.png`; poster phim lỗi chuyển về `/images/movie-placeholder.svg`. Cả hai handler so sánh nguồn hiện tại để không lặp khi chính fallback lỗi; không đổi JSX layout, class hoặc kích thước desktop/mobile.
+
+Bằng chứng runtime ghi nhận ngày `2026-08-14`:
+
+| Nhóm | Kết quả | Bằng chứng |
+| --- | --- | --- |
+| Breakpoint/DOM | Đạt | Baseline đã quét `360`, `390`, `440`, `767`, `768`, `1024`, `1440`, `1920px`; sau bản vá fallback kiểm tra lại `390`, `767`, `768`, `1440px`. Mỗi mốc có đúng 1 root view. |
+| API/lifecycle | Đạt | Không có nhóm request trùng trong ma trận. Đổi ID nhanh không để response cũ ghi đè diễn viên mới; card chỉ resolve playback khi được chọn. |
+| Overflow/console | Đạt | `scrollWidth === clientWidth`, không console error tại toàn bộ ma trận; không ghi nhận ảnh visible hỏng sau bản vá. |
+| Ảnh fallback | Đạt | Avatar ép 404 tải `default.png` với `complete: true`, `naturalWidth: 2400`; poster ép 404 tải `movie-placeholder.svg` với `complete: true`, `naturalWidth: 100`. Mỗi fallback phát đúng 1 request, không có vòng lặp. |
+| Socket | Đạt | `webSocketCount: 0` tại mọi viewport; route không đăng ký socket realtime. |
+| Kiểm tra mã | Đạt | TypeScript thành công, 7/7 test episode/playback qua và production build hoàn tất. `git diff --check` không báo lỗi whitespace. |
+
+Giới hạn kiểm thử: frontend hiện chưa có unit hoặc E2E test chuyên biệt cho route hồ sơ diễn viên; trạng thái **Đạt** dựa trên runtime matrix, thử nghiệm race/fallback có chủ đích và production build nêu trên.
+
 ### Các route còn lại
 
-Chi tiết phim là route duy nhất trong bảng hiện còn trạng thái **Đạt một phần**; chỉ được nâng lên **Đạt** sau khi các hạng mục shared/desktop ở trên có diff, runtime matrix và kiểm tra hồi quy tương ứng.
+Chi tiết phim là route duy nhất trong bảng hiện còn trạng thái **Đạt một phần**; chỉ được nâng lên **Đạt** sau khi các hạng mục shared/desktop ở trên có diff, runtime matrix và kiểm tra hồi quy tương ứng. Các danh mục public như `/phim-bo` và `/phim-le` chưa được phép kết luận production trước khi hoàn tất audit riêng.

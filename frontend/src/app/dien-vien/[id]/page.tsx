@@ -16,6 +16,15 @@ export default function PersonMoviesPage({ params }: { params: { id: string } })
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const handleAvatarError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const fallback = "/images/avatars/default.png";
+    const currentSrc = e.currentTarget.src;
+    if (currentSrc && (currentSrc.endsWith(fallback) || currentSrc === fallback)) {
+      return;
+    }
+    e.currentTarget.src = fallback;
+  };
+
   useEffect(() => {
     const controller = new AbortController();
     const load = async () => {
@@ -44,7 +53,7 @@ export default function PersonMoviesPage({ params }: { params: { id: string } })
       <div className="mx-auto max-w-7xl">
         <section className="mb-10 flex flex-col gap-6 rounded-3xl border border-zinc-900 bg-gradient-to-br from-zinc-950 to-black p-5 sm:flex-row md:p-8">
           <div className="h-64 w-44 shrink-0 overflow-hidden rounded-2xl bg-zinc-900">
-            {person.profileUrl ? <img src={person.profileUrl} alt={person.name} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-zinc-700"><UserRound size={48} /></div>}
+            {person.profileUrl ? <img src={person.profileUrl} alt={person.name} className="h-full w-full object-cover" onError={handleAvatarError} /> : <div className="flex h-full items-center justify-center text-zinc-700"><UserRound size={48} /></div>}
           </div>
           <div className="self-center">
             <p className="mb-2 text-xs font-black uppercase tracking-[0.25em] text-pink-500">Hồ sơ diễn viên</p>
