@@ -222,7 +222,7 @@ export default function NavbarComponent() {
         onSelectNotification={handleSelectRecentNotification}
         onViewAllNotifications={handleViewAllNotifications}
       />
-      <div className="hidden md:block">
+      <div data-app-desktop-chrome="true" className="hidden md:block">
       <Navbar
         isBlurred={false}
         classNames={{

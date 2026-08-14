@@ -1,0 +1,201 @@
+
+> backend@0.0.1 start:dev
+> nest start --watch
+
+[2J[3J[H[[90m9:44:04 PM[0m] Starting compilation in watch mode...
+
+[[90m9:44:08 PM[0m] Found 0 errors. Watching for file changes.
+
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:10 PM [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:10 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMongooseModule dependencies initialized[39m[38;5;3m +10ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:10 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:10 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:10 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:10 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:10 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mServeStaticModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:10 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mJwtModule dependencies initialized[39m[38;5;3m +7ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMongooseCoreModule dependencies initialized[39m[38;5;3m +1576ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMongooseModule dependencies initialized[39m[38;5;3m +4ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMongooseModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMongooseModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMongooseModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMongooseModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMongooseModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMongooseModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMongooseModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMongooseModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMongooseModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMongooseModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMongooseModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMongooseModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPlaybackHealthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mSystemSettingsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mRatingsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAdminAuditModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mNotificationsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAdminDashboardModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMoviesModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCommentsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMovieReportsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mBannersModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAdminJobsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mRoomsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCommentsGateway subscribed to the "watch_comments" message[39m[38;5;3m +4ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mRoomsGateway subscribed to the "join_lobby" message[39m[38;5;3m +2ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mRoomsGateway subscribed to the "join_room" message[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mRoomsGateway subscribed to the "request_sync" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mRoomsGateway subscribed to the "toggle_ai" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mRoomsGateway subscribed to the "close_room" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mRoomsGateway subscribed to the "request_start_movie" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mRoomsGateway subscribed to the "start_scheduled_movie" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mRoomsGateway subscribed to the "send_message" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mRoomsGateway subscribed to the "video_heartbeat" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mRoomsGateway subscribed to the "video_control" message[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mRoomsGateway subscribed to the "change_episode" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAppController {/}:[39m[38;5;3m +3ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/health, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/auth}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/register, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/google, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/verify-email, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/resend-verification, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/forgot-password, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/reset-password, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/me, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/me/update, PUT} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/favorites/toggle, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/favorites/sync, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/history/update, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/history/sync, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/admin/users, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/admin/users/:id/role, PUT} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/admin/users/:id/status, PUT} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/admin/users/:id, DELETE} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/playlists, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/playlists/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/playlists/:id, PUT} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/playlists/:id/toggle, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/history/clear/:slug, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/history/clear-all, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mCommentsController {/comments}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/comments/:movieSlug, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/comments/:movieSlug, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/comments/:id/reaction, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/comments/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/comments/admin/comments/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/comments/:id/report, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/comments/admin/reports, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/comments/admin/all, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/comments/admin/reports/:id/dismiss, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/comments/admin/stats, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mNotificationsController {/notifications}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/notifications, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/notifications/read-all, PUT} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/notifications/:id/read, PUT} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/notifications/clear, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/notifications/admin/broadcasts, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/notifications/admin/broadcasts, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/notifications/user, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/notifications/user/read-all, PUT} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/notifications/user/:id/read, PUT} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/notifications/user/clear, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/notifications/user/:id, DELETE} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/notifications/admin/movie-update, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mRatingsController {/ratings}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/ratings/admin/stats, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/ratings/admin/movie/:movieSlug, DELETE} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/ratings/:movieSlug, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/ratings/:movieSlug, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mMoviesController {/movies}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/blocked, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/check-blocked/:slug, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/custom, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/admin/custom, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/admin/blocked, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/custom/:slug, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/logo/:slug, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/credits/:slug, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/people/search, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/catalog, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/discovery, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/admin/discovery-health, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/showtimes, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/people/:personId/movies, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/schedule/:slug, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/upcoming, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/upcoming/:tmdbId, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/upcoming/:tmdbId/reminder, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/upcoming/:tmdbId/reminder, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/ophim-proxy, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/resolved-detail/:slug, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/resolved-summaries, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/override/:slug, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/override, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/blocked, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/blocked/:slug, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/custom, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/custom/:id, PUT} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movies/custom/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mSystemSettingsController {/system-settings}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/system-settings, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/system-settings/admin, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/system-settings/admin/:section, PUT} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/system-settings/admin/test-source, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/system-settings/admin/test-tmdb, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mBannersController {/banners}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/banners, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/banners/hero, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/banners/hero/admin, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/banners/admin, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/banners, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/banners/:id, PUT} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/banners/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mMovieReportsController {/movie-reports}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movie-reports, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movie-reports/admin, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movie-reports/admin/:id/status, PUT} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/movie-reports/admin/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mRoomsController {/rooms}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/rooms/create, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/rooms/public, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/rooms/:roomId, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/rooms/:roomId/access, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/rooms/:roomId/access-status, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/rooms/:roomId/messages, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/rooms/:roomId, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/rooms/:roomId/notify-host, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mPlaybackHealthController {/playback-health}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/playback-health/events, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/playback-health/reputation, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/playback-health/admin, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAdminDashboardController {/admin/dashboard}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/dashboard, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/dashboard/source-health, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAdminAuditController {/admin/audit-logs}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/audit-logs, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAdminJobsController {/admin/jobs}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/jobs, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/jobs, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:11 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/jobs/:id/retry, POST} route[39m[38;5;3m +0ms[39m
+[Rooms] Restored legacy rooms on startup: 0 scheduled, 0 live.
+[32m[Nest] 11252  - [39m08/14/2026, 9:44:13 PM [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +1785ms[39m
+Application is running on: http://localhost:5000
+[Socket] Client connected: Oq1HbrGA7is6TZx3AAAC
+[Socket] Client connected: U8Xt0uGUkj3sPH6wAAAE
+[Socket] Client connected: IpGuBmJz7BHfq8zQAAAH
+[Socket] Client connected: Nuw44FxVv_w1nmUZAAAJ
+[Socket] Client connected: ZSp57vByeiRL2lifAAAM
+[Socket] Client connected: FDAfkT9BqNn4gA-WAAAO
+[Socket] Client connected: W8YGyQgKt6aimdN0AAAV
+[Socket] Client connected: 8ItxNsXvvm-XwvkkAAAX
+[Socket] Client connected: ha3SXrBwpbLxsRUDAAAZ
+[Socket] Client connected: o_WRD-OtZ4qVH_6uAAAc
+[Socket] Client connected: Wy16clcZbW-QvGSaAAAe
+[Socket] Client connected: nJ7tMX9sJO57mY8HAAAg
+[Socket] Client connected: SnLm0X59MFcqjmtzAAAi
+[Socket] Client connected: nhPOVoQFD9jp3EhaAAAk
+[Socket] Client connected: hehSqoL5sG72zELkAAAn
+[Socket] Client connected: Tzh6KMEAhe2io_ITAAAp

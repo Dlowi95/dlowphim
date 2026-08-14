@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, Suspense } from "react";
 import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Send, Sparkles, Tv, HelpCircle, Plus, Users, Flag, X, Check } from "lucide-react";
 import CommentRatingSection from "@/components/CommentRatingSection";
@@ -26,6 +27,11 @@ import {
   shouldPrefetchNextManifest,
 } from "@/utils/watchPlaybackFlow";
 import "plyr/dist/plyr.css";
+
+const MobileWatchPlayerControls = dynamic(
+  () => import("./MobileWatchPlayerControls"),
+  { ssr: false },
+);
 
 interface Episode {
   name: string;
@@ -118,6 +124,11 @@ function WatchContent({ slug }: { slug: string }) {
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const plyrRef = React.useRef<any>(null);
   const hlsRef = React.useRef<any>(null);
+  const mobileQualityChangeRef = React.useRef<(quality: number) => void>(() => undefined);
+  const [mobilePlayer, setMobilePlayer] = useState<any>(null);
+  const [mobileQualityOptions, setMobileQualityOptions] = useState<number[]>([]);
+  const [mobileSelectedQuality, setMobileSelectedQuality] = useState(0);
+  const [mobileCurrentQuality, setMobileCurrentQuality] = useState(0);
   const hlsAttemptStartedAtRef = React.useRef(0);
   const pendingHistoryRef = React.useRef<any>(null);
   const lastDatabaseHistorySyncRef = React.useRef(0);
@@ -131,6 +142,10 @@ function WatchContent({ slug }: { slug: string }) {
   const [preferFallbackServers, setPreferFallbackServers] = useState(false);
 
   const [showEpisodeDrawer, setShowEpisodeDrawer] = useState(false);
+
+  const handleMobileQualityChange = React.useCallback((quality: number) => {
+    mobileQualityChangeRef.current(quality);
+  }, []);
 
   // States đánh giá
   const [ratingData, setRatingData] = useState<RatingData>({ average: 0, count: 0, userRating: null });
@@ -229,9 +244,11 @@ function WatchContent({ slug }: { slug: string }) {
       if (event.key === "Escape") setCinemaMode(false);
     };
     document.body.style.overflow = "hidden";
+    document.body.classList.add("dlowphim-cinema-mode");
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       document.body.style.overflow = previousOverflow;
+      document.body.classList.remove("dlowphim-cinema-mode");
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [cinemaMode]);
@@ -890,6 +907,8 @@ function WatchContent({ slug }: { slug: string }) {
 
   // 2.5. HLS + Plyr.io dynamic initialization
   useEffect(() => {
+    if (!mounted) return;
+
     let active = true;
     let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -920,6 +939,7 @@ function WatchContent({ slug }: { slug: string }) {
         if (plyrRef.current) {
           try { plyrRef.current.destroy(); } catch (e) { }
           plyrRef.current = null;
+          setMobilePlayer(null);
         }
         if (hlsRef.current) {
           destroyHlsInstance(hlsRef.current);
@@ -1048,6 +1068,7 @@ function WatchContent({ slug }: { slug: string }) {
             const defaultQuality = qualityOptions.includes(savedQuality) ? savedQuality : 0;
             const changeQuality = (height: number) => {
               localStorage.setItem("dlowphim_hls_quality", String(height));
+              setMobileSelectedQuality(height);
               if (height === 0) {
                 hls.currentLevel = -1;
                 hls.nextLevel = -1;
@@ -1064,23 +1085,41 @@ function WatchContent({ slug }: { slug: string }) {
               hls.currentLevel = matchingLevels[0]?.index ?? -1;
             };
 
+            mobileQualityChangeRef.current = changeQuality;
+            setMobileQualityOptions(qualityOptions);
+            setMobileSelectedQuality(defaultQuality);
+            hls.on(Hls.Events.LEVEL_SWITCHED, (_event: any, data: any) => {
+              if (!active) return;
+              const level = hls.levels?.[data?.level];
+              setMobileCurrentQuality(Number(level?.height) || 0);
+            });
+
+            const savedSpeed = Number(localStorage.getItem("dlowphim_playback_speed") || 1);
+            const speedOptions = [0.5, 0.75, 1, 1.25, 1.5, 2];
+            const defaultSpeed = speedOptions.includes(savedSpeed) ? savedSpeed : 1;
+
             // Khởi tạo trình phát Plyr
             const player = new PlyrClass(video, {
-              clickToPlay: true,
-              controls: [
-                "play-large", "rewind", "play", "fast-forward", "progress", "current-time",
-                "duration", "mute", "volume", "settings", "pip", "fullscreen"
-              ],
+              clickToPlay: !isMobileViewport,
+              controls: isMobileViewport
+                ? []
+                : [
+                    "play-large", "rewind", "play", "fast-forward", "progress", "current-time",
+                    "duration", "mute", "volume", "settings", "pip", "fullscreen"
+                  ],
               seekTime: 5,
               keyboard: { focused: false, global: false },
-              settings: ["quality", "speed"],
+              settings: isMobileViewport ? [] : ["quality", "speed"],
               quality: {
                 default: defaultQuality,
                 options: [0, ...qualityOptions],
                 forced: true,
                 onChange: changeQuality,
               },
-              speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+              speed: { selected: defaultSpeed, options: speedOptions },
+              fullscreen: isMobileViewport
+                ? { enabled: true, fallback: true, iosNative: false, container: "#watch-hls-player-shell" }
+                : { enabled: true, fallback: true, iosNative: false },
               i18n: {
                 play: "Phát",
                 pause: "Tạm dừng",
@@ -1097,7 +1136,9 @@ function WatchContent({ slug }: { slug: string }) {
             });
 
             plyrRef.current = player;
+            setMobilePlayer(isMobileViewport ? player : null);
             changeQuality(defaultQuality);
+            player.speed = defaultSpeed;
             setupEvents(player, savedTime);
           });
 
@@ -1137,18 +1178,33 @@ function WatchContent({ slug }: { slug: string }) {
             }
           } catch (e) { }
 
+          setMobileQualityOptions([]);
+          setMobileSelectedQuality(0);
+          setMobileCurrentQuality(0);
+          mobileQualityChangeRef.current = () => undefined;
+          const savedSpeed = Number(localStorage.getItem("dlowphim_playback_speed") || 1);
+          const speedOptions = [0.5, 0.75, 1, 1.25, 1.5, 2];
+          const defaultSpeed = speedOptions.includes(savedSpeed) ? savedSpeed : 1;
+
           const player = new PlyrClass(video, {
-            clickToPlay: true,
-            controls: [
-              "play-large", "rewind", "play", "fast-forward", "progress", "current-time",
-              "duration", "mute", "volume", "settings", "pip", "fullscreen"
-            ],
+            clickToPlay: !isMobileViewport,
+            controls: isMobileViewport
+              ? []
+              : [
+                  "play-large", "rewind", "play", "fast-forward", "progress", "current-time",
+                  "duration", "mute", "volume", "settings", "pip", "fullscreen"
+                ],
             seekTime: 5,
             keyboard: { focused: false, global: false },
-            settings: ["speed"],
-            speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+            settings: isMobileViewport ? [] : ["speed"],
+            speed: { selected: defaultSpeed, options: speedOptions },
+            fullscreen: isMobileViewport
+              ? { enabled: true, fallback: true, iosNative: false, container: "#watch-hls-player-shell" }
+              : { enabled: true, fallback: true, iosNative: false },
           });
           plyrRef.current = player;
+          setMobilePlayer(isMobileViewport ? player : null);
+          player.speed = defaultSpeed;
 
           // Lắng nghe sự kiện để lưu lịch sử cho Safari
           if (savedTime > 0) {
@@ -1177,15 +1233,17 @@ function WatchContent({ slug }: { slug: string }) {
       active = false;
       if (recoveryTimer) clearTimeout(recoveryTimer);
       if (plyrRef.current) {
-        try { plyrRef.current.destroy(); } catch (e) { }
+        const playerToDestroy = plyrRef.current;
+        try { playerToDestroy.destroy(); } catch (e) { }
         plyrRef.current = null;
+        setMobilePlayer((current: any) => current === playerToDestroy ? null : current);
       }
       if (hlsRef.current) {
         destroyHlsInstance(hlsRef.current);
         hlsRef.current = null;
       }
     };
-  }, [playerType, activeEpisode?.link_m3u8, activeEpisode?.name, activeServerIndex, movie?.slug, streamRetryNonce]);
+  }, [playerType, activeEpisode?.link_m3u8, activeEpisode?.name, activeServerIndex, movie?.slug, streamRetryNonce, isMobileViewport, mounted]);
 
   // 3. Fetch phim liên quan
   useEffect(() => {
@@ -1530,12 +1588,16 @@ function WatchContent({ slug }: { slug: string }) {
                 )
               ) : (
                 activeEpisode?.link_m3u8 ? (
-                  <div key={`hls-player-wrap-${activeEpisode.name}-${activeServerIndex}`} className="w-full h-full">
+                  <div
+                    id="watch-hls-player-shell"
+                    key={`hls-player-wrap-${activeEpisode.name}-${activeServerIndex}`}
+                    className="relative h-full w-full"
+                  >
                     <video
                       id="dlow-hls-video"
                       ref={videoRef}
                       playsInline
-                      controls
+                      controls={!isMobileViewport}
                       onCanPlay={() => {
                         setPlayerReady(true);
                         setStreamStatus("idle");
@@ -1548,6 +1610,19 @@ function WatchContent({ slug }: { slug: string }) {
                       className="w-full h-full bg-black"
                       title="DlowPhim HLS Video Player"
                     />
+                    {isMobileViewport && (
+                      <MobileWatchPlayerControls
+                        player={mobilePlayer}
+                        title={cleanedName}
+                        episodeLabel={episodesData.length > 1 ? formatEpisodeLabel(activeEpisode.name) : undefined}
+                        hasEpisodes={episodesData.length > 1}
+                        qualityOptions={mobileQualityOptions}
+                        selectedQuality={mobileSelectedQuality}
+                        currentQuality={mobileCurrentQuality}
+                        onQualityChange={handleMobileQualityChange}
+                        onOpenEpisodes={() => setShowEpisodeDrawer(true)}
+                      />
+                    )}
                   </div>
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-zinc-900">
@@ -1600,7 +1675,7 @@ function WatchContent({ slug }: { slug: string }) {
               )}
 
               {/* Hover Overlay kiểu CobePhim */}
-              <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-black/80 via-black/40 to-transparent opacity-100 transition-opacity duration-300 ease-in-out p-4 flex items-center justify-between pointer-events-none z-[2] select-none md:opacity-0 md:group-hover:opacity-100">
+              <div className="absolute left-0 right-0 top-0 z-[2] hidden h-20 items-center justify-between bg-gradient-to-b from-black/80 via-black/40 to-transparent p-4 opacity-0 transition-opacity duration-300 ease-in-out pointer-events-none select-none md:flex md:group-hover:opacity-100">
                 {/* Cột trái: Tên phim, phần và tập */}
                 <div className="flex flex-col text-left pointer-events-auto">
                   <h4 className="text-sm md:text-base font-extrabold text-white tracking-tight leading-tight">{cleanedName}</h4>

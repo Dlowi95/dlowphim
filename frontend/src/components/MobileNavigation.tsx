@@ -106,6 +106,7 @@ export default function MobileNavigation({
   return (
     <>
       <header
+        data-app-mobile-chrome="true"
         className={`fixed inset-x-0 top-0 z-[60] border-b border-white/[0.06] bg-black/90 pt-[env(safe-area-inset-top)] backdrop-blur-xl transition-transform duration-300 ease-out md:hidden ${
           isHeaderVisible ? "translate-y-0" : "-translate-y-full"
         }`}
@@ -147,11 +148,13 @@ export default function MobileNavigation({
       </header>
 
       <div
+        data-app-mobile-chrome="true"
         aria-hidden="true"
         className="h-[calc(4rem+env(safe-area-inset-top))] md:hidden"
       />
 
       <nav
+        data-app-mobile-chrome="true"
         aria-label="Điều hướng chính trên điện thoại"
         className="fixed inset-x-0 bottom-0 z-[70] px-4 pb-[max(0.8rem,env(safe-area-inset-bottom))] md:hidden"
       >

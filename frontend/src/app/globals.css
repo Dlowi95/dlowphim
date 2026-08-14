@@ -273,45 +273,6 @@ input[type="range"].volume-slider::-moz-range-thumb:hover {
 
 /* Watch player: keep the phone control row readable without changing desktop. */
 @media (max-width: 767.98px) {
-  #watch-player-section .plyr__menu__container {
-    max-width: calc(100vw - 32px);
-    margin-bottom: 8px;
-    padding: 4px !important;
-  }
-
-  #watch-player-section .plyr__menu__container > div {
-    max-height: 180px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-width: thin;
-  }
-
-  #watch-player-section .plyr__menu__container [role="menu"] {
-    padding: 2px !important;
-  }
-
-  #watch-player-section .plyr__menu__container .plyr__control {
-    min-height: 23px;
-    padding: 2px 7px !important;
-    font-size: 10px !important;
-    line-height: 1.2 !important;
-  }
-
-  #watch-player-section .plyr__menu__container .plyr__control--back {
-    margin: 0 0 1px !important;
-    padding-left: 22px !important;
-  }
-
-  #watch-player-section .plyr__menu__container .plyr__control--back::after {
-    left: 9px !important;
-  }
-
-  #watch-player-section .plyr__menu__container .plyr__control[role="menuitemradio"]::before {
-    height: 12px !important;
-    width: 12px !important;
-    margin-right: 6px !important;
-  }
-
   #watch-actions-bar .watch-action-button {
     min-height: 44px;
     gap: 2px !important;
@@ -321,34 +282,38 @@ input[type="range"].volume-slider::-moz-range-thumb:hover {
     height: 13px;
     width: 13px;
   }
+}
 
-  #watch-player-section .plyr__controls {
-    gap: 2px !important;
-    padding: 8px !important;
-  }
+.mobile-watch-progress {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: 999px;
+  outline: none;
+}
 
-  #watch-player-section .plyr__controls [data-plyr="rewind"],
-  #watch-player-section .plyr__controls [data-plyr="fast-forward"],
-  #watch-player-section .plyr__controls [data-plyr="pip"] {
-    display: none !important;
-  }
+.mobile-watch-progress::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid #fff;
+  border-radius: 999px;
+  background: #ec4899;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
 
-  #watch-player-section .plyr__progress__container {
-    min-width: 48px !important;
-  }
+.mobile-watch-progress::-moz-range-thumb {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid #fff;
+  border-radius: 999px;
+  background: #ec4899;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
 
-  #watch-player-section .plyr__volume {
-    min-width: 0 !important;
-    width: auto !important;
-  }
-
-  #watch-player-section .plyr__volume input[type="range"] {
-    width: 42px !important;
-    min-width: 42px !important;
-    max-width: 42px !important;
-  }
-
-  #watch-player-section .plyr__time--duration {
-    display: none !important;
-  }
+/* Cinema mode owns the viewport: app chrome returns when the mode is closed. */
+body.dlowphim-cinema-mode [data-app-mobile-chrome="true"],
+body.dlowphim-cinema-mode [data-app-desktop-chrome="true"] {
+  display: none !important;
 }
