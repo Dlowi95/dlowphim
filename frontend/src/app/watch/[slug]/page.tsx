@@ -15,7 +15,7 @@ import Cookies from "js-cookie";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import { useSmartStreamServer } from "@/hooks/useSmartStreamServer";
 import { useHlsPlaybackTelemetry } from "@/hooks/useHlsPlaybackTelemetry";
-import { useIsMobileViewport } from "@/hooks/useIsMobileViewport";
+import { useIsMobileViewport, useIsPhoneLandscapeViewport } from "@/hooks/useIsMobileViewport";
 import ProgressiveImage from "@/components/ProgressiveImage";
 import { destroyHlsInstance, loadHlsLibrary, WATCH_HLS_CONFIG } from "@/utils/hlsLoader";
 import { normalizeEpisodeKey } from "@/utils/episodeUtils";
@@ -83,6 +83,8 @@ const MOBILE_EPISODE_BATCH_SIZE = 60;
 function WatchContent({ slug }: { slug: string }) {
   const router = useRouter();
   const isMobileViewport = useIsMobileViewport();
+  const isPhoneLandscape = useIsPhoneLandscapeViewport();
+  const isMobileWatchViewport = isMobileViewport || isPhoneLandscape;
   const searchParams = useSearchParams();
   const queryEp = searchParams.get("ep") || "";
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -99,13 +101,13 @@ function WatchContent({ slug }: { slug: string }) {
   const [activeServerIndex, setActiveServerIndex] = useState(0);
   const [activeEpisodeIndex, setActiveEpisodeIndex] = useState(0);
   const [cinemaMode, setCinemaMode] = useState(false);
+  const playerFocusMode = cinemaMode || isPhoneLandscape;
   const isFavorite = user?.favorites?.includes(movie?.slug || "") || false;
   const [shareCopied, setShareCopied] = useState(false);
   const [playerType, setPlayerType] = useState<"embed" | "hls">("embed");
   const [sourceSelectionMode, setSourceSelectionMode] = useState<"auto" | "manual">("auto");
   const [selectedEpisodeBatch, setSelectedEpisodeBatch] = useState(0);
   const [autoplayNext, setAutoplayNext] = useState(false);
-  const [tmdbCredits, setTmdbCredits] = useState<any[]>([]);
 
   // Custom playlists states
   const [showPlaylistDropdown, setShowPlaylistDropdown] = useState(false);
@@ -142,6 +144,8 @@ function WatchContent({ slug }: { slug: string }) {
   const [preferFallbackServers, setPreferFallbackServers] = useState(false);
 
   const [showEpisodeDrawer, setShowEpisodeDrawer] = useState(false);
+  const [showMobileServerPicker, setShowMobileServerPicker] = useState(false);
+  const [episodeJumpValue, setEpisodeJumpValue] = useState("");
 
   const handleMobileQualityChange = React.useCallback((quality: number) => {
     mobileQualityChangeRef.current(quality);
@@ -238,7 +242,7 @@ function WatchContent({ slug }: { slug: string }) {
   };
 
   useEffect(() => {
-    if (!cinemaMode) return;
+    if (!playerFocusMode) return;
     const previousOverflow = document.body.style.overflow;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setCinemaMode(false);
@@ -251,7 +255,7 @@ function WatchContent({ slug }: { slug: string }) {
       document.body.classList.remove("dlowphim-cinema-mode");
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [cinemaMode]);
+  }, [cinemaMode, playerFocusMode]);
 
   useEffect(() => {
     setPlayerReady(false);
@@ -259,7 +263,6 @@ function WatchContent({ slug }: { slug: string }) {
     setRelatedMovies([]);
     setTmdbBackdrop(null);
     setTmdbPoster(null);
-    setTmdbCredits([]);
   }, [slug]);
 
   useEffect(() => {
@@ -501,29 +504,20 @@ function WatchContent({ slug }: { slug: string }) {
     const tmdbType = movie.tmdb?.type || "movie";
     const title = encodeURIComponent(movie.origin_name || movie.name);
 
-    const fetchTmdbExtras = async () => {
-      const [imagesResult, creditsResult] = await Promise.allSettled([
-        fetch(
-          `${API_URL}/movies/logo/${slug}?title=${title}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`,
-          { signal: controller.signal },
-        ),
-        fetch(
-          `${API_URL}/movies/credits/${slug}?title=${title}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`,
-          { signal: controller.signal },
-        ),
-      ]);
+    const fetchTmdbArtwork = async () => {
+      const response = await fetch(
+        `${API_URL}/movies/logo/${slug}?title=${title}&tmdbId=${tmdbId || ""}&tmdbType=${tmdbType}`,
+        { signal: controller.signal },
+      );
 
-      if (imagesResult.status === "fulfilled" && imagesResult.value.ok) {
-        const imageData = await imagesResult.value.json();
+      if (response.ok) {
+        const imageData = await response.json();
         setTmdbBackdrop(imageData.backdropUrl || imageData.posterUrl || null);
         setTmdbPoster(imageData.posterUrl || null);
       }
-      if (creditsResult.status === "fulfilled" && creditsResult.value.ok) {
-        setTmdbCredits(await creditsResult.value.json());
-      }
     };
 
-    fetchTmdbExtras().catch((error) => {
+    fetchTmdbArtwork().catch((error) => {
       if (!controller.signal.aborted) {
         console.error("Lỗi tải TMDB sau khi player sẵn sàng:", error);
       }
@@ -770,6 +764,44 @@ function WatchContent({ slug }: { slug: string }) {
     selectedEpisodeBatch * MOBILE_EPISODE_BATCH_SIZE,
     (selectedEpisodeBatch + 1) * MOBILE_EPISODE_BATCH_SIZE,
   );
+
+  useEffect(() => {
+    if (!showEpisodeDrawer || !isMobileWatchViewport) return;
+    const activeSortedIndex = sortedEpisodes.findIndex(
+      (episode) => episode.name === activeEpisode?.name,
+    );
+    if (activeSortedIndex >= 0) {
+      setSelectedEpisodeBatch(Math.floor(activeSortedIndex / MOBILE_EPISODE_BATCH_SIZE));
+    }
+    setShowMobileServerPicker(false);
+    setEpisodeJumpValue("");
+  }, [activeEpisode?.name, isMobileWatchViewport, showEpisodeDrawer, sortedEpisodes.length]);
+
+  useEffect(() => {
+    if (!showEpisodeDrawer || !isMobileWatchViewport) return;
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowEpisodeDrawer(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isMobileWatchViewport, showEpisodeDrawer]);
+
+  const handleEpisodeJump = () => {
+    const requestedEpisode = Number.parseInt(episodeJumpValue.trim(), 10);
+    if (!Number.isFinite(requestedEpisode) || requestedEpisode < 1) return;
+    const targetIndex = sortedEpisodes.findIndex(
+      (episode) => getEpisodeNumber(episode.name) === requestedEpisode,
+    );
+    if (targetIndex < 0) return;
+    setSelectedEpisodeBatch(Math.floor(targetIndex / MOBILE_EPISODE_BATCH_SIZE));
+    setShowEpisodeDrawer(false);
+    handleSelectEpisode(sortedEpisodes[targetIndex].name);
+  };
 
   const prefetchNextEpisodeManifest = (currentTime: number, duration: number) => {
     if (
@@ -1100,8 +1132,8 @@ function WatchContent({ slug }: { slug: string }) {
 
             // Khởi tạo trình phát Plyr
             const player = new PlyrClass(video, {
-              clickToPlay: !isMobileViewport,
-              controls: isMobileViewport
+              clickToPlay: !isMobileWatchViewport,
+              controls: isMobileWatchViewport
                 ? []
                 : [
                     "play-large", "rewind", "play", "fast-forward", "progress", "current-time",
@@ -1109,7 +1141,7 @@ function WatchContent({ slug }: { slug: string }) {
                   ],
               seekTime: 5,
               keyboard: { focused: false, global: false },
-              settings: isMobileViewport ? [] : ["quality", "speed"],
+              settings: isMobileWatchViewport ? [] : ["quality", "speed"],
               quality: {
                 default: defaultQuality,
                 options: [0, ...qualityOptions],
@@ -1117,7 +1149,7 @@ function WatchContent({ slug }: { slug: string }) {
                 onChange: changeQuality,
               },
               speed: { selected: defaultSpeed, options: speedOptions },
-              fullscreen: isMobileViewport
+              fullscreen: isMobileWatchViewport
                 ? { enabled: true, fallback: true, iosNative: false, container: "#watch-hls-player-shell" }
                 : { enabled: true, fallback: true, iosNative: false },
               i18n: {
@@ -1136,7 +1168,7 @@ function WatchContent({ slug }: { slug: string }) {
             });
 
             plyrRef.current = player;
-            setMobilePlayer(isMobileViewport ? player : null);
+            setMobilePlayer(isMobileWatchViewport ? player : null);
             changeQuality(defaultQuality);
             player.speed = defaultSpeed;
             setupEvents(player, savedTime);
@@ -1187,8 +1219,8 @@ function WatchContent({ slug }: { slug: string }) {
           const defaultSpeed = speedOptions.includes(savedSpeed) ? savedSpeed : 1;
 
           const player = new PlyrClass(video, {
-            clickToPlay: !isMobileViewport,
-            controls: isMobileViewport
+            clickToPlay: !isMobileWatchViewport,
+            controls: isMobileWatchViewport
               ? []
               : [
                   "play-large", "rewind", "play", "fast-forward", "progress", "current-time",
@@ -1196,14 +1228,14 @@ function WatchContent({ slug }: { slug: string }) {
                 ],
             seekTime: 5,
             keyboard: { focused: false, global: false },
-            settings: isMobileViewport ? [] : ["speed"],
+            settings: isMobileWatchViewport ? [] : ["speed"],
             speed: { selected: defaultSpeed, options: speedOptions },
-            fullscreen: isMobileViewport
+            fullscreen: isMobileWatchViewport
               ? { enabled: true, fallback: true, iosNative: false, container: "#watch-hls-player-shell" }
               : { enabled: true, fallback: true, iosNative: false },
           });
           plyrRef.current = player;
-          setMobilePlayer(isMobileViewport ? player : null);
+          setMobilePlayer(isMobileWatchViewport ? player : null);
           player.speed = defaultSpeed;
 
           // Lắng nghe sự kiện để lưu lịch sử cho Safari
@@ -1243,7 +1275,7 @@ function WatchContent({ slug }: { slug: string }) {
         hlsRef.current = null;
       }
     };
-  }, [playerType, activeEpisode?.link_m3u8, activeEpisode?.name, activeServerIndex, movie?.slug, streamRetryNonce, isMobileViewport, mounted]);
+  }, [playerType, activeEpisode?.link_m3u8, activeEpisode?.name, activeServerIndex, movie?.slug, streamRetryNonce, isMobileWatchViewport, mounted]);
 
   // 3. Fetch phim liên quan
   useEffect(() => {
@@ -1491,7 +1523,7 @@ function WatchContent({ slug }: { slug: string }) {
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#07070a]/60 to-[#07070a] z-10" />
       </div>
 
-      <div className={`container mx-auto px-4 md:px-6 relative z-10 space-y-8 transition-all duration-300 ${cinemaMode ? "max-w-none w-full" : "max-w-7xl"
+      <div className={`container mx-auto px-4 md:px-6 relative z-10 space-y-8 transition-all duration-300 ${playerFocusMode ? "max-w-none w-full" : "max-w-7xl"
         }`}>
 
         {/* Nút Quay lại trang Chi tiết */}
@@ -1512,14 +1544,16 @@ function WatchContent({ slug }: { slug: string }) {
         <div
           id="watch-player-section"
           className={`transition-all duration-300 ${
-            cinemaMode
-              ? "fixed inset-0 z-[80] flex flex-col justify-center gap-3 overflow-hidden bg-black/95 px-3 py-3 md:px-6 md:py-5"
+            playerFocusMode
+              ? isPhoneLandscape
+                ? "fixed inset-0 z-[80] flex flex-col justify-center overflow-hidden bg-black p-0"
+                : "fixed inset-0 z-[80] flex flex-col justify-center gap-3 overflow-hidden bg-black/95 px-3 py-3 md:px-6 md:py-5"
               : "space-y-4"
           }`}
         >
           <div
-            className={`flex items-center justify-between gap-2 md:gap-3 ${cinemaMode ? "relative z-50 mx-auto w-full" : "pb-2.5"}`}
-            style={cinemaMode ? { maxWidth: "min(96vw, 145vh)" } : undefined}
+            className={`items-center justify-between gap-2 md:gap-3 ${isPhoneLandscape ? "hidden" : "flex"} ${playerFocusMode ? "relative z-50 mx-auto w-full px-3 pt-2 md:px-0 md:pt-0" : "pb-2.5"}`}
+            style={playerFocusMode ? { maxWidth: isPhoneLandscape ? "min(100vw, 177.78dvh)" : "min(96vw, 145vh)" } : undefined}
           >
             <div className="flex min-w-0 flex-1 items-center gap-2 text-left">
               <Film size={16} className="shrink-0 text-pink-500 md:size-[18px]" />
@@ -1548,8 +1582,8 @@ function WatchContent({ slug }: { slug: string }) {
 
           {/* Ambient Glow Wrapper */}
           <div
-            className={`relative z-10 ${cinemaMode ? "mx-auto w-full" : "w-full"}`}
-            style={cinemaMode ? { maxWidth: "min(96vw, 145vh)" } : undefined}
+            className={`relative z-10 ${playerFocusMode ? "mx-auto w-full" : "w-full"}`}
+            style={playerFocusMode ? { maxWidth: isPhoneLandscape ? "min(100vw, 177.78dvh)" : "min(96vw, 145vh)" } : undefined}
           >
             {/* Ambient Image Glow (Philips Ambilight / Ambient Mode style) */}
             <div className="absolute -inset-4 z-0 pointer-events-none select-none overflow-hidden blur-[60px] opacity-40 scale-[1.04] rounded-[32px] transition-opacity duration-500">
@@ -1563,7 +1597,7 @@ function WatchContent({ slug }: { slug: string }) {
 
             {/* Unified Movie Player Frame + Action Bar Container with soft shadow, no border */}
             <div
-              className={`w-full overflow-hidden bg-black rounded-2xl md:rounded-3xl shadow-[0_15px_45px_rgba(0,0,0,0.85)] transition-all duration-300 relative z-10 ${cinemaMode
+              className={`w-full overflow-hidden bg-black rounded-2xl md:rounded-3xl shadow-[0_15px_45px_rgba(0,0,0,0.85)] transition-all duration-300 relative z-10 ${isPhoneLandscape ? "rounded-none md:rounded-none" : ""} ${cinemaMode
                   ? "shadow-pink-500/10"
                   : ""
                 }`}
@@ -1597,7 +1631,7 @@ function WatchContent({ slug }: { slug: string }) {
                       id="dlow-hls-video"
                       ref={videoRef}
                       playsInline
-                      controls={!isMobileViewport}
+                      controls={!isMobileWatchViewport}
                       onCanPlay={() => {
                         setPlayerReady(true);
                         setStreamStatus("idle");
@@ -1610,7 +1644,7 @@ function WatchContent({ slug }: { slug: string }) {
                       className="w-full h-full bg-black"
                       title="DlowPhim HLS Video Player"
                     />
-                    {isMobileViewport && (
+                    {isMobileWatchViewport && (
                       <MobileWatchPlayerControls
                         player={mobilePlayer}
                         title={cleanedName}
@@ -1621,6 +1655,8 @@ function WatchContent({ slug }: { slug: string }) {
                         currentQuality={mobileCurrentQuality}
                         onQualityChange={handleMobileQualityChange}
                         onOpenEpisodes={() => setShowEpisodeDrawer(true)}
+                        cinemaMode={cinemaMode}
+                        onExitCinemaMode={() => setCinemaMode(false)}
                       />
                     )}
                   </div>
@@ -1699,7 +1735,7 @@ function WatchContent({ slug }: { slug: string }) {
               </div>
 
               {/* Episode list: a bottom sheet on mobile, the existing side drawer on desktop. */}
-              {episodesData.length > 1 && isMobileViewport && mounted && createPortal(
+              {episodesData.length > 1 && isMobileWatchViewport && mounted && createPortal(
                 <div
                   className={`fixed inset-0 z-[100] transition-visibility duration-200 ${showEpisodeDrawer ? "visible" : "invisible"}`}
                   aria-hidden={!showEpisodeDrawer}
@@ -1715,43 +1751,76 @@ function WatchContent({ slug }: { slug: string }) {
                     role="dialog"
                     aria-modal="true"
                     aria-label="Danh sách tập"
-                    className={`absolute inset-x-0 bottom-0 flex max-h-[72dvh] flex-col rounded-t-[28px] border-t border-white/10 bg-[#11121a] shadow-[0_-24px_70px_rgba(0,0,0,0.62)] transition-transform duration-300 ease-out ${showEpisodeDrawer ? "translate-y-0" : "translate-y-full"}`}
+                    className={`mobile-watch-episode-sheet absolute inset-x-0 bottom-0 flex max-h-[78dvh] flex-col rounded-t-[28px] border-t border-white/10 bg-[#11121a] shadow-[0_-24px_70px_rgba(0,0,0,0.62)] transition-transform duration-300 ease-out ${showEpisodeDrawer ? "translate-y-0" : "translate-y-full"}`}
                   >
+                    <button type="button" onClick={() => setShowEpisodeDrawer(false)} className="sr-only">
+                      Đóng danh sách tập
+                    </button>
                     <div className="mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-full bg-zinc-700" />
-                    <div className="flex shrink-0 items-center justify-between gap-3 px-5 pb-3 pt-3">
+                    <div className="flex shrink-0 items-center gap-3 px-5 pb-3 pt-3">
                       <div className="min-w-0 text-left">
                         <h3 className="text-base font-extrabold text-white">Danh sách tập</h3>
                         <p className="mt-0.5 truncate text-[11px] font-semibold text-zinc-500">
                           {cleanedName} · {episodesData.length} tập
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowEpisodeDrawer(false)}
-                        className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border-none bg-zinc-800 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-white"
-                        aria-label="Đóng"
-                      >
-                        <X size={17} />
-                      </button>
                     </div>
 
-                    <div className="flex shrink-0 items-center justify-between gap-3 border-y border-white/[0.06] bg-black/15 px-5 py-3">
-                      <label htmlFor="mobile-watch-server" className="text-[11px] font-bold text-zinc-500">
+                    <div className="relative flex shrink-0 items-center justify-between gap-3 border-y border-white/[0.06] bg-black/15 px-5 py-3">
+                      <span className="text-[11px] font-bold text-zinc-500">
                         Bản phát
-                      </label>
-                      <select
-                        id="mobile-watch-server"
-                        value={activeServerIndex}
-                        onChange={(event) => chooseServer(Number(event.target.value), "manual")}
-                        className="min-w-0 max-w-[70%] rounded-lg border border-zinc-700 bg-[#1b1d2a] px-3 py-2 text-xs font-bold text-zinc-200 outline-none focus:border-pink-500"
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowMobileServerPicker((value) => !value)}
+                        aria-expanded={showMobileServerPicker}
+                        className="min-w-0 max-w-[72%] truncate rounded-lg border border-zinc-700 bg-[#1b1d2a] px-3 py-2 text-left text-xs font-bold text-zinc-200 outline-none transition-colors focus-visible:border-pink-500"
                       >
-                        {servers.map((_, index) => (
-                          <option key={`mobile-drawer-server-${index}`} value={index}>
-                            {serverDisplayLabels[index] || `Máy chủ ${index + 1}`}
-                          </option>
-                        ))}
-                      </select>
+                        {serverDisplayLabels[activeServerIndex] || `Máy chủ ${activeServerIndex + 1}`} ›
+                      </button>
+                      {showMobileServerPicker && (
+                        <div className="absolute right-5 top-[calc(100%-0.25rem)] z-20 w-[min(18rem,calc(100vw-2.5rem))] overflow-hidden rounded-xl border border-white/10 bg-[#1b1d2a] p-1.5 shadow-2xl">
+                          {servers.map((_, index) => (
+                            <button
+                              type="button"
+                              key={`mobile-drawer-server-${index}`}
+                              onClick={() => {
+                                chooseServer(index, "manual");
+                                setShowMobileServerPicker(false);
+                              }}
+                              className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-left text-xs font-bold ${index === activeServerIndex ? "bg-pink-500/15 text-pink-400" : "text-zinc-300 hover:bg-white/5"}`}
+                            >
+                              <span className="truncate">{serverDisplayLabels[index] || `Máy chủ ${index + 1}`}</span>
+                              {index === activeServerIndex && <Check size={14} />}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
+
+                    {sortedEpisodes.length > MOBILE_EPISODE_BATCH_SIZE && (
+                      <form
+                        className="flex shrink-0 gap-2 px-5 pt-3"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          handleEpisodeJump();
+                        }}
+                      >
+                        <input
+                          type="number"
+                          min={1}
+                          inputMode="numeric"
+                          value={episodeJumpValue}
+                          onChange={(event) => setEpisodeJumpValue(event.target.value)}
+                          placeholder="Đi đến tập..."
+                          aria-label="Đi đến số tập"
+                          className="h-9 min-w-0 flex-1 rounded-lg border border-zinc-800 bg-[#191a24] px-3 text-xs font-bold text-white outline-none placeholder:text-zinc-600 focus:border-pink-500"
+                        />
+                        <button type="submit" className="h-9 rounded-lg bg-pink-500 px-4 text-xs font-extrabold text-white">
+                          Đi
+                        </button>
+                      </form>
+                    )}
 
                     {mobileEpisodeBatchCount > 1 && (
                       <div className="flex shrink-0 gap-2 overflow-x-auto px-5 pb-1 pt-3 scrollbar-none">
@@ -1802,10 +1871,10 @@ function WatchContent({ slug }: { slug: string }) {
                     </div>
                   </section>
                 </div>,
-                document.body,
+                document.fullscreenElement || document.body,
               )}
 
-              {episodesData.length > 1 && !isMobileViewport && (
+              {episodesData.length > 1 && !isMobileWatchViewport && (
                 <div
                   className={`absolute top-0 right-0 bottom-0 w-80 bg-[#13141f]/95 border-l border-zinc-900 z-40 flex flex-col transition-transform duration-300 ease-in-out shadow-2xl select-none ${showEpisodeDrawer ? "translate-x-0" : "translate-x-full"
                     }`}
@@ -1906,7 +1975,7 @@ function WatchContent({ slug }: { slug: string }) {
             </div>
 
             {/* Actions Control Bar directly below the player */}
-            {!cinemaMode && (
+            {!playerFocusMode && (
               <div id="watch-actions-bar" className={`grid w-full ${episodesData.length > 1 && playerType === "hls" ? "grid-cols-6" : "grid-cols-5"} items-stretch gap-0 border-b border-zinc-900/40 bg-[#0d0e13]/90 px-1 py-1 text-[9px] select-none md:flex md:flex-wrap md:items-center md:justify-between md:gap-3 md:px-3 md:py-2.5 md:text-xs ${cinemaMode ? "rounded-b-2xl" : ""}`}>
                 <div className="contents md:flex md:flex-wrap md:items-center md:gap-3">
                   <button
@@ -2332,49 +2401,6 @@ function WatchContent({ slug }: { slug: string }) {
               </a>
             </div>
 
-            {/* Diễn viên list */}
-            {(tmdbCredits.length > 0 || (movie.actor && movie.actor.filter(a => a && a.trim() && a !== "Đang cập nhật").length > 0)) && (
-              <div className="space-y-4">
-                <h3 className="text-sm font-black text-zinc-455 uppercase tracking-widest border-b border-zinc-900 pb-2.5">
-                  Diễn viên
-                </h3>
-                <div className="grid grid-cols-3 gap-3">
-                  {tmdbCredits.length > 0 ? (
-                    tmdbCredits.slice(0, 6).map((actor, idx) => (
-                      <div
-                        key={`actor-watch-tmdb-${actor.id || idx}`}
-                        onClick={() => router.push(`/search?keyword=${encodeURIComponent(actor.name)}`)}
-                        className="flex flex-col items-center text-center gap-1.5 cursor-pointer group"
-                        title={`Tìm phim của ${actor.name}`}
-                      >
-                        <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 bg-zinc-800 border border-pink-500/30 group-hover:border-pink-500 flex items-center justify-center font-black text-xs text-white shadow transition-all group-hover:scale-105">
-                          {actor.profileUrl ? (
-                            <img src={actor.profileUrl} alt={actor.name} className="w-full h-full object-cover" />
-                          ) : (
-                            actor.name[0].toUpperCase()
-                          )}
-                        </div>
-                        <span className="text-[10px] font-extrabold text-[#a0a5c0] group-hover:text-pink-400 truncate w-full transition-colors">{actor.name}</span>
-                        <span className="text-[8px] font-semibold text-zinc-400 truncate w-full">{actor.character || "Diễn viên"}</span>
-                      </div>
-                    ))
-                  ) : (
-                    movie.actor.filter(a => a && a.trim() && a !== "Đang cập nhật").slice(0, 6).map((actor, idx) => (
-                      <div
-                        key={`actor-watch-${idx}`}
-                        onClick={() => router.push(`/search?keyword=${encodeURIComponent(actor)}`)}
-                        className="flex flex-col items-center text-center gap-1 cursor-pointer group"
-                      >
-                        <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 bg-zinc-800 flex items-center justify-center font-black text-xs text-white shadow bg-gradient-to-tr from-pink-500/20 to-rose-500/10 group-hover:scale-105 transition-transform">
-                          {actor[0].toUpperCase()}
-                        </div>
-                        <span className="text-[10px] font-extrabold text-[#a0a5c0] group-hover:text-pink-400 truncate w-full transition-colors">{actor}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         </div>
 

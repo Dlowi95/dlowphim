@@ -15,7 +15,6 @@ import {
   Tv,
   Volume2,
   VolumeX,
-  X,
 } from "lucide-react";
 
 type SettingsView = "main" | "quality" | "speed" | null;
@@ -49,6 +48,8 @@ interface MobileWatchPlayerControlsProps {
   currentQuality: number;
   onQualityChange: (quality: number) => void;
   onOpenEpisodes: () => void;
+  cinemaMode: boolean;
+  onExitCinemaMode: () => void;
 }
 
 const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -84,6 +85,8 @@ export default function MobileWatchPlayerControls({
   currentQuality,
   onQualityChange,
   onOpenEpisodes,
+  cinemaMode,
+  onExitCinemaMode,
 }: MobileWatchPlayerControlsProps) {
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -100,6 +103,7 @@ export default function MobileWatchPlayerControls({
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTapRef = useRef<{ time: number; zone: "left" | "right" | "center" } | null>(null);
+  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const clearSingleTapTimer = useCallback(() => {
     if (singleTapTimerRef.current) {
@@ -226,9 +230,35 @@ export default function MobileWatchPlayerControls({
     if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
   }, [clearHideTimer, clearSingleTapTimer]);
 
+  const handleSurfacePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    pointerStartRef.current = { x: event.clientX, y: event.clientY };
+  };
+
   const handleSurfacePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!player || event.pointerType === "mouse" && event.button > 0) return;
-    if ((event.target as HTMLElement).closest("[data-player-interactive='true']")) return;
+    if ((event.target as HTMLElement).closest("[data-player-interactive='true']")) {
+      pointerStartRef.current = null;
+      return;
+    }
+    const pointerStart = pointerStartRef.current;
+    pointerStartRef.current = null;
+    if (pointerStart) {
+      const deltaX = event.clientX - pointerStart.x;
+      const deltaY = event.clientY - pointerStart.y;
+      if (deltaY >= 72 && Math.abs(deltaY) > Math.abs(deltaX) * 1.2) {
+        clearSingleTapTimer();
+        lastTapRef.current = null;
+        if (player.fullscreen.active) {
+          const result = player.fullscreen.exit();
+          if (result && typeof (result as Promise<void>).catch === "function") {
+            (result as Promise<void>).catch(() => undefined);
+          }
+        } else if (cinemaMode) {
+          onExitCinemaMode();
+        }
+        return;
+      }
+    }
     if (volumeOpen) {
       setVolumeOpen(false);
       showControls();
@@ -332,9 +362,10 @@ export default function MobileWatchPlayerControls({
     <div
       data-mobile-watch-controls="true"
       data-controls-visible={controlsVisible}
-      className={`absolute inset-0 select-none md:hidden ${settingsView ? "z-[90]" : "z-30"}`}
+      className={`absolute inset-0 select-none ${settingsView ? "z-[90]" : "z-30"}`}
+      onPointerDown={handleSurfacePointerDown}
       onPointerUp={handleSurfacePointerUp}
-      style={{ touchAction: "manipulation" }}
+      style={{ touchAction: isFullscreen || cinemaMode ? "none" : "manipulation" }}
     >
       <div
         className={`pointer-events-none absolute inset-0 bg-gradient-to-b from-black/75 via-black/10 to-black/85 transition-opacity duration-200 ${controlsVisible ? "opacity-100" : "opacity-0"}`}
@@ -488,24 +519,19 @@ export default function MobileWatchPlayerControls({
             aria-modal="true"
             aria-label={settingsTitle}
             onClick={(event) => event.stopPropagation()}
-            className="w-full rounded-t-[26px] border-t border-white/10 bg-[#15161d] px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-2.5 text-left text-white shadow-[0_-22px_70px_rgba(0,0,0,0.7)]"
+            className="mobile-watch-settings-panel w-full rounded-t-[26px] border-t border-white/10 bg-[#15161d] px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-2.5 text-left text-white shadow-[0_-22px_70px_rgba(0,0,0,0.7)]"
           >
+            <button type="button" onClick={() => setSettingsView(null)} className="sr-only">
+              Đóng cài đặt
+            </button>
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-zinc-600" />
-            <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="mb-3 flex items-center gap-3">
               <div>
                 <h3 className="text-base font-extrabold">{settingsTitle}</h3>
                 {settingsView === "quality" && (
                   <p className="mt-0.5 text-[11px] font-semibold text-zinc-500">Hiện tại: {qualityLabel}</p>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={() => setSettingsView(null)}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-800 text-zinc-300"
-                aria-label="Đóng cài đặt"
-              >
-                <X size={18} />
-              </button>
             </div>
 
             {settingsView === "main" && (

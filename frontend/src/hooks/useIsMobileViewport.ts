@@ -30,3 +30,20 @@ function getServerSnapshot() {
 export function useIsMobileViewport() {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
+
+function getPhoneLandscapeSnapshot() {
+  return (
+    window.innerWidth > window.innerHeight &&
+    window.innerWidth <= 1024 &&
+    window.innerHeight <= 600 &&
+    window.matchMedia("(pointer: coarse)").matches
+  );
+}
+
+/**
+ * Chỉ dành cho player `/watch`: điện thoại xoay ngang có thể rộng hơn breakpoint
+ * `md`, nhưng vẫn cần bộ điều khiển cảm ứng thay vì mount nhánh desktop.
+ */
+export function useIsPhoneLandscapeViewport() {
+  return useSyncExternalStore(subscribe, getPhoneLandscapeSnapshot, getServerSnapshot);
+}
