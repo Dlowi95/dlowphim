@@ -101,7 +101,6 @@ function WatchContent({ slug }: { slug: string }) {
   const [activeServerIndex, setActiveServerIndex] = useState(0);
   const [activeEpisodeIndex, setActiveEpisodeIndex] = useState(0);
   const [cinemaMode, setCinemaMode] = useState(false);
-  const playerFocusMode = cinemaMode || isPhoneLandscape;
   const isFavorite = user?.favorites?.includes(movie?.slug || "") || false;
   const [shareCopied, setShareCopied] = useState(false);
   const [playerType, setPlayerType] = useState<"embed" | "hls">("embed");
@@ -242,7 +241,7 @@ function WatchContent({ slug }: { slug: string }) {
   };
 
   useEffect(() => {
-    if (!playerFocusMode) return;
+    if (!cinemaMode) return;
     const previousOverflow = document.body.style.overflow;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setCinemaMode(false);
@@ -255,7 +254,7 @@ function WatchContent({ slug }: { slug: string }) {
       document.body.classList.remove("dlowphim-cinema-mode");
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [cinemaMode, playerFocusMode]);
+  }, [cinemaMode]);
 
   useEffect(() => {
     setPlayerReady(false);
@@ -1523,7 +1522,7 @@ function WatchContent({ slug }: { slug: string }) {
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#07070a]/60 to-[#07070a] z-10" />
       </div>
 
-      <div className={`container mx-auto px-4 md:px-6 relative z-10 space-y-8 transition-all duration-300 ${playerFocusMode ? "max-w-none w-full" : "max-w-7xl"
+      <div className={`container mx-auto px-4 md:px-6 relative z-10 space-y-8 transition-all duration-300 ${cinemaMode ? "max-w-none w-full" : "max-w-7xl"
         }`}>
 
         {/* Nút Quay lại trang Chi tiết */}
@@ -1544,7 +1543,7 @@ function WatchContent({ slug }: { slug: string }) {
         <div
           id="watch-player-section"
           className={`transition-all duration-300 ${
-            playerFocusMode
+            cinemaMode
               ? isPhoneLandscape
                 ? "fixed inset-0 z-[80] flex flex-col justify-center overflow-hidden bg-black p-0"
                 : "fixed inset-0 z-[80] flex flex-col justify-center gap-3 overflow-hidden bg-black/95 px-3 py-3 md:px-6 md:py-5"
@@ -1552,8 +1551,8 @@ function WatchContent({ slug }: { slug: string }) {
           }`}
         >
           <div
-            className={`items-center justify-between gap-2 md:gap-3 ${isPhoneLandscape ? "hidden" : "flex"} ${playerFocusMode ? "relative z-50 mx-auto w-full px-3 pt-2 md:px-0 md:pt-0" : "pb-2.5"}`}
-            style={playerFocusMode ? { maxWidth: isPhoneLandscape ? "min(100vw, 177.78dvh)" : "min(96vw, 145vh)" } : undefined}
+            className={`items-center justify-between gap-2 md:gap-3 ${cinemaMode && isPhoneLandscape ? "hidden" : "flex"} ${cinemaMode ? "relative z-50 mx-auto w-full px-3 pt-2 md:px-0 md:pt-0" : "pb-2.5"}`}
+            style={cinemaMode ? { maxWidth: isPhoneLandscape ? "min(100vw, 177.78dvh)" : "min(96vw, 145vh)" } : undefined}
           >
             <div className="flex min-w-0 flex-1 items-center gap-2 text-left">
               <Film size={16} className="shrink-0 text-pink-500 md:size-[18px]" />
@@ -1582,8 +1581,8 @@ function WatchContent({ slug }: { slug: string }) {
 
           {/* Ambient Glow Wrapper */}
           <div
-            className={`relative z-10 ${playerFocusMode ? "mx-auto w-full" : "w-full"}`}
-            style={playerFocusMode ? { maxWidth: isPhoneLandscape ? "min(100vw, 177.78dvh)" : "min(96vw, 145vh)" } : undefined}
+            className={`relative z-10 ${cinemaMode ? "mx-auto w-full" : "w-full"}`}
+            style={cinemaMode ? { maxWidth: isPhoneLandscape ? "min(100vw, 177.78dvh)" : "min(96vw, 145vh)" } : undefined}
           >
             {/* Ambient Image Glow (Philips Ambilight / Ambient Mode style) */}
             <div className="absolute -inset-4 z-0 pointer-events-none select-none overflow-hidden blur-[60px] opacity-40 scale-[1.04] rounded-[32px] transition-opacity duration-500">
@@ -1597,7 +1596,7 @@ function WatchContent({ slug }: { slug: string }) {
 
             {/* Unified Movie Player Frame + Action Bar Container with soft shadow, no border */}
             <div
-              className={`w-full overflow-hidden bg-black rounded-2xl md:rounded-3xl shadow-[0_15px_45px_rgba(0,0,0,0.85)] transition-all duration-300 relative z-10 ${isPhoneLandscape ? "rounded-none md:rounded-none" : ""} ${cinemaMode
+              className={`w-full overflow-hidden bg-black rounded-2xl md:rounded-3xl shadow-[0_15px_45px_rgba(0,0,0,0.85)] transition-all duration-300 relative z-10 ${cinemaMode && isPhoneLandscape ? "rounded-none md:rounded-none" : ""} ${cinemaMode
                   ? "shadow-pink-500/10"
                   : ""
                 }`}
@@ -1975,7 +1974,7 @@ function WatchContent({ slug }: { slug: string }) {
             </div>
 
             {/* Actions Control Bar directly below the player */}
-            {!playerFocusMode && (
+            {!cinemaMode && (
               <div id="watch-actions-bar" className={`grid w-full ${episodesData.length > 1 && playerType === "hls" ? "grid-cols-6" : "grid-cols-5"} items-stretch gap-0 border-b border-zinc-900/40 bg-[#0d0e13]/90 px-1 py-1 text-[9px] select-none md:flex md:flex-wrap md:items-center md:justify-between md:gap-3 md:px-3 md:py-2.5 md:text-xs ${cinemaMode ? "rounded-b-2xl" : ""}`}>
                 <div className="contents md:flex md:flex-wrap md:items-center md:gap-3">
                   <button
