@@ -20,6 +20,9 @@ export class Comment {
   @Prop({ default: 'member' })
   role: string;
 
+  @Prop({ default: 'other' })
+  gender?: string;
+
   @Prop({ required: true })
   content: string;
 

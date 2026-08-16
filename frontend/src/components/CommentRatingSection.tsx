@@ -28,6 +28,7 @@ interface Comment {
   avatarUrl?: string;
   name: string;
   role: "member" | "vip" | "admin" | "super_admin" | "content_admin" | "moderator" | "support";
+  gender?: string;
   content: string;
   time: string;
   likes: number;
@@ -42,6 +43,84 @@ interface Comment {
     masked: boolean;
     maskedCount: number;
   };
+}
+
+function MaleGenderIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <circle cx="10" cy="14" r="5" />
+      <line x1="19" y1="5" x2="13.6" y2="10.4" />
+      <polyline points="14.5 5 19 5 19 9.5" />
+    </svg>
+  );
+}
+
+function FemaleGenderIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <circle cx="12" cy="9.5" r="5" />
+      <line x1="12" y1="14.5" x2="12" y2="21" />
+      <line x1="8.5" y1="18" x2="15.5" y2="18" />
+    </svg>
+  );
+}
+
+function GenderBadge({ gender, isSmall }: { gender?: string; isSmall?: boolean }) {
+  const g = (gender || "other").toLowerCase();
+
+  if (g === "male" || g === "nam") {
+    return (
+      <span
+        className={`inline-flex items-center text-sky-400 drop-shadow-[0_0_6px_rgba(56,189,248,0.85)] select-none shrink-0 ${
+          isSmall ? "mr-2" : "mr-2.5"
+        }`}
+        title="Nam"
+      >
+        <MaleGenderIcon className={isSmall ? "w-3 h-3" : "w-3.5 h-3.5"} />
+      </span>
+    );
+  }
+
+  if (g === "female" || g === "nu" || g === "nữ") {
+    return (
+      <span
+        className={`inline-flex items-center text-pink-400 drop-shadow-[0_0_6px_rgba(244,114,182,0.85)] select-none shrink-0 ${
+          isSmall ? "mr-2" : "mr-2.5"
+        }`}
+        title="Nữ"
+      >
+        <FemaleGenderIcon className={isSmall ? "w-3 h-3" : "w-3.5 h-3.5"} />
+      </span>
+    );
+  }
+
+  // Default: Không xác định -> Vòng vô cực màu hồng
+  return (
+    <span
+      className={`text-pink-500 drop-shadow-[0_0_6px_rgba(236,72,153,0.85)] font-extrabold select-none inline-flex items-center shrink-0 ${
+        isSmall ? "text-xs mr-2 leading-none" : "text-sm mr-2.5 leading-none"
+      }`}
+      title="Không xác định"
+    >
+      ∞
+    </span>
+  );
 }
 
 interface RatingData {
@@ -773,13 +852,8 @@ export default function CommentRatingSection({
                           <div className="flex flex-wrap items-center select-none gap-y-1">
                             <span className="font-extrabold text-xs text-zinc-200 mr-1.5">{comment.name}</span>
 
-                            {/* Neon pink infinity */}
-                            <span
-                              className="text-pink-500 drop-shadow-[0_0_6px_rgba(236,72,153,0.85)] font-extrabold text-sm mr-2.5 select-none flex items-center"
-                              title="DlowPhim Member"
-                            >
-                              ∞
-                            </span>
+                            {/* Gender badge */}
+                            <GenderBadge gender={comment.gender || ((comment.userId === user?.id || comment.userId === (user as any)?._id) ? user?.gender : undefined)} />
 
                             {/* Time */}
                             <span className="text-[9px] text-zinc-400 font-bold bg-[#13141d] px-2 py-0.5 rounded-md border border-zinc-800/40 mr-3 inline-flex items-center gap-1 select-none tabular-nums">
@@ -977,9 +1051,8 @@ export default function CommentRatingSection({
                                 <div className="flex-1 space-y-1">
                                   <div className="flex flex-wrap items-center select-none gap-y-1">
                                     <span className="font-extrabold text-[11px] text-zinc-200 mr-1.5">{reply.name}</span>
-                                    <span className="text-pink-500 drop-shadow-[0_0_6px_rgba(236,72,153,0.85)] font-extrabold text-xs mr-2 select-none flex items-center">
-                                      ∞
-                                    </span>
+                                    {/* Gender badge */}
+                                    <GenderBadge gender={reply.gender || ((reply.userId === user?.id || reply.userId === (user as any)?._id) ? user?.gender : undefined)} isSmall />
                                     <span className="text-[8px] text-zinc-400 font-bold bg-[#13141d] px-1.5 py-0.5 rounded-md border border-zinc-800/40 mr-3 inline-flex items-center gap-1 select-none tabular-nums">
                                       {reply.time}
                                     </span>

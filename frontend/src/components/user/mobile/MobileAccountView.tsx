@@ -103,7 +103,26 @@ export default function MobileAccountView({
                     >
                       {checked && <span className="h-2 w-2 rounded-full bg-pink-500" />}
                     </span>
-                    <span className="text-sm font-semibold text-zinc-300">{option.label}</span>
+                    <span className="text-sm font-semibold text-zinc-300 flex items-center gap-1">
+                      {option.value === "male" && (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-sky-400 drop-shadow-[0_0_6px_rgba(56,189,248,0.85)]">
+                          <circle cx="10" cy="14" r="5" />
+                          <line x1="19" y1="5" x2="13.6" y2="10.4" />
+                          <polyline points="14.5 5 19 5 19 9.5" />
+                        </svg>
+                      )}
+                      {option.value === "female" && (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-pink-400 drop-shadow-[0_0_6px_rgba(244,114,182,0.85)]">
+                          <circle cx="12" cy="9.5" r="5" />
+                          <line x1="12" y1="14.5" x2="12" y2="21" />
+                          <line x1="8.5" y1="18" x2="15.5" y2="18" />
+                        </svg>
+                      )}
+                      {option.value === "other" && (
+                        <span className="text-pink-500 drop-shadow-[0_0_6px_rgba(236,72,153,0.85)] font-extrabold text-sm leading-none">∞</span>
+                      )}
+                      {option.label}
+                    </span>
                   </label>
                 );
               })}

@@ -248,7 +248,14 @@ export default function UserAccountPage() {
                     onChange={() => setGender("male")}
                     className="w-4 h-4 text-pink-500 bg-zinc-900 border-zinc-800 focus:ring-0 focus:ring-offset-0 cursor-pointer"
                   />
-                  <span className="text-sm font-semibold text-zinc-300 group-hover:text-zinc-150 transition-colors">Nam</span>
+                  <span className="inline-flex items-center gap-1 text-sm font-semibold text-zinc-300 group-hover:text-zinc-100 transition-colors">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-sky-400 drop-shadow-[0_0_6px_rgba(56,189,248,0.85)]">
+                      <circle cx="10" cy="14" r="5" />
+                      <line x1="19" y1="5" x2="13.6" y2="10.4" />
+                      <polyline points="14.5 5 19 5 19 9.5" />
+                    </svg>
+                    Nam
+                  </span>
                 </label>
 
                 {/* Nữ */}
@@ -261,7 +268,14 @@ export default function UserAccountPage() {
                     onChange={() => setGender("female")}
                     className="w-4 h-4 text-pink-500 bg-zinc-900 border-zinc-800 focus:ring-0 focus:ring-offset-0 cursor-pointer"
                   />
-                  <span className="text-sm font-semibold text-zinc-300 group-hover:text-zinc-150 transition-colors">Nữ</span>
+                  <span className="inline-flex items-center gap-1 text-sm font-semibold text-zinc-300 group-hover:text-zinc-100 transition-colors">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-pink-400 drop-shadow-[0_0_6px_rgba(244,114,182,0.85)]">
+                      <circle cx="12" cy="9.5" r="5" />
+                      <line x1="12" y1="14.5" x2="12" y2="21" />
+                      <line x1="8.5" y1="18" x2="15.5" y2="18" />
+                    </svg>
+                    Nữ
+                  </span>
                 </label>
 
                 {/* Không xác định */}
@@ -274,7 +288,10 @@ export default function UserAccountPage() {
                     onChange={() => setGender("other")}
                     className="w-4 h-4 text-pink-500 bg-zinc-900 border-zinc-800 focus:ring-0 focus:ring-offset-0 cursor-pointer"
                   />
-                  <span className="text-sm font-semibold text-zinc-300 group-hover:text-zinc-150 transition-colors">Không xác định</span>
+                  <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-zinc-300 group-hover:text-zinc-100 transition-colors">
+                    <span className="text-pink-500 drop-shadow-[0_0_6px_rgba(236,72,153,0.85)] font-extrabold text-sm leading-none">∞</span>
+                    Không xác định
+                  </span>
                 </label>
               </div>
             </div>

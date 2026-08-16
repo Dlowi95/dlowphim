@@ -47,7 +47,7 @@ export class CommentsService {
   async getComments(movieSlug: string, currentUserId?: string) {
     const roots = await this.commentModel
       .find({ movieSlug, parentId: null })
-      .populate('userId', 'displayName avatar role')
+      .populate('userId', 'displayName avatar role gender')
       .sort({ createdAt: -1 })
       .limit(MAX_PUBLIC_THREADS)
       .exec();
@@ -55,7 +55,7 @@ export class CommentsService {
     const replies = rootIds.length > 0
       ? await this.commentModel
         .find({ movieSlug, parentId: { $in: rootIds } })
-        .populate('userId', 'displayName avatar role')
+        .populate('userId', 'displayName avatar role gender')
         .sort({ createdAt: 1 })
         .limit(MAX_PUBLIC_REPLIES)
         .exec()
@@ -67,6 +67,7 @@ export class CommentsService {
       const finalDisplayName = userObj?.displayName || c.displayName;
       const finalAvatarUrl = userObj?.avatar || c.avatar;
       const finalRole = userObj?.role || c.role || 'member';
+      const finalGender = userObj?.gender || (c as any).gender || 'other';
 
       const summaryMap: Record<string, number> = {};
       c.reactions?.forEach((r) => {
@@ -87,6 +88,7 @@ export class CommentsService {
         avatar: finalDisplayName ? finalDisplayName[0].toUpperCase() : 'U',
         avatarUrl: finalAvatarUrl || undefined,
         role: finalRole,
+        gender: finalGender,
         content: c.content,
         time: getFormattedDate((c as any).createdAt || new Date()),
         isSpoiler: c.isSpoiler,
@@ -116,7 +118,7 @@ export class CommentsService {
     const userObjectId = new Types.ObjectId(userId);
     const user = await this.userModel
       .findById(userObjectId)
-      .select('displayName avatar role')
+      .select('displayName avatar role gender')
       .exec();
     if (!user) {
       throw new NotFoundException('Không tìm thấy tài khoản người dùng');
@@ -147,6 +149,7 @@ export class CommentsService {
       displayName: user.displayName,
       avatar: user.avatar,
       role: user.role || 'member',
+      gender: user.gender || 'other',
       content,
       originalContent: moderation.maskedCount > 0 ? originalContent : undefined,
       moderationFlags: moderation.matchedTerms,
@@ -204,6 +207,7 @@ export class CommentsService {
       avatar: saved.displayName ? saved.displayName[0].toUpperCase() : 'U',
       avatarUrl: saved.avatar || undefined,
       role: saved.role,
+      gender: (saved as any).gender || user.gender || 'other',
       content: saved.content,
       time: getFormattedDate((saved as any).createdAt || new Date()),
       isSpoiler: saved.isSpoiler,
