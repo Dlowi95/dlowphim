@@ -41,6 +41,13 @@ export function getImageUrl(path?: string): string {
   if (!path) return "/images/movie-placeholder.svg";
   let url = path.trim();
   if (url.startsWith("http://") || url.startsWith("https://")) {
+    if (
+      (url.includes("img.ophimimg.com") || url.includes("img.ophim.live") || url.includes("ophim.cc") || url.includes("ophim1.com")) &&
+      !url.includes("/uploads/movies/")
+    ) {
+      const filename = url.split("/").pop() || "";
+      return `https://img.ophim.live/uploads/movies/${filename}`;
+    }
     return url;
   }
   const cleanPath = url.replace(/^\/+/, "");
@@ -50,6 +57,9 @@ export function getImageUrl(path?: string): string {
   // Nếu là tên file tương đối đơn thuần của OPhim (không chứa dấu gạch chéo /)
   if (!cleanPath.includes("/")) {
     return `https://img.ophim.live/uploads/movies/${cleanPath}`;
+  }
+  if (cleanPath.startsWith("uploads/movies/")) {
+    return `https://img.ophim.live/${cleanPath}`;
   }
   return `https://phimimg.com/${cleanPath}`;
 }

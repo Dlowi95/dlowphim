@@ -1306,7 +1306,16 @@ function WatchContent({ slug }: { slug: string }) {
 
   const getImageUrl = (path: string) => {
     if (!path) return "";
-    if (path.startsWith("http")) return path;
+    if (path.startsWith("http")) {
+      if (
+        (path.includes("img.ophimimg.com") || path.includes("img.ophim.live") || path.includes("ophim.cc") || path.includes("ophim1.com")) &&
+        !path.includes("/uploads/movies/")
+      ) {
+        const fileName = path.split("/").pop();
+        return `https://img.ophim.live/uploads/movies/${fileName}`;
+      }
+      return path;
+    }
     const fileName = path.split("/").pop();
     return `https://img.ophim.live/uploads/movies/${fileName}`;
   };

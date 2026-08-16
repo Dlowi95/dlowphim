@@ -363,10 +363,22 @@ export class MoviesService {
   private normalizeCatalogImage(value: unknown, imageBase: string, sourceId: string): string {
     const image = String(value || '').trim();
     if (!image) return '';
-    if (/^https?:\/\//i.test(image)) return image;
+    if (/^https?:\/\//i.test(image)) {
+      if (
+        (image.includes('img.ophimimg.com') || image.includes('img.ophim.live') || image.includes('ophim.cc') || image.includes('ophim1.com')) &&
+        !image.includes('/uploads/movies/')
+      ) {
+        const filename = image.split('/').pop() || '';
+        return `https://img.ophim.live/uploads/movies/${filename}`;
+      }
+      return image;
+    }
     const path = image.replace(/^\/+/, '');
+    if (sourceId === 'ophim' || imageBase.includes('ophim')) {
+      const cleanSubPath = path.startsWith('uploads/movies/') ? path : `uploads/movies/${path}`;
+      return `https://img.ophim.live/${cleanSubPath}`;
+    }
     if (imageBase) return `${imageBase.replace(/\/+$/, '')}/${path}`;
-    if (sourceId === 'ophim') return `https://img.ophim.live/uploads/movies/${path}`;
     return `https://phimimg.com/${path}`;
   }
 

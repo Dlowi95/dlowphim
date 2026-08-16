@@ -14,10 +14,22 @@ const FALLBACK_IMAGE = "/images/cinema.png";
 
 const toAbsoluteImage = (path?: string) => {
   if (!path) return FALLBACK_IMAGE;
-  if (/^https?:\/\//i.test(path)) return path;
+  if (/^https?:\/\//i.test(path)) {
+    if (
+      (path.includes("img.ophimimg.com") || path.includes("img.ophim.live") || path.includes("ophim.cc") || path.includes("ophim1.com")) &&
+      !path.includes("/uploads/movies/")
+    ) {
+      const filename = path.split("/").pop() || "";
+      return `https://img.ophim.live/uploads/movies/${filename}`;
+    }
+    return path;
+  }
   const cleanPath = path.replace(/^\/+/, "");
   if (!cleanPath.includes("/")) {
     return `https://img.ophim.live/uploads/movies/${cleanPath}`;
+  }
+  if (cleanPath.startsWith("uploads/movies/")) {
+    return `https://img.ophim.live/${cleanPath}`;
   }
   return `https://phimimg.com/${cleanPath}`;
 };
