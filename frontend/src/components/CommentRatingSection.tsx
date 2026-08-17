@@ -110,10 +110,10 @@ function GenderBadge({ gender, isSmall }: { gender?: string; isSmall?: boolean }
     );
   }
 
-  // Default: Không xác định -> Vòng vô cực màu hồng
+  // Default: Không xác định -> Vòng vô cực màu trắng
   return (
     <span
-      className={`text-pink-500 drop-shadow-[0_0_6px_rgba(236,72,153,0.85)] font-extrabold select-none inline-flex items-center shrink-0 ${
+      className={`text-zinc-200 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)] font-extrabold select-none inline-flex items-center shrink-0 ${
         isSmall ? "text-xs mr-2 leading-none" : "text-sm mr-2.5 leading-none"
       }`}
       title="Không xác định"
