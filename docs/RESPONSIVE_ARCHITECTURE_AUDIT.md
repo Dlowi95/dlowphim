@@ -266,7 +266,7 @@ Giới hạn kiểm thử: fallback hiện được chứng minh bằng Playwrig
 
 ### Trang xem phim `/watch/[slug]` — tối ưu giao diện mobile
 
-**Trạng thái: Đạt cho phạm vi giao diện responsive; audit lifecycle/API playback vẫn đang chờ Phase riêng.**
+**Trạng thái: Đạt production cho giao diện responsive, lifecycle dữ liệu, failover HLS/embed và đồng bộ lịch sử theo phiên auth.**
 
 - `/watch/[slug]` tiếp tục là data owner duy nhất của phim, nguồn phát, tập và trạng thái player; lượt tối ưu này không thêm API owner, socket, listener hay component responsive thứ hai.
 - Mobile header và bottom navigation được khôi phục cho route `/watch`; các route toàn màn hình thật sự (`/watch-together/room`, `/watch-together/create`, admin) vẫn giữ chính sách ẩn navigation.
@@ -274,8 +274,14 @@ Giới hạn kiểm thử: fallback hiện được chứng minh bằng Playwrig
 - Hàng hành động mobile dùng một hàng 5 hoặc 6 cột nhỏ gọn theo số nút; cụm nguồn dùng nhãn ngắn “Âm thanh” và “Máy chủ”. Player mobile ẩn rewind, fast-forward, PiP và duration dư thừa; volume slider cố định `42px`. Từ `768px`, toàn bộ control và kích thước desktop cũ được giữ lại.
 - Plyr bật rõ `clickToPlay`; chạm vào vùng video chuyển `pause → play → pause`, trong khi thao tác menu cài đặt không đổi trạng thái phát. Menu tốc độ/chất lượng dùng nền tối, được nén còn tối đa `180px` trên mobile và nằm trên overlay tiêu đề để không che các lựa chọn đầu.
 - Phim nhiều tập giữ nút “Danh sách tập”. Mobile dùng bottom sheet qua portal, còn desktop tiếp tục dùng side drawer cũ; cả hai dùng chung state và dữ liệu. Mobile chia tối đa 60 tập mỗi nhóm, nên phim 180 tập chỉ mount 60 nút tập thay vì toàn bộ danh sách.
+- Effect tải phim chính có `AbortController` và cờ `disposed`; đổi slug hoặc unmount sẽ hủy toàn bộ chuỗi `check-blocked → nguồn chính → v1 → fallback → custom`, đồng thời response cũ không được ghi vào state của phim mới.
+- Effect hợp nhất nguồn dự phòng chỉ chạy sau khi metadata phim chính sẵn sàng, có cleanup riêng và không còn phát request `resolved-detail` sớm rồi lặp lại khi `movie` được cập nhật.
+- Player đợi `AuthContext.loading` kết thúc trước lần khởi tạo đầu tiên, nhưng không phụ thuộc toàn bộ object `user`; vì vậy auth ban đầu không tạo player anonymous rồi dựng lại, còn cập nhật `watchHistory` không làm HLS/Plyr bị remount.
+- Listener `timeupdate`/`pause` đọc user và hàm cập nhật lịch sử hiện hành qua ref. Mỗi pending database sync đóng gói cố định `ownerId + token + historyItem`, nên logout/đổi tài khoản không thể gửi lịch sử của phiên cũ bằng token phiên mới. Listener `pagehide`/`visibilitychange` giữ ổn định và không còn tháo/lắp theo mỗi lần object user đổi.
+- HLS fatal network error được phục hồi hữu hạn hai lần, sau đó chuyển sang embed khi không còn HLS phù hợp; state embed không bị effect chọn nguồn mặc định bật ngược lại nếu server/tập không đổi.
+- HLS runtime được nâng từ `1.4.12` lên stable `1.6.17`. Fatal media/decode error dùng chuỗi phục hồi hữu hạn: lần đầu rebuild MediaSource, lần hai đổi audio codec rồi rebuild; sau đó mới failover. Mỗi lần thay tập/nguồn hoặc unmount đều detach/destroy HLS và xóa `src` + gọi `load()` trên media element để không giữ audio decoder/buffer cũ — trường hợp có thể gây rè cho tới khi reload trang.
 
-Bằng chứng runtime ghi nhận ngày `2026-08-14`:
+Bằng chứng runtime cập nhật ngày `2026-08-20`:
 
 | Nhóm | Kết quả | Bằng chứng |
 | --- | --- | --- |
@@ -285,10 +291,12 @@ Bằng chứng runtime ghi nhận ngày `2026-08-14`:
 | Nội dung mobile | Đạt | Không còn dòng “Bạn đang xem” bị lặp; trạng thái phát hành không còn ở cả hai giao diện. Action bar phim nhiều tập có 6 cột bằng nhau, cao khoảng `52.8px` tại `390px`, không overflow ngang. |
 | Danh sách tập | Đạt | Bottom sheet tại `390px` rộng `380px`, cao tối đa `72dvh`, không overflow ngang. Phim 180 tập hiển thị các nhóm `1–60`, `61–120`, `121–180`; mỗi lần chỉ mount 60 nút, chọn Tập 61 đóng sheet và cập nhật URL đúng. |
 | Chế độ rạp | Đạt | Bật chế độ rạp khóa cuộn body, player ở lớp `z-80` cao hơn bottom navigation `z-70`, không overflow; thoát chế độ rạp khôi phục overflow. |
-| Console/build | Đạt | TypeScript thành công, 7/7 test episode/playback qua và production build hoàn tất; `/watch/[slug]` là `23 kB`, First Load JS `144 kB`. |
+| Fetch lifecycle/API | Đạt | Main fetch và fallback fetch đều abort/khóa response sau cleanup. Playwright production xác nhận một lượt điều hướng phát đúng `1` request `check-blocked` và đúng `1` request `resolved-detail`; test ghép nguồn/chọn tập và khôi phục lịch sử cùng pass. |
+| Failover/auth history | Đạt | Failure injection phát đúng 3 lần `loadSource` (lần đầu + 2 recovery), sau đó giữ embed ổn định và không bật lại HLS. Media recovery có tối đa 2 bước, bước thứ hai gọi `swapAudioCodec` trước `recoverMediaError`; bước thứ ba bị từ chối để tránh loop. Đổi từ tập đang ở embed sang Tập 02 reset đúng về HLS mới và cập nhật URL. Auth `/me` bị trì hoãn chứng minh HLS init count giữ `0` khi auth đang tải và chỉ tăng sau khi owner hiện hành xác định. Pending history giữ token/owner tại thời điểm tạo và cleanup listener không phụ thuộc object user. |
+| Console/build | Đạt | TypeScript thành công, 8/8 test episode/playback qua, 6/6 Playwright production `watch-history.spec.ts` qua và production build hoàn tất; `/watch/[slug]` là `22 kB`, First Load JS `147 kB`. |
 
-Giới hạn còn lại: lượt này chủ ý không thay đổi lifecycle tải phim, fallback request, reset server/tập hay closure history/HLS theo auth. Các rủi ro đó phải được audit và sửa trong Phase playback riêng trước khi nâng toàn bộ route `/watch/[slug]` lên **Đạt production hoàn toàn**.
+Giới hạn còn lại: E2E hiện kiểm chứng auth-loading ban đầu và ownership token/pending bằng cấu trúc lifecycle; thao tác đăng nhập rồi đổi trực tiếp sang một tài khoản thứ hai trong cùng tab chưa có fixture UI chuyên biệt. Đây không còn là blocker production vì listener player dùng ref hiện hành, pending sync mang token/owner bất biến và cleanup đổi owner đã được khóa trong code.
 
 ### Các route còn lại
 
-Chi tiết phim là route duy nhất trong bảng hiện còn trạng thái **Đạt một phần**; chỉ được nâng lên **Đạt** sau khi các hạng mục shared/desktop ở trên có diff, runtime matrix và kiểm tra hồi quy tương ứng. Audit production riêng của `/phim-bo` và `/phim-le` đã hoàn tất trong Phase 2 nêu trên.
+Route `/watch/[slug]` đã được nâng lên **Đạt production** sau failure injection, auth gating và kiểm tra hồi quy nêu trên. Audit production riêng của `/phim-bo` và `/phim-le` đã hoàn tất trong Phase 2 nêu trên.

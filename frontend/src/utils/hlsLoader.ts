@@ -1,7 +1,8 @@
 "use client";
 
 const HLS_SCRIPT_ID = "dlowphim-hls-script";
-const HLS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/hls.js@1.4.12/dist/hls.min.js";
+export const HLS_LIBRARY_VERSION = "1.6.17";
+const HLS_SCRIPT_URL = `https://cdn.jsdelivr.net/npm/hls.js@${HLS_LIBRARY_VERSION}/dist/hls.min.js`;
 
 let hlsLoadPromise: Promise<any> | null = null;
 
@@ -36,6 +37,31 @@ export function destroyHlsInstance(instance: any) {
   if (!instance) return;
   try { instance.detachMedia?.(); } catch { }
   try { instance.destroy?.(); } catch { }
+}
+
+export function resetHlsMediaElement(media: HTMLMediaElement | null | undefined) {
+  if (!media) return;
+  try { media.pause(); } catch { }
+  try {
+    media.removeAttribute("src");
+    media.load();
+  } catch { }
+}
+
+export function recoverHlsMediaError(instance: any, attempt: number) {
+  if (!instance || attempt < 0 || attempt > 1) return false;
+  // The second bounded recovery swaps the audio codec before rebuilding the
+  // MediaSource attachment. This follows hls.js' recovery sequence for decode
+  // failures without allowing an infinite recover loop.
+  if (attempt === 1) {
+    try { instance.swapAudioCodec?.(); } catch { }
+  }
+  try {
+    instance.recoverMediaError?.();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function loadHlsLibrary(): Promise<any> {

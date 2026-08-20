@@ -29,17 +29,23 @@ const movie = {
   ],
 };
 
-async function mockBackend(page: Page, authenticatedHistory: unknown[] = []) {
+async function mockBackend(
+  page: Page,
+  authenticatedHistory: unknown[] = [],
+  movieFixture = movie,
+  authDelayMs = 0,
+) {
   await page.route(/https?:\/\/(?:localhost|127\.0\.0\.1):5000\/.*/, async (route) => {
     const url = new URL(route.request().url());
     let body: unknown = {};
     let status = 200;
 
     if (url.pathname.includes("/movies/check-blocked/")) body = { isBlocked: false };
-    else if (url.pathname === "/movies/ophim-proxy") body = { status: true, movie, episodes: movie.episodes, _sourceId: "phimapi" };
-    else if (url.pathname.includes("/movies/resolved-detail/")) body = { status: true, movie, episodes: movie.episodes, _sourceId: "ophim" };
+    else if (url.pathname === "/movies/ophim-proxy") body = { status: true, movie: movieFixture, episodes: movieFixture.episodes, _sourceId: "phimapi" };
+    else if (url.pathname.includes("/movies/resolved-detail/")) body = { status: true, movie: movieFixture, episodes: movieFixture.episodes, _sourceId: "ophim" };
     else if (url.pathname === "/playback-health/reputation") body = [];
     else if (url.pathname.startsWith("/auth/me")) {
+      if (authDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, authDelayMs));
       if (authenticatedHistory.length > 0) {
         body = {
           id: "e2e-user",
@@ -64,6 +70,68 @@ async function mockBackend(page: Page, authenticatedHistory: unknown[] = []) {
   await page.route("https://image.example/**", (route) => route.abort());
 }
 
+const hlsMovie = {
+  ...movie,
+  episodes: [
+    {
+      server_name: "Vietsub",
+      server_data: [
+        {
+          name: "Tập 01",
+          slug: "tap-01",
+          link_embed: "https://embed.example/1",
+          link_m3u8: "https://stream.example/1/master.m3u8",
+        },
+        {
+          name: "Tập 02",
+          slug: "tap-02",
+          link_embed: "https://embed.example/2",
+          link_m3u8: "https://stream.example/2/master.m3u8",
+        },
+      ],
+    },
+  ],
+};
+
+async function installFailingHls(page: Page) {
+  await page.addInitScript(() => {
+    class FailingHls {
+      static Events = {
+        ERROR: "hlsError",
+        MANIFEST_PARSED: "hlsManifestParsed",
+        FRAG_LOADED: "hlsFragLoaded",
+        LEVEL_SWITCHED: "hlsLevelSwitched",
+      };
+      static ErrorTypes = { NETWORK_ERROR: "networkError", MEDIA_ERROR: "mediaError" };
+      static ErrorDetails = { MANIFEST_LOAD_ERROR: "manifestLoadError" };
+      static isSupported() { return true; }
+      levels: unknown[] = [];
+      currentLevel = -1;
+      nextLevel = -1;
+      private timers: number[] = [];
+      loadSource() {
+        const state = window as typeof window & { __watchHlsLoadCount?: number };
+        state.__watchHlsLoadCount = (state.__watchHlsLoadCount || 0) + 1;
+      }
+      attachMedia() {}
+      startLoad() {}
+      recoverMediaError() {}
+      on(event: string, callback: (event: string, data: unknown) => void) {
+        if (event !== "hlsError") return;
+        [50, 750, 2050].forEach((delay) => {
+          this.timers.push(window.setTimeout(() => callback(event, {
+            fatal: true,
+            type: "networkError",
+            details: "manifestLoadError",
+          }), delay));
+        });
+      }
+      destroy() { this.timers.forEach((timer) => window.clearTimeout(timer)); }
+    }
+    (window as typeof window & { Hls?: unknown }).Hls = FailingHls;
+  });
+}
+
 test("Watch ghép nguồn và chuyển đúng tập từ URL", async ({ page }) => {
   await mockBackend(page);
   await page.goto("/watch/phim-kiem-thu-e2e?ep=T%E1%BA%ADp%2002");
@@ -71,6 +139,27 @@ test("Watch ghép nguồn và chuyển đúng tập từ URL", async ({ page }) 
   await expect(page.getByText("Phim kiểm thử E2E", { exact: false }).first()).toBeVisible();
   await expect(page.getByText("Tập 02", { exact: true }).first()).toBeVisible();
   await expect(page).toHaveURL(/ep=T(%E1%BA%ADp|ập)%2002/i);
+});
+
+test("Watch chỉ tải nguồn dự phòng một lần sau khi phim chính sẵn sàng", async ({ page }) => {
+  await mockBackend(page);
+  const requestCounts = {
+    blocked: 0,
+    resolvedDetail: 0,
+  };
+
+  page.on("request", (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname.includes("/movies/check-blocked/")) requestCounts.blocked += 1;
+    if (pathname.includes("/movies/resolved-detail/")) requestCounts.resolvedDetail += 1;
+  });
+
+  await page.goto("/watch/phim-kiem-thu-e2e?ep=T%E1%BA%ADp%2002");
+  await expect(page.getByText("Phim kiểm thử E2E", { exact: false }).first()).toBeVisible();
+  await expect.poll(() => requestCounts.resolvedDetail).toBe(1);
+
+  expect(requestCounts.blocked).toBe(1);
+  expect(requestCounts.resolvedDetail).toBe(1);
 });
 
 test("Lịch sử khôi phục đúng phim, tập và tiến độ", async ({ page }) => {
@@ -92,4 +181,72 @@ test("Lịch sử khôi phục đúng phim, tập và tiến độ", async ({ pa
   await page.goto("/user/history");
   await expect(page.getByText("Phim kiểm thử E2E", { exact: true })).toBeVisible();
   await expect(page.getByText(/Đang xem Tập 02 \(50%\)/i)).toBeVisible();
+});
+
+test("HLS lỗi sau phục hồi giới hạn thì chuyển sang embed và không bật lại HLS", async ({ page }) => {
+  await installFailingHls(page);
+  await mockBackend(page, [], hlsMovie);
+
+  await page.goto("/watch/phim-kiem-thu-e2e?ep=T%E1%BA%ADp%2001");
+  await expect.poll(() => page.evaluate(
+    () => (window as typeof window & { __watchHlsLoadCount?: number }).__watchHlsLoadCount || 0,
+  )).toBeGreaterThan(0);
+  await expect(page.locator('iframe[title="DlowPhim Video Player"]')).toBeVisible({ timeout: 10_000 });
+  const loadCountAfterFailover = await page.evaluate(
+    () => (window as typeof window & { __watchHlsLoadCount?: number }).__watchHlsLoadCount || 0,
+  );
+
+  await page.waitForTimeout(1_000);
+  await expect(page.locator('iframe[title="DlowPhim Video Player"]')).toBeVisible();
+  await expect.poll(() => page.evaluate(
+    () => (window as typeof window & { __watchHlsLoadCount?: number }).__watchHlsLoadCount || 0,
+  )).toBe(loadCountAfterFailover);
+  expect(loadCountAfterFailover).toBe(3);
+});
+
+test("HLS chỉ khởi tạo sau khi auth hiện hành tải xong", async ({ page }) => {
+  await installFailingHls(page);
+  await mockBackend(page, [{
+    movieSlug: movie.slug,
+    movieName: movie.name,
+    episodeName: "Tập 01",
+    episodeKey: "tap-01",
+    currentTime: 30,
+    duration: 120,
+    progressMode: "exact",
+    updatedAt: new Date().toISOString(),
+  }], hlsMovie, 800);
+  await page.addInitScript(() => {
+    document.cookie = "token=e2e-token; path=/";
+  });
+
+  await page.goto("/watch/phim-kiem-thu-e2e?ep=T%E1%BA%ADp%2001", { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(250);
+  expect(await page.evaluate(
+    () => (window as typeof window & { __watchHlsLoadCount?: number }).__watchHlsLoadCount || 0,
+  )).toBe(0);
+  await expect.poll(() => page.evaluate(
+    () => (window as typeof window & { __watchHlsLoadCount?: number }).__watchHlsLoadCount || 0,
+  )).toBeGreaterThan(0);
+});
+
+test("Đổi tập sau embed failover reset đúng về HLS của tập mới", async ({ page }) => {
+  await installFailingHls(page);
+  await mockBackend(page, [], hlsMovie);
+
+  await page.goto("/watch/phim-kiem-thu-e2e?ep=T%E1%BA%ADp%2001");
+  await expect.poll(() => page.evaluate(
+    () => (window as typeof window & { __watchHlsLoadCount?: number }).__watchHlsLoadCount || 0,
+  )).toBeGreaterThan(0);
+  await expect(page.locator('iframe[title="DlowPhim Video Player"]')).toBeVisible({ timeout: 10_000 });
+  const loadCountBeforeEpisodeChange = await page.evaluate(
+    () => (window as typeof window & { __watchHlsLoadCount?: number }).__watchHlsLoadCount || 0,
+  );
+
+  await page.getByRole("button", { name: /Tập 02/i }).last().click();
+  await expect(page).toHaveURL(/ep=T(%E1%BA%ADp|ập)%2002/i);
+  await expect(page.locator("#dlow-hls-video")).toBeVisible();
+  await expect.poll(() => page.evaluate(
+    () => (window as typeof window & { __watchHlsLoadCount?: number }).__watchHlsLoadCount || 0,
+  )).toBeGreaterThan(loadCountBeforeEpisodeChange);
 });

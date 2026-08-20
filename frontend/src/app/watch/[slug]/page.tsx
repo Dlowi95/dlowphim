@@ -17,7 +17,13 @@ import { useSmartStreamServer } from "@/hooks/useSmartStreamServer";
 import { useHlsPlaybackTelemetry } from "@/hooks/useHlsPlaybackTelemetry";
 import { useIsMobileViewport, useIsPhoneLandscapeViewport } from "@/hooks/useIsMobileViewport";
 import ProgressiveImage from "@/components/ProgressiveImage";
-import { destroyHlsInstance, loadHlsLibrary, WATCH_HLS_CONFIG } from "@/utils/hlsLoader";
+import {
+  destroyHlsInstance,
+  loadHlsLibrary,
+  recoverHlsMediaError,
+  resetHlsMediaElement,
+  WATCH_HLS_CONFIG,
+} from "@/utils/hlsLoader";
 import { normalizeEpisodeKey } from "@/utils/episodeUtils";
 import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
 import {
@@ -78,6 +84,12 @@ interface RatingData {
   userRating: number | null;
 }
 
+interface PendingHistorySync {
+  item: Record<string, unknown>;
+  ownerId: string;
+  token: string;
+}
+
 const MOBILE_EPISODE_BATCH_SIZE = 60;
 
 function WatchContent({ slug }: { slug: string }) {
@@ -95,7 +107,15 @@ function WatchContent({ slug }: { slug: string }) {
   const [tmdbBackdrop, setTmdbBackdrop] = useState<string | null>(null);
   const [tmdbPoster, setTmdbPoster] = useState<string | null>(null);
 
-  const { user, toggleFavorite: toggleFavoriteCtx, showToast, createPlaylist, toggleMovieInPlaylist, updateWatchHistory } = useAuth();
+  const {
+    user,
+    loading: authLoading,
+    toggleFavorite: toggleFavoriteCtx,
+    showToast,
+    createPlaylist,
+    toggleMovieInPlaylist,
+    updateWatchHistory,
+  } = useAuth();
 
   // States phát phim
   const [activeServerIndex, setActiveServerIndex] = useState(0);
@@ -131,8 +151,11 @@ function WatchContent({ slug }: { slug: string }) {
   const [mobileSelectedQuality, setMobileSelectedQuality] = useState(0);
   const [mobileCurrentQuality, setMobileCurrentQuality] = useState(0);
   const hlsAttemptStartedAtRef = React.useRef(0);
-  const pendingHistoryRef = React.useRef<any>(null);
-  const lastDatabaseHistorySyncRef = React.useRef(0);
+  const pendingHistoryRef = React.useRef<PendingHistorySync | null>(null);
+  const lastDatabaseHistorySyncRef = React.useRef({ ownerId: "", syncedAt: 0 });
+  const authUserRef = React.useRef(user);
+  const updateWatchHistoryRef = React.useRef(updateWatchHistory);
+  const previousHistoryOwnerRef = React.useRef<string | null>(null);
   const prefetchedManifestKeyRef = React.useRef("");
   const pendingFailoverTimeRef = React.useRef(0);
   const manualPlayerSelectionKeyRef = React.useRef("");
@@ -141,6 +164,9 @@ function WatchContent({ slug }: { slug: string }) {
   const [kkServers, setKkServers] = useState<Server[]>([]);
   const [fallbackSourceId, setFallbackSourceId] = useState<string>("");
   const [preferFallbackServers, setPreferFallbackServers] = useState(false);
+
+  authUserRef.current = user;
+  updateWatchHistoryRef.current = updateWatchHistory;
 
   const [showEpisodeDrawer, setShowEpisodeDrawer] = useState(false);
   const [showMobileServerPicker, setShowMobileServerPicker] = useState(false);
@@ -291,15 +317,27 @@ function WatchContent({ slug }: { slug: string }) {
 
   // 1. Fetch movie data from the source selected in admin settings.
   useEffect(() => {
+    const controller = new AbortController();
+    let disposed = false;
+
+    const rethrowIfAborted = (error: unknown) => {
+      if (controller.signal.aborted || (error as Error)?.name === "AbortError") {
+        throw error;
+      }
+    };
+
     async function fetchMovieDetail() {
       try {
         setLoading(true);
         setError(null);
+        setMovie(null);
         setPreferFallbackServers(false);
 
         // a. Kiểm tra xem phim có bị Block (Ẩn) hay không
         try {
-          const blockRes = await fetch(`${API_URL}/movies/check-blocked/${slug}`);
+          const blockRes = await fetch(`${API_URL}/movies/check-blocked/${slug}`, {
+            signal: controller.signal,
+          });
           if (blockRes.ok) {
             const blockData = await blockRes.json();
             if (blockData.isBlocked) {
@@ -307,7 +345,8 @@ function WatchContent({ slug }: { slug: string }) {
             }
           }
         } catch (blockErr: any) {
-          if (blockErr.message.includes("bản quyền")) {
+          rethrowIfAborted(blockErr);
+          if (blockErr?.message?.includes("bản quyền")) {
             throw blockErr;
           }
           console.error("Lỗi kiểm tra chặn phim:", blockErr);
@@ -315,7 +354,9 @@ function WatchContent({ slug }: { slug: string }) {
         // b. Load from the active movie source.
         let movieDetail: any = null;
         try {
-          const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${slug}`));
+          const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${slug}`), {
+            signal: controller.signal,
+          });
           if (res.ok) {
             const data = await res.json();
             if (data.status === true || data.status === "success") {
@@ -327,12 +368,15 @@ function WatchContent({ slug }: { slug: string }) {
             }
           }
         } catch (e) {
+          rethrowIfAborted(e);
           console.warn("Lỗi tải từ nguồn phim chính, thử route chi tiết v1...");
         }
 
         if (!movieDetail) {
           try {
-            const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${slug}`));
+            const res = await fetch(getProxyUrl(`${MOVIE_API_DOMAIN}/v1/api/phim/${slug}`), {
+              signal: controller.signal,
+            });
             if (res.ok) {
               const data = await res.json();
               if (data.status === true || data.status === "success") {
@@ -342,6 +386,7 @@ function WatchContent({ slug }: { slug: string }) {
               }
             }
           } catch (e) {
+            rethrowIfAborted(e);
             console.warn("Không tìm thấy phim trên route chi tiết v1...");
           }
         }
@@ -353,14 +398,16 @@ function WatchContent({ slug }: { slug: string }) {
 
           // The fallback source is fetched once by the source-merging effect.
           // Put it first only when the active source has no playable link.
-          setPreferFallbackServers(!hasValidLink);
+          if (!disposed) setPreferFallbackServers(!hasValidLink);
 
-          setMovie(movieDetail);
+          if (!disposed) setMovie(movieDetail);
 
         } else {
           // c. Nếu nguồn chính không có, thử tìm trên fallback hoặc Custom Movies
           try {
-            const fbRes = await fetch(getProxyUrl(`/phim/${slug}`, "fallback"));
+            const fbRes = await fetch(getProxyUrl(`/phim/${slug}`, "fallback"), {
+              signal: controller.signal,
+            });
             if (fbRes.ok) {
               const fbData = await fbRes.json();
               if ((fbData.status === true || fbData.status === "success" || fbData.status === "true") && fbData.movie) {
@@ -370,15 +417,18 @@ function WatchContent({ slug }: { slug: string }) {
                   sourceId: fbData._sourceId,
                   fallbackOnly: true,
                 };
-                setMovie(movieDetail);
+                if (!disposed) setMovie(movieDetail);
               }
             }
           } catch (e) {
+            rethrowIfAborted(e);
             console.warn("Không tìm thấy phim trên nguồn dự phòng");
           }
 
           if (!movieDetail) {
-            const customRes = await fetch(`${API_URL}/movies/custom/${slug}`);
+            const customRes = await fetch(`${API_URL}/movies/custom/${slug}`, {
+              signal: controller.signal,
+            });
             if (!customRes.ok) {
               throw new Error("Không tìm thấy thông tin phim.");
             }
@@ -418,19 +468,26 @@ function WatchContent({ slug }: { slug: string }) {
               ],
               isCustom: true,
             };
-            setMovie(adaptedMovie);
+            if (!disposed) setMovie(adaptedMovie);
           }
         }
       } catch (err: any) {
+        if (controller.signal.aborted || disposed || err?.name === "AbortError") return;
         console.error("Lỗi lấy chi tiết phim:", err);
         setError(err.message || "Đã xảy ra lỗi ngoài ý muốn.");
       } finally {
-        setLoading(false);
-        setSelectedEpisodeBatch(0);
+        if (!disposed) {
+          setLoading(false);
+          setSelectedEpisodeBatch(0);
+        }
       }
     }
 
     fetchMovieDetail();
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
   }, [slug]);
 
   // Tự động cuộn xuống khu vực bình luận nếu URL chứa hash #movie-comments
@@ -458,7 +515,10 @@ function WatchContent({ slug }: { slug: string }) {
   useEffect(() => {
     setKkServers([]);
     setFallbackSourceId("");
-    if (!slug || movie?.isCustom || movie?.fallbackOnly) return;
+    if (!slug || !movie || movie.isCustom || movie.fallbackOnly) return;
+    const controller = new AbortController();
+    let disposed = false;
+
     async function fetchKKPhimDetail() {
       try {
         const params = new URLSearchParams({
@@ -469,7 +529,8 @@ function WatchContent({ slug }: { slug: string }) {
           tmdbId: movie?.tmdb?.id ? String(movie.tmdb.id) : "",
         });
         const res = await fetch(
-          `${API_URL}/movies/resolved-detail/${slug}?${params.toString()}`
+          `${API_URL}/movies/resolved-detail/${slug}?${params.toString()}`,
+          { signal: controller.signal },
         );
         if (res.ok) {
           const data = await res.json();
@@ -485,15 +546,23 @@ function WatchContent({ slug }: { slug: string }) {
                 link_m3u8: ep.link_m3u8,
               })),
             }));
-            setKkServers(servers);
-            setFallbackSourceId(data._sourceId || "");
+            if (!disposed) {
+              setKkServers(servers);
+              setFallbackSourceId(data._sourceId || "");
+            }
           }
         }
       } catch (err) {
-        console.error("Lỗi lấy chi tiết phim từ KKPhim:", err);
+        if (!controller.signal.aborted && !disposed) {
+          console.error("Lỗi lấy chi tiết phim từ KKPhim:", err);
+        }
       }
     }
     fetchKKPhimDetail();
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
   }, [API_URL, slug, movie?.isCustom, movie?.fallbackOnly, movie?.name, movie?.origin_name, movie?.year, movie?.tmdb?.id]);
 
   useEffect(() => {
@@ -938,7 +1007,7 @@ function WatchContent({ slug }: { slug: string }) {
 
   // 2.5. HLS + Plyr.io dynamic initialization
   useEffect(() => {
-    if (!mounted) return;
+    if (!mounted || authLoading) return;
 
     let active = true;
     let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -975,6 +1044,7 @@ function WatchContent({ slug }: { slug: string }) {
         if (hlsRef.current) {
           destroyHlsInstance(hlsRef.current);
           hlsRef.current = null;
+          resetHlsMediaElement(video);
         }
 
         // Import động Plyr ở Client-side để tránh lỗi SSR "document is not defined"
@@ -1015,11 +1085,11 @@ function WatchContent({ slug }: { slug: string }) {
               }
               if (
                 data.type === Hls.ErrorTypes.MEDIA_ERROR &&
-                mediaRecoveryCount < 1
+                mediaRecoveryCount < 2
               ) {
+                const recoveryAttempt = mediaRecoveryCount;
                 mediaRecoveryCount += 1;
-                hls.recoverMediaError();
-                return;
+                if (recoverHlsMediaError(hls, recoveryAttempt)) return;
               }
               failureHandled = true;
               console.warn("[HLS] Fatal playback error, switching source...", data);
@@ -1044,8 +1114,9 @@ function WatchContent({ slug }: { slug: string }) {
             let savedTime = 0;
             try {
               let savedItem = null;
-              if (user && user.watchHistory) {
-                savedItem = findEpisodeHistory(user.watchHistory, slug, activeEpisode.name);
+              const currentUser = authUserRef.current;
+              if (currentUser?.watchHistory) {
+                savedItem = findEpisodeHistory(currentUser.watchHistory, slug, activeEpisode.name);
               } else {
                 const localHist = JSON.parse(localStorage.getItem("dlowphim_history") || "[]");
                 savedItem = findEpisodeHistory(localHist, slug, activeEpisode.name);
@@ -1197,8 +1268,9 @@ function WatchContent({ slug }: { slug: string }) {
           let savedTime = 0;
           try {
             let savedItem = null;
-            if (user && user.watchHistory) {
-              savedItem = findEpisodeHistory(user.watchHistory, slug, activeEpisode.name);
+            const currentUser = authUserRef.current;
+            if (currentUser?.watchHistory) {
+              savedItem = findEpisodeHistory(currentUser.watchHistory, slug, activeEpisode.name);
             } else {
               const localHist = JSON.parse(localStorage.getItem("dlowphim_history") || "[]");
               savedItem = findEpisodeHistory(localHist, slug, activeEpisode.name);
@@ -1273,8 +1345,9 @@ function WatchContent({ slug }: { slug: string }) {
         destroyHlsInstance(hlsRef.current);
         hlsRef.current = null;
       }
+      resetHlsMediaElement(videoRef.current);
     };
-  }, [playerType, activeEpisode?.link_m3u8, activeEpisode?.name, activeServerIndex, movie?.slug, streamRetryNonce, isMobileWatchViewport, mounted]);
+  }, [playerType, activeEpisode?.link_m3u8, activeEpisode?.name, activeServerIndex, movie?.slug, streamRetryNonce, isMobileWatchViewport, mounted, authLoading]);
 
   // 3. Fetch phim liên quan
   useEffect(() => {
@@ -1389,27 +1462,38 @@ function WatchContent({ slug }: { slug: string }) {
     };
 
     // Cập nhật state runtime (cả user.watchHistory và localStorage) thông qua AuthContext
-    updateWatchHistory(historyItem);
-    pendingHistoryRef.current = historyItem;
+    updateWatchHistoryRef.current(historyItem);
+
+    const currentUser = authUserRef.current;
+    const currentToken = currentUser ? Cookies.get("token") : undefined;
+    const pendingSync: PendingHistorySync | null = currentUser && currentToken
+      ? { item: historyItem, ownerId: currentUser.id, token: currentToken }
+      : null;
+    pendingHistoryRef.current = pendingSync;
 
     // Keep local progress responsive, but throttle database writes to 20 seconds.
+    const lastSync = lastDatabaseHistorySyncRef.current;
     const shouldSyncDatabase =
-      forceDatabase || Date.now() - lastDatabaseHistorySyncRef.current >= 20_000;
-    if (user && shouldSyncDatabase) {
+      forceDatabase ||
+      lastSync.ownerId !== currentUser?.id ||
+      Date.now() - lastSync.syncedAt >= 20_000;
+    if (pendingSync && shouldSyncDatabase) {
       try {
-        const token = Cookies.get("token");
         const response = await fetch(`${API_URL}/auth/history/update`, {
           method: "POST",
           keepalive: forceDatabase,
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${pendingSync.token}`,
           },
-          body: JSON.stringify(historyItem),
+          body: JSON.stringify(pendingSync.item),
         });
         if (response.ok) {
-          lastDatabaseHistorySyncRef.current = Date.now();
-          if (pendingHistoryRef.current === historyItem) {
+          lastDatabaseHistorySyncRef.current = {
+            ownerId: pendingSync.ownerId,
+            syncedAt: Date.now(),
+          };
+          if (pendingHistoryRef.current === pendingSync) {
             pendingHistoryRef.current = null;
           }
         }
@@ -1419,24 +1503,28 @@ function WatchContent({ slug }: { slug: string }) {
     }
   };
 
-  useEffect(() => {
-    const flushPendingHistory = () => {
-      const pendingItem = pendingHistoryRef.current;
-      if (!user || !pendingItem) return;
-      const token = Cookies.get("token");
-      if (!token) return;
-      void fetch(`${API_URL}/auth/history/update`, {
-        method: "POST",
-        keepalive: true,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(pendingItem),
-      });
+  const flushPendingHistory = React.useCallback(() => {
+    const pendingSync = pendingHistoryRef.current;
+    if (!pendingSync) return;
+    void fetch(`${API_URL}/auth/history/update`, {
+      method: "POST",
+      keepalive: true,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${pendingSync.token}`,
+      },
+      body: JSON.stringify(pendingSync.item),
+    });
+    if (pendingHistoryRef.current === pendingSync) {
       pendingHistoryRef.current = null;
-      lastDatabaseHistorySyncRef.current = Date.now();
+    }
+    lastDatabaseHistorySyncRef.current = {
+      ownerId: pendingSync.ownerId,
+      syncedAt: Date.now(),
     };
+  }, [API_URL]);
+
+  useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") flushPendingHistory();
     };
@@ -1447,19 +1535,37 @@ function WatchContent({ slug }: { slug: string }) {
       window.removeEventListener("pagehide", flushPendingHistory);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [API_URL, user]);
+  }, [flushPendingHistory]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    const currentOwnerId = user?.id || null;
+    const previousOwnerId = previousHistoryOwnerRef.current;
+    if (previousOwnerId === currentOwnerId) return;
+
+    const pendingSync = pendingHistoryRef.current;
+    if (pendingSync?.ownerId === previousOwnerId) {
+      flushPendingHistory();
+    } else if (pendingSync && !previousOwnerId) {
+      pendingHistoryRef.current = null;
+    }
+    lastHistorySavedTime.current = 0;
+    lastDatabaseHistorySyncRef.current = { ownerId: currentOwnerId || "", syncedAt: 0 };
+    previousHistoryOwnerRef.current = currentOwnerId;
+  }, [authLoading, flushPendingHistory, user?.id]);
 
   // Embed is cross-origin: record the latest episode, but never invent precise progress.
   const embedProgressRef = React.useRef<number>(0);
   useEffect(() => {
-    if (playerType !== "embed" || !movie || !activeEpisode) return;
+    if (authLoading || playerType !== "embed" || !movie || !activeEpisode) return;
 
     // Đọc vị trí xem trước đó để làm điểm xuất phát đếm tiếp
     let savedTime = 0;
     try {
       let savedItem = null;
-      if (user && user.watchHistory) {
-        savedItem = findEpisodeHistory(user.watchHistory, slug, activeEpisode.name);
+      const currentUser = authUserRef.current;
+      if (currentUser?.watchHistory) {
+        savedItem = findEpisodeHistory(currentUser.watchHistory, slug, activeEpisode.name);
       } else {
         const localHist = JSON.parse(localStorage.getItem("dlowphim_history") || "[]");
         savedItem = findEpisodeHistory(localHist, slug, activeEpisode.name);
@@ -1471,7 +1577,7 @@ function WatchContent({ slug }: { slug: string }) {
 
     embedProgressRef.current = savedTime;
     void saveWatchHistory(savedTime, 0, false, "embed");
-  }, [playerType, activeEpisode?.name, movie?.slug]);
+  }, [authLoading, playerType, activeEpisode?.name, movie?.slug, user?.id]);
 
   const handleHlsVideoEnded = () => {
     if (autoplayNext) {

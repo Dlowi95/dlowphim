@@ -8,6 +8,7 @@ import {
   shouldPrefetchNextManifest,
 } from "./watchPlaybackFlow.ts";
 import { isPlaybackOriginGloballyBlocked } from "./playbackHealth.ts";
+import { HLS_LIBRARY_VERSION, recoverHlsMediaError } from "./hlsLoader.ts";
 
 test("restores the same episode and time after PhimAPI fails over to OPhim", () => {
   const ophimEpisodes = [{ name: "1" }, { name: "02" }, { name: "03" }];
@@ -49,4 +50,18 @@ test("honors a temporary global CDN block but allows it again after expiry", () 
     blockedUntil: Date.now() - 1,
     samples: 4,
   }]), false);
+});
+
+test("uses the stable HLS release and bounds media recovery with an audio codec swap", () => {
+  const calls: string[] = [];
+  const hls = {
+    recoverMediaError: () => calls.push("recover"),
+    swapAudioCodec: () => calls.push("swap-audio-codec"),
+  };
+
+  assert.equal(HLS_LIBRARY_VERSION, "1.6.17");
+  assert.equal(recoverHlsMediaError(hls, 0), true);
+  assert.equal(recoverHlsMediaError(hls, 1), true);
+  assert.equal(recoverHlsMediaError(hls, 2), false);
+  assert.deepEqual(calls, ["recover", "swap-audio-codec", "recover"]);
 });
