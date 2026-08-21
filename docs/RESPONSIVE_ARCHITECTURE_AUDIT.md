@@ -297,6 +297,29 @@ Bằng chứng runtime cập nhật ngày `2026-08-20`:
 
 Giới hạn còn lại: E2E hiện kiểm chứng auth-loading ban đầu và ownership token/pending bằng cấu trúc lifecycle; thao tác đăng nhập rồi đổi trực tiếp sang một tài khoản thứ hai trong cùng tab chưa có fixture UI chuyên biệt. Đây không còn là blocker production vì listener player dùng ref hiện hành, pending sync mang token/owner bất biến và cleanup đổi owner đã được khóa trong code.
 
+### Phòng xem chung `/watch-together/room/[roomId]`
+
+**Trạng thái: Đạt production trong hợp đồng Embed mặc định; HLS là nguồn dự phòng.**
+
+- `app/watch-together/room/[roomId]/page.tsx` tiếp tục là owner duy nhất của dữ liệu phòng, tập phim, chat, player và Socket.IO. Mobile chỉ tách `MobileRoomHeader` thuần trình bày; không tạo controller, request, iframe/video hoặc socket thứ hai.
+- Nguồn phát ưu tiên `link_embed` ở đúng tập đang chọn và chỉ chuyển HLS khi tập đó không có Embed. Do iframe cross-origin không cho điều khiển thời gian phát từ trang cha, đồng bộ phòng, chat và đổi tập vẫn dùng chung socket hiện hành nhưng trang cha không giả lập đồng bộ play/pause/seek cho Embed.
+- Effect tải phòng có `AbortController` cùng cờ `disposed` bao phủ room, access status, message history, nguồn chính/fallback và custom movie. Đổi room/unmount hủy chuỗi cũ và chặn response cũ ghi state mới.
+- Socket không còn bị dựng lại khi `playerType`, trạng thái phòng hoặc mốc bắt đầu thay đổi. Callback/heartbeat đọc player và trạng thái bắt đầu qua ref; cleanup vẫn disconnect socket cũ trước khi owner effect thay đổi.
+- Dưới `768px`, header phòng dùng bố cục riêng gọn, tên giới hạn hai dòng, mã phòng/copy và hành động host không ép vỡ hàng. Player và chat dùng khoảng cách nhỏ hơn; chat cao `clamp(360px, 52dvh, 460px)`, tự cuộn nội bộ và giữ ô nhập luôn trong card. Desktop từ `768px` tiếp tục dùng nguyên header và layout hai cột cũ.
+- Avatar chat lỗi hoặc rỗng chuyển về `/images/avatars/default.png` với loop guard, không còn phụ thuộc ảnh mặc định bên ngoài.
+
+Bằng chứng cập nhật ngày `2026-08-21`:
+
+| Nhóm | Kết quả | Bằng chứng |
+| --- | --- | --- |
+| Breakpoint/overflow | Đạt | Runtime tại `360`, `430`, `767`, `768`, `1440px` đều có `scrollWidth === clientWidth` và không overflow ngang. `390x844` xác nhận header, player, chat và input nằm đúng luồng mobile. |
+| Player ownership | Đạt | Mỗi breakpoint có đúng `1` iframe Embed và `0` video HLS cho phòng có cả nguồn Embed; chỉ một tiêu đề responsive có kích thước hiển thị tại mỗi phía `767/768`. |
+| Desktop impact | Đạt | `1440x1000` giữ header desktop, player trái và chat phải; mobile header có kích thước bằng `0` và không ảnh hưởng layout desktop. |
+| Lifecycle/socket | Đạt | Room fetch có abort/stale guard; socket effect không phụ thuộc các state player/phòng thường xuyên đổi. Backend room service/gateway có 19/19 test qua. |
+| Kiểm tra mã | Đạt | Frontend TypeScript thành công, 8/8 test episode/playback qua; backend room tests 19/19 qua; frontend và backend production build hoàn tất. Lần kiểm tra gần nhất giữ route room ở `18.7 kB`, First Load JS `125 kB`. |
+
+Giới hạn kỹ thuật: Embed cross-origin không thể cung cấp đồng bộ điều khiển phát chính xác như HLS. Cảnh báo trực quan đã được bỏ khỏi player để không che nội dung trên cả mobile và desktop; nếu một tập không có Embed, HLS fallback vẫn dùng cơ chế sync player hiện hành.
+
 ### Các route còn lại
 
 Route `/watch/[slug]` đã được nâng lên **Đạt production** sau failure injection, auth gating và kiểm tra hồi quy nêu trên. Audit production riêng của `/phim-bo` và `/phim-le` đã hoàn tất trong Phase 2 nêu trên.

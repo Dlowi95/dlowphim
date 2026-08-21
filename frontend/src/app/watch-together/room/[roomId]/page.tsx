@@ -16,6 +16,7 @@ import { io } from "socket.io-client";
 import { getResilientSocketOptions } from "@/lib/socket-options";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 import { destroyHlsInstance, loadHlsLibrary, WATCH_TOGETHER_HLS_CONFIG } from "@/utils/hlsLoader";
+import MobileRoomHeader from "./MobileRoomHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -200,7 +201,8 @@ export default function RoomPage() {
   // Movie stream states
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [activeEpisodeIndex, setActiveEpisodeIndex] = useState(0);
-  const [playerType, setPlayerType] = useState<"hls" | "embed">("hls");
+  // Phòng xem chung dùng Embed theo hợp đồng sản phẩm; HLS chỉ là fallback.
+  const [playerType, setPlayerType] = useState<"hls" | "embed">("embed");
 
   // Chat/Messages states
   const [messages, setMessages] = useState<Message[]>([]);
@@ -220,6 +222,8 @@ export default function RoomPage() {
   const serverClockOffsetRef = useRef(0);
   const activeEpisodeIndexRef = useRef(0);
   const episodesRef = useRef<Episode[]>([]);
+  const playerTypeRef = useRef<"hls" | "embed">("embed");
+  const roomStartedRef = useRef(false);
   const hlsNetworkRetriesRef = useRef(0);
   const hlsMediaRetriesRef = useRef(0);
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
@@ -227,7 +231,20 @@ export default function RoomPage() {
   useEffect(() => {
     activeEpisodeIndexRef.current = activeEpisodeIndex;
     episodesRef.current = episodes;
+    playerTypeRef.current = playerType;
+  }, [activeEpisodeIndex, episodes, playerType]);
+
+  useEffect(() => {
+    const selectedEpisode = episodes[activeEpisodeIndex];
+    if (!selectedEpisode) return;
+    setPlayerType(selectedEpisode.link_embed ? "embed" : "hls");
   }, [activeEpisodeIndex, episodes]);
+
+  useEffect(() => {
+    roomStartedRef.current = Boolean(
+      room && (room.status === "live" || room.status === "active" || room.startedAt),
+    );
+  }, [room?.status, room?.startedAt]);
 
   // States quản lý chiều cao đồng bộ giữa trình phát và chatbox
   const [playerHeight, setPlayerHeight] = useState<number>(550);
@@ -274,6 +291,8 @@ export default function RoomPage() {
   // Lấy thông tin phòng và danh sách tập phim
   useEffect(() => {
     if (!roomId) return;
+    const controller = new AbortController();
+    let disposed = false;
 
     async function fetchRoomAndMovie() {
       try {
@@ -290,6 +309,7 @@ export default function RoomPage() {
         if (guestDeviceId) accessHeaders["X-Guest-Device-Id"] = guestDeviceId;
         const roomRes = await fetch(`${API_URL}/rooms/${roomId}`, {
           headers: accessHeaders,
+          signal: controller.signal,
         });
         if (roomRes.status === 403) {
           const accessError = await roomRes.json().catch(() => null);
@@ -297,16 +317,18 @@ export default function RoomPage() {
             sessionStorage.removeItem(`dlowphim_room_access:${roomId}`);
             const statusResponse = await fetch(
               `${API_URL}/rooms/${roomId}/access-status`,
-              { headers: accessHeaders },
+              { headers: accessHeaders, signal: controller.signal },
             );
             const accessStatus = await statusResponse.json().catch(() => null);
             if (accessStatus?.locked) {
               router.replace("/watch-together?private=locked");
               return;
             }
-            setPrivateAccessRequired(true);
-            setPinError(null);
-            setLoading(false);
+            if (!disposed) {
+              setPrivateAccessRequired(true);
+              setPinError(null);
+              setLoading(false);
+            }
             return;
           }
         }
@@ -314,6 +336,7 @@ export default function RoomPage() {
           throw new Error("Phòng xem chung không tồn tại hoặc đã bị đóng.");
         }
         const roomData = await roomRes.json();
+        if (disposed) return;
         if (roomData.serverTime) {
           serverClockOffsetRef.current =
             new Date(roomData.serverTime).getTime() - Date.now();
@@ -338,6 +361,7 @@ export default function RoomPage() {
         try {
           const messagesRes = await fetch(`${API_URL}/rooms/${roomId}/messages`, {
             headers: accessHeaders,
+            signal: controller.signal,
           });
           if (messagesRes.ok) {
             const msgsData = await messagesRes.json();
@@ -351,19 +375,21 @@ export default function RoomPage() {
               time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               createdAt: m.createdAt,
             }));
-            setMessages([welcomeMsg, ...formattedMsgs]);
+            if (!disposed) setMessages([welcomeMsg, ...formattedMsgs]);
           } else {
-            setMessages([welcomeMsg]);
+            if (!disposed) setMessages([welcomeMsg]);
           }
         } catch (msgErr) {
+          if (controller.signal.aborted || disposed) return;
           console.error("Lỗi lấy lịch sử chat:", msgErr);
           setMessages([welcomeMsg]);
         }
 
         // MỞ KHÓA LOADING NGAY TẠI ĐÂY: Cho phép Socket.io kết nối ngay lập tức!
-        setLoading(false);
+        if (!disposed) setLoading(false);
 
         const handleLoadEpisodes = (episodesList: any[]) => {
+          if (disposed) return;
           setEpisodes(episodesList);
 
           // Tìm tập phim đang phát đã lưu trên database hoặc trên URL để khôi phục
@@ -378,13 +404,16 @@ export default function RoomPage() {
           const selectedEpisode = episodesList[resolvedIndex];
           setActiveEpisodeIndex(resolvedIndex);
 
-          // Chọn player theo đúng tập đang mở, không dựa vào HLS của tập khác.
-          setPlayerType(selectedEpisode?.link_m3u8 ? "hls" : "embed");
+          // Embed là nguồn mặc định của phòng xem chung; HLS chỉ dùng khi tập
+          // hiện tại không cung cấp embed.
+          setPlayerType(selectedEpisode?.link_embed ? "embed" : "hls");
         };
 
         const fetchCustomMovie = async (slug: string) => {
           try {
-            const customRes = await fetch(`${API_URL}/movies/custom/${slug}`);
+            const customRes = await fetch(`${API_URL}/movies/custom/${slug}`, {
+              signal: controller.signal,
+            });
             if (customRes.ok) {
               const customData = await customRes.json();
               const customEpisodes = [
@@ -399,16 +428,18 @@ export default function RoomPage() {
               handleLoadEpisodes(customEpisodes);
             }
           } catch (e) {
+            if (controller.signal.aborted || disposed) return;
             console.error("Lỗi tải thông tin phim Custom:", e);
           }
         };
 
-        // 3. So sánh server từ nguồn active và fallback, ưu tiên server có HLS.
+        // 3. So sánh server từ nguồn active và fallback, ưu tiên Embed.
         (async () => {
           const fetchSourceServers = async (source: "active" | "fallback") => {
             try {
               const response = await fetch(
-                getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${roomData.movieSlug}`, source)
+                getProxyUrl(`${MOVIE_API_DOMAIN}/phim/${roomData.movieSlug}`, source),
+                { signal: controller.signal },
               );
               if (!response.ok) return [];
               const movieData = await response.json();
@@ -437,9 +468,9 @@ export default function RoomPage() {
             .filter((candidate) => candidate.episodes.length > 0)
             .sort((left, right) => {
               const score = (candidate: { episodes: Episode[] }) =>
-                candidate.episodes.some((episode) => episode.link_m3u8)
+                candidate.episodes.some((episode) => episode.link_embed)
                   ? 2
-                  : candidate.episodes.some((episode) => episode.link_embed)
+                  : candidate.episodes.some((episode) => episode.link_m3u8)
                     ? 1
                     : 0;
               return score(right) - score(left) || left.index - right.index;
@@ -451,18 +482,24 @@ export default function RoomPage() {
             await fetchCustomMovie(roomData.movieSlug);
           }
         })().catch((movieError) => {
+          if (controller.signal.aborted || disposed) return;
           console.warn("Không tìm thấy nguồn phòng xem chung:", movieError);
-          fetchCustomMovie(roomData.movieSlug);
+          void fetchCustomMovie(roomData.movieSlug);
         });
 
       } catch (err: any) {
+        if (controller.signal.aborted || disposed) return;
         console.error(err);
         setError(err.message || "Lỗi tải phòng xem chung.");
         setLoading(false);
       }
     }
 
-    fetchRoomAndMovie();
+    void fetchRoomAndMovie();
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
   }, [roomId, accessRevision]);
 
   const handleVerifyPrivatePin = async (event: React.FormEvent) => {
@@ -739,7 +776,7 @@ export default function RoomPage() {
       if (!isHost) applyRemotePlaybackState(scheduledState);
 
       const video = videoRef.current;
-      if (isHost && video && playerType === "hls") {
+      if (isHost && video && playerTypeRef.current === "hls") {
         isSyncingRef.current = true;
         if (elapsedSeconds > 1) video.currentTime = elapsedSeconds;
         video.play().then(() => {
@@ -795,7 +832,7 @@ export default function RoomPage() {
       if (isHost) return;
       console.log("[Socket] Received sync_state snapshot:", state);
 
-      if (room?.status === "live" || room?.status === "active" || room?.startedAt) {
+      if (roomStartedRef.current) {
         setHasMovieStarted(true);
       }
 
@@ -817,7 +854,7 @@ export default function RoomPage() {
     });
 
     const heartbeatInterval = window.setInterval(() => {
-      if (!isHost || !socket.connected || playerType !== "hls") return;
+      if (!isHost || !socket.connected || playerTypeRef.current !== "hls") return;
       const video = videoRef.current;
       if (!video || !Number.isFinite(video.currentTime)) return;
       const episodeIndex = activeEpisodeIndexRef.current;
@@ -836,7 +873,7 @@ export default function RoomPage() {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [room?.roomId, room?.startTime, room?.status, room?.startedAt, user?.id, user?.displayName, user?.avatar, isHost, loading, authLoading, router, playerType, applyRemotePlaybackState]);
+  }, [room?.roomId, user?.id, user?.displayName, user?.avatar, isHost, loading, authLoading, router, applyRemotePlaybackState]);
 
   useEffect(() => {
     const requestFreshSnapshot = () => {
@@ -1254,11 +1291,25 @@ export default function RoomPage() {
 
   return (
     <>
-      <div className="min-h-screen bg-[#07070a] text-white pt-24 pb-12 px-4 md:px-6 relative select-none">
-        <div className="max-w-[1550px] mx-auto space-y-6 relative z-10">
+      <div className="min-h-screen bg-[#07070a] px-3 pb-8 pt-5 text-white md:px-6 md:pb-12 md:pt-24 relative select-none">
+        <div className="max-w-[1550px] mx-auto space-y-4 md:space-y-6 relative z-10">
+
+          <MobileRoomHeader
+            roomName={room.roomName}
+            roomId={room.roomId}
+            movieName={cleanMovieName(room.movieName)}
+            isPrivate={room.isPrivate}
+            isHost={Boolean(isHost)}
+            privatePin={hostPrivatePin}
+            isScheduled={room.status === "scheduled"}
+            copied={codeCopied}
+            onBack={() => router.push(`/watch/${room.movieSlug}`)}
+            onCopy={handleCopyRoomId}
+            onClose={handleCloseRoom}
+          />
 
           {/* Header thông tin phòng */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-900 pb-4">
+          <div className="hidden md:flex md:flex-row md:items-center justify-between gap-4 border-b border-zinc-900 pb-4">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => router.push(`/watch/${room.movieSlug}`)}
@@ -1316,13 +1367,13 @@ export default function RoomPage() {
           </div>
 
           {/* Layout 2 cột: Trình phát & Chatbox */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-12 lg:gap-6">
 
             {/* CỘT TRÁI (LỚN): Video Player */}
             <div className="lg:col-span-8">
 
               {/* Khung Player */}
-              <div className="w-full overflow-hidden bg-black rounded-3xl shadow-[0_15px_45px_rgba(0,0,0,0.85)] relative">
+              <div className="relative w-full overflow-hidden rounded-2xl bg-black shadow-[0_15px_45px_rgba(0,0,0,0.85)] md:rounded-3xl">
                 <div
                   ref={playerContainerRef}
                   className={`relative bg-black overflow-hidden group ${isFullscreen
@@ -1449,7 +1500,6 @@ export default function RoomPage() {
                       <EmbedCompatibilityPlayer
                         src={activeEp.link_embed}
                         title="DlowPhim Watch Together Player"
-                        notice="Nguồn Embed không hỗ trợ đồng bộ play, pause và tua chính xác giữa các thành viên."
                       />
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-zinc-900">
@@ -1596,12 +1646,12 @@ export default function RoomPage() {
             {/* CỘT PHẢI (NHỎ): Chatbox Realtime */}
             <div className="lg:col-span-4">
               <div
-                style={{ height: isDesktop ? `${playerHeight}px` : "480px" }}
-                className="bg-[#161622]/95 backdrop-blur-md border border-zinc-800/80 rounded-3xl flex flex-col overflow-hidden relative shadow-2xl shadow-black/80 transition-all duration-150"
+                style={{ height: isDesktop ? `${playerHeight}px` : "clamp(360px, 52dvh, 460px)" }}
+                className="relative flex flex-col overflow-hidden rounded-2xl border border-zinc-800/80 bg-[#161622]/95 shadow-2xl shadow-black/80 backdrop-blur-md transition-all duration-150 md:rounded-3xl"
               >
 
                 {/* Chatbox Header */}
-                <div className="p-4 border-b border-zinc-900 bg-gradient-to-b from-zinc-950/60 to-transparent flex items-center gap-2 select-none">
+                <div className="flex items-center gap-2 border-b border-zinc-900 bg-gradient-to-b from-zinc-950/60 to-transparent p-3 select-none md:p-4">
                   <MessageSquare size={16} className="text-pink-500" />
                   <span className="text-xs font-black text-zinc-300 uppercase tracking-wider">Hộp thoại xem chung</span>
 
@@ -1626,7 +1676,7 @@ export default function RoomPage() {
                 </div>
 
                 {/* List tin nhắn */}
-                <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 text-left scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
+                <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-3 text-left scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent md:p-4">
                   {messages.map((msg, index) => {
                     if (msg.isSystem) {
                       return (
@@ -1679,7 +1729,7 @@ export default function RoomPage() {
                     return (
                       <div
                         key={msg.id}
-                        className={`flex items-end gap-2.5 max-w-[85%] animate-in fade-in duration-200 ${index > 0 && !isContinuation ? "mt-3" : "mt-1"} ${isMe ? "ml-auto flex-row-reverse" : ""
+                        className={`flex items-end gap-2.5 max-w-[92%] md:max-w-[85%] animate-in fade-in duration-200 ${index > 0 && !isContinuation ? "mt-3" : "mt-1"} ${isMe ? "ml-auto flex-row-reverse" : ""
                           }`}
                       >
                         {/* Avatar */}
@@ -1691,9 +1741,16 @@ export default function RoomPage() {
                             : "border-zinc-850/30"
                             }`}>
                             <img
-                              src={msg.avatar || "https://img.ophim.live/uploads/movies/default-avatar.png"}
+                              src={msg.avatar || "/images/avatars/default.png"}
                               alt={msg.sender}
                               className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                              onError={(event) => {
+                                const fallback = "/images/avatars/default.png";
+                                if (event.currentTarget.dataset.fallbackApplied) return;
+                                event.currentTarget.dataset.fallbackApplied = "true";
+                                event.currentTarget.src = fallback;
+                              }}
                             />
                           </div>
                         )}
@@ -1737,7 +1794,7 @@ export default function RoomPage() {
                 )}
 
                 {/* Input gửi tin nhắn */}
-                <form onSubmit={handleSendMessage} className="p-3.5 border-t border-zinc-900/45 bg-zinc-950/80 backdrop-blur-md flex items-center gap-2">
+                <form onSubmit={handleSendMessage} className="flex items-center gap-2 border-t border-zinc-900/45 bg-zinc-950/80 p-3 backdrop-blur-md md:p-3.5">
                   <input
                     type="text"
                     required
@@ -1769,7 +1826,7 @@ export default function RoomPage() {
           {/* Dòng danh sách tập phim phía dưới player */}
           {episodes.length > 1 && (
             <div className="lg:w-8/12 pr-0 lg:pr-3 mt-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="bg-[#0e0f17]/40 p-5 rounded-2xl space-y-3.5 text-left border border-zinc-900/60 shadow-lg">
+              <div className="space-y-3.5 rounded-2xl border border-zinc-900/60 bg-[#0e0f17]/40 p-3 text-left shadow-lg md:p-5">
                 <span className="block text-xs font-black text-zinc-400 uppercase tracking-wider select-none">
                   Danh sách tập phim xem chung:
                 </span>
