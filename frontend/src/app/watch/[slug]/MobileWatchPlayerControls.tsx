@@ -235,14 +235,13 @@ export default function MobileWatchPlayerControls({
 
   useEffect(() => {
     if (!settingsView) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    document.body.classList.add("dlowphim-watch-settings-open");
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setSettingsView(null);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      document.body.classList.remove("dlowphim-watch-settings-open");
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [settingsView]);

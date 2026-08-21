@@ -313,6 +313,12 @@ input[type="range"].volume-slider::-moz-range-thumb:hover {
 }
 
 /* Cinema mode owns the viewport: app chrome returns when the mode is closed. */
+body.dlowphim-cinema-mode,
+body.dlowphim-watch-settings-open,
+body.dlowphim-watch-episodes-open {
+  overflow: hidden !important;
+}
+
 body.dlowphim-cinema-mode [data-app-mobile-chrome="true"],
 body.dlowphim-cinema-mode [data-app-desktop-chrome="true"] {
   display: none !important;

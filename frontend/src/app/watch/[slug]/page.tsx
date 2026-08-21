@@ -152,6 +152,7 @@ function WatchContent({ slug }: { slug: string }) {
   const [mobileCurrentQuality, setMobileCurrentQuality] = useState(0);
   const hlsAttemptStartedAtRef = React.useRef(0);
   const pendingHistoryRef = React.useRef<PendingHistorySync | null>(null);
+  const historySyncInFlightRef = React.useRef<PendingHistorySync | null>(null);
   const lastDatabaseHistorySyncRef = React.useRef({ ownerId: "", syncedAt: 0 });
   const authUserRef = React.useRef(user);
   const updateWatchHistoryRef = React.useRef(updateWatchHistory);
@@ -268,15 +269,12 @@ function WatchContent({ slug }: { slug: string }) {
 
   useEffect(() => {
     if (!cinemaMode) return;
-    const previousOverflow = document.body.style.overflow;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setCinemaMode(false);
     };
-    document.body.style.overflow = "hidden";
     document.body.classList.add("dlowphim-cinema-mode");
     window.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
       document.body.classList.remove("dlowphim-cinema-mode");
       window.removeEventListener("keydown", handleKeyDown);
     };
@@ -847,14 +845,13 @@ function WatchContent({ slug }: { slug: string }) {
 
   useEffect(() => {
     if (!showEpisodeDrawer || !isMobileWatchViewport) return;
-    const previousOverflow = document.body.style.overflow;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setShowEpisodeDrawer(false);
     };
-    document.body.style.overflow = "hidden";
+    document.body.classList.add("dlowphim-watch-episodes-open");
     window.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      document.body.classList.remove("dlowphim-watch-episodes-open");
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isMobileWatchViewport, showEpisodeDrawer]);
@@ -1011,6 +1008,8 @@ function WatchContent({ slug }: { slug: string }) {
 
     let active = true;
     let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+    let nativeErrorHandler: (() => void) | null = null;
+    let nativeMetadataHandler: (() => void) | null = null;
 
     if (playerType === "hls" && activeEpisode?.link_m3u8) {
       setStreamStatus((current) => current === "recovering" ? current : "loading");
@@ -1049,6 +1048,7 @@ function WatchContent({ slug }: { slug: string }) {
 
         // Import động Plyr ở Client-side để tránh lỗi SSR "document is not defined"
         const PlyrClass = (await import("plyr")).default;
+        if (!active) return;
 
         if (Hls && Hls.isSupported()) {
           const hls = new Hls(WATCH_HLS_CONFIG);
@@ -1102,6 +1102,7 @@ function WatchContent({ slug }: { slug: string }) {
 
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             if (!active) return;
+            if (plyrRef.current) return;
             const manifestLatency = Math.max(
               1,
               Math.round(performance.now() - hlsAttemptStartedAtRef.current)
@@ -1251,18 +1252,23 @@ function WatchContent({ slug }: { slug: string }) {
           // Dành cho Safari gốc
           hlsAttemptStartedAtRef.current = performance.now();
           video.src = activeEpisode.link_m3u8;
-          video.addEventListener("error", () => {
+          nativeErrorHandler = () => {
+            if (!active || failureHandled) return;
+            failureHandled = true;
             reportPlaybackFailure("native-network-error");
             handleStreamFailure();
-          }, { once: true });
+          };
+          nativeMetadataHandler = () => {
+            if (!active) return;
+            reportPlaybackSuccess(
+              Math.max(1, Math.round(performance.now() - hlsAttemptStartedAtRef.current))
+            );
+          };
+          video.addEventListener("error", nativeErrorHandler, { once: true });
           video.addEventListener(
             "loadedmetadata",
-            () => {
-              reportPlaybackSuccess(
-                Math.max(1, Math.round(performance.now() - hlsAttemptStartedAtRef.current))
-              );
-            },
-            { once: true }
+            nativeMetadataHandler,
+            { once: true },
           );
 
           let savedTime = 0;
@@ -1335,6 +1341,13 @@ function WatchContent({ slug }: { slug: string }) {
     return () => {
       active = false;
       if (recoveryTimer) clearTimeout(recoveryTimer);
+      const currentVideo = videoRef.current;
+      if (currentVideo && nativeErrorHandler) {
+        currentVideo.removeEventListener("error", nativeErrorHandler);
+      }
+      if (currentVideo && nativeMetadataHandler) {
+        currentVideo.removeEventListener("loadedmetadata", nativeMetadataHandler);
+      }
       if (plyrRef.current) {
         const playerToDestroy = plyrRef.current;
         try { playerToDestroy.destroy(); } catch (e) { }
@@ -1477,7 +1490,12 @@ function WatchContent({ slug }: { slug: string }) {
       forceDatabase ||
       lastSync.ownerId !== currentUser?.id ||
       Date.now() - lastSync.syncedAt >= 20_000;
-    if (pendingSync && shouldSyncDatabase) {
+    if (
+      pendingSync &&
+      shouldSyncDatabase &&
+      historySyncInFlightRef.current !== pendingSync
+    ) {
+      historySyncInFlightRef.current = pendingSync;
       try {
         const response = await fetch(`${API_URL}/auth/history/update`, {
           method: "POST",
@@ -1488,24 +1506,27 @@ function WatchContent({ slug }: { slug: string }) {
           },
           body: JSON.stringify(pendingSync.item),
         });
-        if (response.ok) {
+        if (response.ok && pendingHistoryRef.current === pendingSync) {
           lastDatabaseHistorySyncRef.current = {
             ownerId: pendingSync.ownerId,
             syncedAt: Date.now(),
           };
-          if (pendingHistoryRef.current === pendingSync) {
-            pendingHistoryRef.current = null;
-          }
+          pendingHistoryRef.current = null;
         }
       } catch (err) {
         console.error("Lỗi đồng bộ lịch sử xem:", err);
+      } finally {
+        if (historySyncInFlightRef.current === pendingSync) {
+          historySyncInFlightRef.current = null;
+        }
       }
     }
   };
 
   const flushPendingHistory = React.useCallback(() => {
     const pendingSync = pendingHistoryRef.current;
-    if (!pendingSync) return;
+    if (!pendingSync || historySyncInFlightRef.current === pendingSync) return;
+    historySyncInFlightRef.current = pendingSync;
     void fetch(`${API_URL}/auth/history/update`, {
       method: "POST",
       keepalive: true,
@@ -1514,14 +1535,20 @@ function WatchContent({ slug }: { slug: string }) {
         Authorization: `Bearer ${pendingSync.token}`,
       },
       body: JSON.stringify(pendingSync.item),
-    });
-    if (pendingHistoryRef.current === pendingSync) {
+    }).then((response) => {
+      if (!response.ok || pendingHistoryRef.current !== pendingSync) return;
       pendingHistoryRef.current = null;
-    }
-    lastDatabaseHistorySyncRef.current = {
-      ownerId: pendingSync.ownerId,
-      syncedAt: Date.now(),
-    };
+      lastDatabaseHistorySyncRef.current = {
+        ownerId: pendingSync.ownerId,
+        syncedAt: Date.now(),
+      };
+    }).catch(() => {
+      // Keep the pending item so a later lifecycle event can retry it.
+    }).finally(() => {
+      if (historySyncInFlightRef.current === pendingSync) {
+        historySyncInFlightRef.current = null;
+      }
+    });
   }, [API_URL]);
 
   useEffect(() => {

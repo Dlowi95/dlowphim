@@ -57,6 +57,7 @@ async function mockBackend(
         };
       } else status = 401;
     }
+    else if (url.pathname === "/auth/history/update") body = { watchHistory: [] };
     else if (url.pathname.startsWith("/notifications/")) body = { notifications: [], unreadCount: 0 };
     else if (url.pathname.startsWith("/movies/logo/")) body = {};
     else if (url.pathname.startsWith("/movies/credits/")) body = [];
@@ -228,6 +229,51 @@ test("HLS chỉ khởi tạo sau khi auth hiện hành tải xong", async ({ pag
   await expect.poll(() => page.evaluate(
     () => (window as typeof window & { __watchHlsLoadCount?: number }).__watchHlsLoadCount || 0,
   )).toBeGreaterThan(0);
+});
+
+test("Lịch sử embed chỉ đồng bộ sau khi auth hiện hành tải xong", async ({ page }) => {
+  const historyRequests: Array<{ authorization: string; body: Record<string, unknown> }> = [];
+  await mockBackend(page, [{
+    movieSlug: movie.slug,
+    movieName: movie.name,
+    episodeName: "Tập 01",
+    episodeKey: "1",
+    currentTime: 30,
+    duration: 0,
+    progressMode: "embed",
+    updatedAt: new Date().toISOString(),
+  }], movie, 800);
+  await page.addInitScript(() => {
+    document.cookie = "token=e2e-token; path=/";
+  });
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname !== "/auth/history/update") return;
+    historyRequests.push({
+      authorization: request.headers().authorization || "",
+      body: request.postDataJSON(),
+    });
+  });
+
+  await page.goto("/watch/phim-kiem-thu-e2e?ep=T%E1%BA%ADp%2001", { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(250);
+  expect(historyRequests).toHaveLength(0);
+
+  await expect.poll(() => historyRequests.length).toBe(1);
+  expect(historyRequests[0].authorization).toBe("Bearer e2e-token");
+  expect(historyRequests[0].body).toEqual(expect.objectContaining({
+    movieSlug: movie.slug,
+    episodeName: "Tập 01",
+    progressMode: "embed",
+    updatedAt: expect.any(String),
+  }));
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("pagehide"));
+    window.dispatchEvent(new Event("pagehide"));
+  });
+  await page.waitForTimeout(150);
+  expect(historyRequests).toHaveLength(1);
 });
 
 test("Đổi tập sau embed failover reset đúng về HLS của tập mới", async ({ page }) => {

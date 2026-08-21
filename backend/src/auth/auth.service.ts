@@ -763,38 +763,68 @@ export class AuthService implements OnModuleInit {
   }
 
   async updateHistory(userId: string, historyItem: any) {
+    const movieSlug = String(historyItem?.movieSlug || '').trim();
+    if (!movieSlug) {
+      throw new BadRequestException('Thiếu mã phim trong lịch sử xem');
+    }
+
+    const parsedUpdatedAt = new Date(historyItem?.updatedAt || Date.now());
+    const updatedAt = Number.isNaN(parsedUpdatedAt.getTime())
+      ? new Date()
+      : parsedUpdatedAt;
+    const currentTime = Number(historyItem?.currentTime);
+    const duration = Number(historyItem?.duration);
     const newItem = {
-      movieSlug: historyItem.movieSlug,
-      movieName: historyItem.movieName,
-      episodeName: historyItem.episodeName,
-      episodeKey: normalizeEpisodeKey(historyItem.episodeName),
-      currentTime: historyItem.currentTime,
-      duration: historyItem.duration,
+      movieSlug,
+      movieName: String(historyItem?.movieName || ''),
+      episodeName: String(historyItem?.episodeName || ''),
+      episodeKey: normalizeEpisodeKey(historyItem?.episodeName),
+      currentTime: Number.isFinite(currentTime) ? Math.max(0, currentTime) : 0,
+      duration: Number.isFinite(duration) ? Math.max(0, duration) : 0,
       progressMode: historyItem.progressMode === 'embed' ? 'embed' : 'exact',
-      updatedAt: new Date(),
+      updatedAt,
     };
 
-    // Keep only the latest episode and resume point for each movie.
+    // Update the latest resume point in one atomic operation. The timestamp guard
+    // prevents a slower, older request from overwriting a newer pause/pagehide sync.
     await this.userModel.updateOne(
-      { _id: userId },
-      { $pull: { watchHistory: { movieSlug: historyItem.movieSlug } } }
-    );
-
-    // Atomic push new entry at start ($position: 0) and slice to max 50 ($slice: 50)
-    const updatedUser = await this.userModel.findByIdAndUpdate(
-      userId,
       {
-        $push: {
-          watchHistory: {
-            $each: [newItem],
-            $position: 0,
-            $slice: 50,
+        _id: userId,
+        watchHistory: {
+          $not: {
+            $elemMatch: {
+              movieSlug,
+              updatedAt: { $gt: updatedAt },
+            },
           },
         },
       },
-      { new: true },
+      [
+        {
+          $set: {
+            watchHistory: {
+              $slice: [
+                {
+                  $concatArrays: [
+                    [newItem],
+                    {
+                      $filter: {
+                        input: { $ifNull: ['$watchHistory', []] },
+                        as: 'historyItem',
+                        cond: { $ne: ['$$historyItem.movieSlug', movieSlug] },
+                      },
+                    },
+                  ],
+                },
+                50,
+              ],
+            },
+          },
+        },
+      ],
     );
 
+    const updatedUser = await this.userModel.findById(userId).select('watchHistory');
     return { watchHistory: updatedUser?.watchHistory || [] };
   }
 
