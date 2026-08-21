@@ -133,6 +133,71 @@ async function installFailingHls(page: Page) {
   });
 }
 
+async function installControllableNetworkHls(page: Page, initialOnline = true) {
+  await page.addInitScript((onlineAtStart) => {
+    type NetworkTestWindow = typeof window & {
+      __watchHlsLoadCount?: number;
+      __watchHlsDestroyCount?: number;
+      __watchHlsStopCount?: number;
+      __watchEmitNetworkError?: () => void;
+      __watchSetOnline?: (online: boolean) => void;
+    };
+    const state = window as NetworkTestWindow;
+    let online = onlineAtStart;
+
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      get: () => online,
+    });
+    state.__watchSetOnline = (nextOnline: boolean) => {
+      online = nextOnline;
+      window.dispatchEvent(new Event(nextOnline ? "online" : "offline"));
+    };
+
+    class ControllableNetworkHls {
+      static Events = {
+        ERROR: "hlsError",
+        MANIFEST_PARSED: "hlsManifestParsed",
+        FRAG_LOADED: "hlsFragLoaded",
+        LEVEL_SWITCHED: "hlsLevelSwitched",
+      };
+      static ErrorTypes = { NETWORK_ERROR: "networkError", MEDIA_ERROR: "mediaError" };
+      static ErrorDetails = { MANIFEST_LOAD_ERROR: "manifestLoadError" };
+      static isSupported() { return true; }
+      levels: unknown[] = [];
+      currentLevel = -1;
+      nextLevel = -1;
+      private errorHandler?: (event: string, data: unknown) => void;
+
+      loadSource() {
+        state.__watchHlsLoadCount = (state.__watchHlsLoadCount || 0) + 1;
+      }
+      attachMedia() {}
+      startLoad() {}
+      stopLoad() {
+        state.__watchHlsStopCount = (state.__watchHlsStopCount || 0) + 1;
+      }
+      recoverMediaError() {}
+      on(event: string, callback: (event: string, data: unknown) => void) {
+        if (event !== "hlsError") return;
+        this.errorHandler = callback;
+        state.__watchEmitNetworkError = () => callback(event, {
+          fatal: true,
+          type: "networkError",
+          details: "manifestLoadError",
+        });
+      }
+      destroy() {
+        state.__watchHlsDestroyCount = (state.__watchHlsDestroyCount || 0) + 1;
+        if (state.__watchEmitNetworkError && this.errorHandler) {
+          state.__watchEmitNetworkError = undefined;
+        }
+      }
+    }
+    (window as typeof window & { Hls?: unknown }).Hls = ControllableNetworkHls;
+  }, initialOnline);
+}
+
 test("Watch ghép nguồn và chuyển đúng tập từ URL", async ({ page }) => {
   await mockBackend(page);
   await page.goto("/watch/phim-kiem-thu-e2e?ep=T%E1%BA%ADp%2002");
@@ -203,6 +268,111 @@ test("HLS lỗi sau phục hồi giới hạn thì chuyển sang embed và khôn
     () => (window as typeof window & { __watchHlsLoadCount?: number }).__watchHlsLoadCount || 0,
   )).toBe(loadCountAfterFailover);
   expect(loadCountAfterFailover).toBe(3);
+});
+
+test("Mất mạng không phạt CDN hoặc chuyển Embed và tự thử lại một lần khi online", async ({ page }) => {
+  await installControllableNetworkHls(page);
+  await mockBackend(page, [], hlsMovie);
+  let playbackFailureBatches = 0;
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/playback-health/events" && request.method() === "POST") {
+      playbackFailureBatches += 1;
+    }
+  });
+
+  await page.goto("/watch/phim-kiem-thu-e2e?ep=T%E1%BA%ADp%2001");
+  await expect.poll(() => page.evaluate(
+    () => (window as typeof window & { __watchHlsLoadCount?: number }).__watchHlsLoadCount || 0,
+  )).toBe(1);
+
+  await page.evaluate(() => {
+    const state = window as typeof window & {
+      __watchSetOnline?: (online: boolean) => void;
+      __watchEmitNetworkError?: () => void;
+    };
+    state.__watchSetOnline?.(false);
+    state.__watchEmitNetworkError?.();
+  });
+
+  await expect(page.getByText("Mất kết nối mạng", { exact: true })).toBeVisible();
+  await expect(page.locator('iframe[title="DlowPhim Video Player"]')).toHaveCount(0);
+  expect(await page.evaluate(
+    () => (window as typeof window & { __watchHlsStopCount?: number }).__watchHlsStopCount || 0,
+  )).toBe(1);
+  await page.waitForTimeout(800);
+  expect(await page.evaluate(
+    () => (window as typeof window & { __watchHlsLoadCount?: number }).__watchHlsLoadCount || 0,
+  )).toBe(1);
+  expect(playbackFailureBatches).toBe(0);
+  expect(await page.evaluate(() => sessionStorage.getItem("dlowphim_hls_quarantine"))).toBeNull();
+
+  await page.evaluate(() => {
+    (window as typeof window & { __watchSetOnline?: (online: boolean) => void })
+      .__watchSetOnline?.(true);
+  });
+
+  await expect.poll(() => page.evaluate(
+    () => (window as typeof window & { __watchHlsLoadCount?: number }).__watchHlsLoadCount || 0,
+  )).toBe(2);
+  await expect(page.getByText("Mất kết nối mạng", { exact: true })).toHaveCount(0);
+  await expect(page.locator('iframe[title="DlowPhim Video Player"]')).toHaveCount(0);
+});
+
+test("Mở trang khi offline chờ mạng và chỉ khởi tạo HLS một lần sau khi online", async ({ page }) => {
+  await installControllableNetworkHls(page, false);
+  await mockBackend(page, [], hlsMovie);
+
+  await page.goto("/watch/phim-kiem-thu-e2e?ep=T%E1%BA%ADp%2001");
+  await expect(page.getByText("Mất kết nối mạng", { exact: true })).toBeVisible();
+  expect(await page.evaluate(
+    () => (window as typeof window & { __watchHlsLoadCount?: number }).__watchHlsLoadCount || 0,
+  )).toBe(0);
+  await expect(page.locator('iframe[title="DlowPhim Video Player"]')).toHaveCount(0);
+
+  await page.evaluate(() => {
+    (window as typeof window & { __watchSetOnline?: (online: boolean) => void })
+      .__watchSetOnline?.(true);
+  });
+
+  await expect.poll(() => page.evaluate(
+    () => (window as typeof window & { __watchHlsLoadCount?: number }).__watchHlsLoadCount || 0,
+  )).toBe(1);
+  await expect(page.getByText("Mất kết nối mạng", { exact: true })).toHaveCount(0);
+  await expect(page.locator('iframe[title="DlowPhim Video Player"]')).toHaveCount(0);
+});
+
+test("Trạng thái offline không tràn hoặc nhân đôi player tại các breakpoint watch", async ({ page }) => {
+  await installControllableNetworkHls(page, false);
+  await mockBackend(page, [], hlsMovie);
+  const unexpectedConsoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() !== "error") return;
+    const text = message.text();
+    if (/hydration|maximum update depth|typeerror|referenceerror|cannot read propert/i.test(text)) {
+      unexpectedConsoleErrors.push(text);
+    }
+  });
+
+  await page.goto("/watch/phim-kiem-thu-e2e?ep=T%E1%BA%ADp%2001");
+
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 767, height: 900 },
+    { width: 768, height: 900 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(page.getByText("Mất kết nối mạng", { exact: true })).toBeVisible();
+    await expect(page.locator("#dlow-hls-video")).toHaveCount(1);
+    await expect(page.locator('iframe[title="DlowPhim Video Player"]')).toHaveCount(0);
+    expect(await page.evaluate(() => ({
+      documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      bodyOverflow: document.body.scrollWidth > document.body.clientWidth,
+    }))).toEqual({ documentOverflow: false, bodyOverflow: false });
+  }
+
+  expect(unexpectedConsoleErrors).toEqual([]);
 });
 
 test("HLS chỉ khởi tạo sau khi auth hiện hành tải xong", async ({ page }) => {

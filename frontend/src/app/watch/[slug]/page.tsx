@@ -4,7 +4,7 @@ import React, { useEffect, useState, Suspense } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Send, Sparkles, Tv, HelpCircle, Plus, Users, Flag, X, Check } from "lucide-react";
+import { Play, Heart, Share2, Film, Star, Loader2, ArrowLeft, Send, Sparkles, Tv, HelpCircle, Plus, Users, Flag, X, Check, WifiOff } from "lucide-react";
 import CommentRatingSection from "@/components/CommentRatingSection";
 import EpisodeSelector from "@/components/EpisodeSelector";
 import EmbedCompatibilityPlayer from "@/components/EmbedCompatibilityPlayer";
@@ -91,6 +91,10 @@ interface PendingHistorySync {
 }
 
 const MOBILE_EPISODE_BATCH_SIZE = 60;
+
+function browserIsOnline() {
+  return typeof navigator === "undefined" || navigator.onLine !== false;
+}
 
 function WatchContent({ slug }: { slug: string }) {
   const router = useRouter();
@@ -187,14 +191,39 @@ function WatchContent({ slug }: { slug: string }) {
   const [loadingRelated, setLoadingRelated] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
   const [watchExtrasReady, setWatchExtrasReady] = useState(false);
-  const [streamStatus, setStreamStatus] = useState<"idle" | "loading" | "recovering" | "failed">("loading");
+  const [streamStatus, setStreamStatus] = useState<"idle" | "loading" | "recovering" | "offline" | "failed">("loading");
   const [streamRetryNonce, setStreamRetryNonce] = useState(0);
+  const [isNetworkOnline, setIsNetworkOnline] = useState(true);
+  const networkOnlineRef = React.useRef(true);
+  const resumeStreamOnReconnectRef = React.useRef(false);
 
   // States báo lỗi phim
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     setMounted(true);
     return () => setMounted(false);
+  }, []);
+
+  useEffect(() => {
+    const updateNetworkState = (online: boolean) => {
+      networkOnlineRef.current = online;
+      setIsNetworkOnline(online);
+      if (!online || !resumeStreamOnReconnectRef.current) return;
+
+      resumeStreamOnReconnectRef.current = false;
+      setStreamStatus("recovering");
+      setStreamRetryNonce((nonce) => nonce + 1);
+    };
+    const handleOnline = () => updateNetworkState(true);
+    const handleOffline = () => updateNetworkState(false);
+
+    updateNetworkState(browserIsOnline());
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
   }, []);
 
   const [showReportModal, setShowReportModal] = useState(false);
@@ -753,7 +782,21 @@ function WatchContent({ slug }: { slug: string }) {
     slug,
   ]);
 
+  const pauseStreamRecoveryUntilOnline = React.useCallback(() => {
+    const currentTime = videoRef.current?.currentTime || 0;
+    if (currentTime > 0) pendingFailoverTimeRef.current = currentTime;
+    resumeStreamOnReconnectRef.current = true;
+    setStreamStatus("offline");
+  }, []);
+
   const retryCurrentStream = () => {
+    if (!browserIsOnline()) {
+      networkOnlineRef.current = false;
+      setIsNetworkOnline(false);
+      pauseStreamRecoveryUntilOnline();
+      return;
+    }
+    resumeStreamOnReconnectRef.current = false;
     setStreamStatus("loading");
     setPlayerType(activeEpisode?.link_m3u8 ? "hls" : "embed");
     setStreamRetryNonce((nonce) => nonce + 1);
@@ -801,6 +844,11 @@ function WatchContent({ slug }: { slug: string }) {
 
   const activeEpisode = episodesData[activeEpisodeIndex];
   const activeEmbed = activeEpisode?.link_embed || null;
+
+  useEffect(() => {
+    resumeStreamOnReconnectRef.current = false;
+  }, [slug, activeServerIndex, activeEpisode?.name, playerType]);
+
   const formatEpisodeLabel = (episodeName = "") => {
     const normalizedName = episodeName.trim();
     if (!normalizedName) return "";
@@ -914,6 +962,12 @@ function WatchContent({ slug }: { slug: string }) {
   }, [playerType]);
 
   const handleStreamFailure = () => {
+    if (!browserIsOnline()) {
+      networkOnlineRef.current = false;
+      setIsNetworkOnline(false);
+      pauseStreamRecoveryUntilOnline();
+      return;
+    }
     setStreamStatus("recovering");
     const currentTime = videoRef.current?.currentTime || 0;
     if (currentTime > 0) pendingFailoverTimeRef.current = currentTime;
@@ -1019,12 +1073,24 @@ function WatchContent({ slug }: { slug: string }) {
 
       const initPlayer = async () => {
         if (!active) return;
+        if (!networkOnlineRef.current || !browserIsOnline()) {
+          networkOnlineRef.current = false;
+          setIsNetworkOnline(false);
+          pauseStreamRecoveryUntilOnline();
+          return;
+        }
         let Hls: any;
         try {
           Hls = await loadHlsLibrary();
         } catch (error) {
           console.warn("[HLS] Không thể tải trình phát, chuyển nguồn dự phòng.", error);
           if (active && !failureHandled) {
+            if (!browserIsOnline()) {
+              networkOnlineRef.current = false;
+              setIsNetworkOnline(false);
+              pauseStreamRecoveryUntilOnline();
+              return;
+            }
             failureHandled = true;
             reportPlaybackFailure("library-load");
             handleStreamFailure();
@@ -1061,6 +1127,17 @@ function WatchContent({ slug }: { slug: string }) {
           hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
             if (!active) return;
             if (data && data.fatal && !failureHandled) {
+              if (!networkOnlineRef.current || !browserIsOnline()) {
+                networkOnlineRef.current = false;
+                setIsNetworkOnline(false);
+                if (recoveryTimer) {
+                  clearTimeout(recoveryTimer);
+                  recoveryTimer = null;
+                }
+                try { hls.stopLoad(); } catch { }
+                pauseStreamRecoveryUntilOnline();
+                return;
+              }
               if (
                 data.type === Hls.ErrorTypes.NETWORK_ERROR &&
                 networkRecoveryCount < 2
@@ -1254,6 +1331,12 @@ function WatchContent({ slug }: { slug: string }) {
           video.src = activeEpisode.link_m3u8;
           nativeErrorHandler = () => {
             if (!active || failureHandled) return;
+            if (!networkOnlineRef.current || !browserIsOnline()) {
+              networkOnlineRef.current = false;
+              setIsNetworkOnline(false);
+              pauseStreamRecoveryUntilOnline();
+              return;
+            }
             failureHandled = true;
             reportPlaybackFailure("native-network-error");
             handleStreamFailure();
@@ -1360,7 +1443,7 @@ function WatchContent({ slug }: { slug: string }) {
       }
       resetHlsMediaElement(videoRef.current);
     };
-  }, [playerType, activeEpisode?.link_m3u8, activeEpisode?.name, activeServerIndex, movie?.slug, streamRetryNonce, isMobileWatchViewport, mounted, authLoading]);
+  }, [playerType, activeEpisode?.link_m3u8, activeEpisode?.name, activeServerIndex, movie?.slug, streamRetryNonce, isMobileWatchViewport, mounted, authLoading, pauseStreamRecoveryUntilOnline]);
 
   // 3. Fetch phim liên quan
   useEffect(() => {
@@ -1809,26 +1892,35 @@ function WatchContent({ slug }: { slug: string }) {
                 )
               )}
 
-              {(streamStatus === "recovering" || streamStatus === "failed") && (
+              {(streamStatus === "recovering" || streamStatus === "offline" || streamStatus === "failed") && (
                 <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/85 px-5 text-center backdrop-blur-sm">
                   <div className="max-w-sm space-y-4">
                     <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-amber-400/30 bg-amber-400/10">
                       {streamStatus === "recovering" ? (
                         <Loader2 className="animate-spin text-amber-400" size={24} />
+                      ) : streamStatus === "offline" ? (
+                        <WifiOff className="text-amber-400" size={24} />
                       ) : (
                         <Tv className="text-amber-400" size={24} />
                       )}
                     </div>
                     <div className="space-y-1.5">
                       <h4 className="text-lg font-black text-white">
-                        Máy chủ đang gián đoạn
+                        {streamStatus === "offline" ? "Mất kết nối mạng" : "Máy chủ đang gián đoạn"}
                       </h4>
                       <p className="text-sm font-semibold text-zinc-400">
                         {streamStatus === "recovering"
                           ? "Đang thử máy chủ dự phòng..."
-                          : "Không thể kết nối với các nguồn phát hiện tại."}
+                          : streamStatus === "offline"
+                            ? "Video sẽ tự kết nối lại khi thiết bị có mạng."
+                            : "Không thể kết nối với các nguồn phát hiện tại."}
                       </p>
                     </div>
+                    {streamStatus === "offline" && (
+                      <p className="text-[11px] font-bold text-zinc-500" aria-live="polite">
+                        {isNetworkOnline ? "Đang kết nối lại..." : "Đang chờ kết nối..."}
+                      </p>
+                    )}
                     {streamStatus === "failed" && (
                       <div className="flex flex-wrap justify-center gap-2.5">
                         <button
