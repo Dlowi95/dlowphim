@@ -161,7 +161,7 @@ function WatchContent({ slug }: { slug: string }) {
   const authUserRef = React.useRef(user);
   const updateWatchHistoryRef = React.useRef(updateWatchHistory);
   const previousHistoryOwnerRef = React.useRef<string | null>(null);
-  const prefetchedManifestKeyRef = React.useRef("");
+  const prefetchedManifestKeysRef = React.useRef<Set<string>>(new Set());
   const pendingFailoverTimeRef = React.useRef(0);
   const manualPlayerSelectionKeyRef = React.useRef("");
   const audioPreferenceAppliedRef = React.useRef("");
@@ -862,10 +862,6 @@ function WatchContent({ slug }: { slug: string }) {
     }
   }, [episodesData.length, playerType]);
 
-  useEffect(() => {
-    prefetchedManifestKeyRef.current = "";
-  }, [playerType, activeServerIndex, activeEpisode?.name]);
-
   const hlsPlaybackEvents = useHlsPlaybackTelemetry({
     playbackKey: `${playerType}:${activeServerIndex}:${activeEpisode?.name || ""}`,
     fallbackStartedAtRef: hlsAttemptStartedAtRef,
@@ -924,17 +920,17 @@ function WatchContent({ slug }: { slug: string }) {
     const nextEpisode = findNextEpisode(sortedEpisodes, activeEpisode.name);
     if (!nextEpisode?.link_m3u8) return;
     const manifestKey = `${activeServerIndex}:${nextEpisode.name}:${nextEpisode.link_m3u8}`;
-    if (prefetchedManifestKeyRef.current === manifestKey) return;
-    prefetchedManifestKeyRef.current = manifestKey;
+    if (prefetchedManifestKeysRef.current.has(manifestKey)) return;
+    prefetchedManifestKeysRef.current.add(manifestKey);
     void fetch(nextEpisode.link_m3u8, { cache: "force-cache" })
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.text();
       })
       .catch(() => {
-        if (prefetchedManifestKeyRef.current === manifestKey) {
-          prefetchedManifestKeyRef.current = "";
-        }
+        // Prefetch is optional. Keep the attempted key even on failure so a
+        // long session near the end of an episode cannot retry on every
+        // timeupdate event and hammer a degraded manifest endpoint.
       });
   };
 
