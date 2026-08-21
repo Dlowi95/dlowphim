@@ -38,6 +38,13 @@ interface PlyrController {
   };
 }
 
+type IOSFullscreenVideo = HTMLVideoElement & {
+  webkitDisplayingFullscreen?: boolean;
+  webkitEnterFullscreen?: () => void;
+  webkitExitFullscreen?: () => void;
+  webkitSupportsFullscreen?: boolean;
+};
+
 interface MobileWatchPlayerControlsProps {
   player: PlyrController | null;
   title: string;
@@ -163,7 +170,10 @@ export default function MobileWatchPlayerControls({
       setVolume(player.volume);
     };
     const syncSpeed = () => setSpeed(player.speed || 1);
-    const syncFullscreen = () => setIsFullscreen(player.fullscreen.active);
+    const media = player.media as IOSFullscreenVideo | undefined;
+    const syncFullscreen = () => {
+      setIsFullscreen(Boolean(player.fullscreen.active || media?.webkitDisplayingFullscreen));
+    };
 
     syncPlayback();
     syncTime();
@@ -181,6 +191,10 @@ export default function MobileWatchPlayerControls({
     player.on("ratechange", syncSpeed);
     player.on("enterfullscreen", syncFullscreen);
     player.on("exitfullscreen", syncFullscreen);
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    document.addEventListener("webkitfullscreenchange", syncFullscreen);
+    media?.addEventListener("webkitbeginfullscreen", syncFullscreen);
+    media?.addEventListener("webkitendfullscreen", syncFullscreen);
     player.media?.addEventListener("loadedmetadata", syncTime);
     player.media?.addEventListener("durationchange", syncTime);
     player.media?.addEventListener("canplay", syncTime);
@@ -196,11 +210,20 @@ export default function MobileWatchPlayerControls({
       player.off("ratechange", syncSpeed);
       player.off("enterfullscreen", syncFullscreen);
       player.off("exitfullscreen", syncFullscreen);
+      document.removeEventListener("fullscreenchange", syncFullscreen);
+      document.removeEventListener("webkitfullscreenchange", syncFullscreen);
+      media?.removeEventListener("webkitbeginfullscreen", syncFullscreen);
+      media?.removeEventListener("webkitendfullscreen", syncFullscreen);
       player.media?.removeEventListener("loadedmetadata", syncTime);
       player.media?.removeEventListener("durationchange", syncTime);
       player.media?.removeEventListener("canplay", syncTime);
     };
   }, [player, showControls]);
+
+  useEffect(() => {
+    document.body.classList.toggle("dlowphim-player-fullscreen", isFullscreen);
+    return () => document.body.classList.remove("dlowphim-player-fullscreen");
+  }, [isFullscreen]);
 
   useEffect(() => {
     clearHideTimer();
@@ -323,6 +346,32 @@ export default function MobileWatchPlayerControls({
 
   const toggleFullscreen = () => {
     if (!player) return;
+    const media = player.media as IOSFullscreenVideo | undefined;
+    const nativeFullscreenActive = Boolean(media?.webkitDisplayingFullscreen);
+
+    // iPhone Safari only guarantees native video fullscreen. Calling this
+    // directly from the tap keeps the required user gesture intact.
+    if (!player.fullscreen.active && !nativeFullscreenActive && media?.webkitEnterFullscreen) {
+      try {
+        media.webkitEnterFullscreen();
+        showControls();
+        return;
+      } catch {
+        // Older/embedded WebKit builds can reject native fullscreen; Plyr's
+        // full-window fallback below remains available in that case.
+      }
+    }
+
+    if (nativeFullscreenActive && media?.webkitExitFullscreen) {
+      try {
+        media.webkitExitFullscreen();
+        showControls();
+        return;
+      } catch {
+        // Fall through to Plyr so non-native fullscreen can still be closed.
+      }
+    }
+
     const result = player.fullscreen.active
       ? player.fullscreen.exit()
       : player.fullscreen.enter();

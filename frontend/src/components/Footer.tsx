@@ -11,7 +11,7 @@ export default function FooterComponent() {
   }
 
   return (
-    <footer className="w-full bg-zinc-950 border-t border-zinc-900 text-zinc-500 py-8">
+    <footer data-app-footer-chrome="true" className="w-full bg-zinc-950 border-t border-zinc-900 text-zinc-500 py-8">
       <div className="container mx-auto px-6 max-w-7xl flex flex-col md:flex-row items-center justify-between gap-4">
         {/* Bản quyền và Logo */}
         <div className="flex items-center gap-2">

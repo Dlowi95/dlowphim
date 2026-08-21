@@ -266,7 +266,7 @@ Giới hạn kiểm thử: fallback hiện được chứng minh bằng Playwrig
 
 ### Trang xem phim `/watch/[slug]` — tối ưu giao diện mobile
 
-**Trạng thái: Đạt production cho giao diện responsive, lifecycle dữ liệu, failover HLS/embed và đồng bộ lịch sử theo phiên auth.**
+**Trạng thái: Đạt production cho luồng dữ liệu/playback đã kiểm chứng; fullscreen native trên iPhone Safari đang chờ xác nhận lại bằng thiết bị thật sau bản vá ngày `2026-08-21`.**
 
 - `/watch/[slug]` tiếp tục là data owner duy nhất của phim, nguồn phát, tập và trạng thái player; lượt tối ưu này không thêm API owner, socket, listener hay component responsive thứ hai.
 - Mobile header và bottom navigation được khôi phục cho route `/watch`; các route toàn màn hình thật sự (`/watch-together/room`, `/watch-together/create`, admin) vẫn giữ chính sách ẩn navigation.
@@ -280,6 +280,7 @@ Giới hạn kiểm thử: fallback hiện được chứng minh bằng Playwrig
 - Listener `timeupdate`/`pause` đọc user và hàm cập nhật lịch sử hiện hành qua ref. Mỗi pending database sync đóng gói cố định `ownerId + token + historyItem`, nên logout/đổi tài khoản không thể gửi lịch sử của phiên cũ bằng token phiên mới. Listener `pagehide`/`visibilitychange` giữ ổn định và không còn tháo/lắp theo mỗi lần object user đổi.
 - HLS fatal network error được phục hồi hữu hạn hai lần, sau đó chuyển sang embed khi không còn HLS phù hợp; state embed không bị effect chọn nguồn mặc định bật ngược lại nếu server/tập không đổi.
 - HLS runtime được nâng từ `1.4.12` lên stable `1.6.17`. Fatal media/decode error dùng chuỗi phục hồi hữu hạn: lần đầu rebuild MediaSource, lần hai đổi audio codec rồi rebuild; sau đó mới failover. Mỗi lần thay tập/nguồn hoặc unmount đều detach/destroy HLS và xóa `src` + gọi `load()` trên media element để không giữ audio decoder/buffer cũ — trường hợp có thể gây rè cho tới khi reload trang.
+- Fullscreen mobile ưu tiên bộ điều khiển video native của iPhone (`webkitEnterFullscreen`/`webkitExitFullscreen`) thay vì buộc Plyr dùng full-window fallback. Sự kiện fullscreen chuẩn, WebKit và native video được đồng bộ vào một state; nếu WebKit vẫn phải fallback, class `dlowphim-player-fullscreen` ẩn Navbar mobile/desktop và Footer ngay cả khi xoay ngang làm chiều rộng vượt breakpoint `md`.
 
 Bằng chứng runtime cập nhật ngày `2026-08-20`:
 
@@ -295,7 +296,7 @@ Bằng chứng runtime cập nhật ngày `2026-08-20`:
 | Failover/auth history | Đạt | Failure injection phát đúng 3 lần `loadSource` (lần đầu + 2 recovery), sau đó giữ embed ổn định và không bật lại HLS. Media recovery có tối đa 2 bước, bước thứ hai gọi `swapAudioCodec` trước `recoverMediaError`; bước thứ ba bị từ chối để tránh loop. Đổi từ tập đang ở embed sang Tập 02 reset đúng về HLS mới và cập nhật URL. Auth `/me` bị trì hoãn chứng minh HLS init count giữ `0` khi auth đang tải và chỉ tăng sau khi owner hiện hành xác định. Pending history giữ token/owner tại thời điểm tạo và cleanup listener không phụ thuộc object user. |
 | Console/build | Đạt | TypeScript thành công, 8/8 test episode/playback qua, 6/6 Playwright production `watch-history.spec.ts` qua và production build hoàn tất; `/watch/[slug]` là `22 kB`, First Load JS `147 kB`. |
 
-Giới hạn còn lại: E2E hiện kiểm chứng auth-loading ban đầu và ownership token/pending bằng cấu trúc lifecycle; thao tác đăng nhập rồi đổi trực tiếp sang một tài khoản thứ hai trong cùng tab chưa có fixture UI chuyên biệt. Đây không còn là blocker production vì listener player dùng ref hiện hành, pending sync mang token/owner bất biến và cleanup đổi owner đã được khóa trong code.
+Giới hạn còn lại: Chromium không mô phỏng được native fullscreen của Safari iPhone. Bản vá iOS đã qua TypeScript, 8/8 test watch và production build (`/watch/[slug]` `21.8 kB`, First Load JS `147 kB`), nhưng cần xác nhận một lượt trên iPhone thật rằng Safari chrome biến mất, video dùng native controls và xoay dọc/ngang không làm Navbar desktop xuất hiện. E2E hiện kiểm chứng auth-loading ban đầu và ownership token/pending bằng cấu trúc lifecycle; thao tác đăng nhập rồi đổi trực tiếp sang một tài khoản thứ hai trong cùng tab chưa có fixture UI chuyên biệt.
 
 ### Phòng xem chung `/watch-together/room/[roomId]`
 
@@ -319,7 +320,8 @@ Bằng chứng cập nhật ngày `2026-08-21`:
 | Kiểm tra mã | Đạt | Frontend TypeScript thành công, 8/8 test episode/playback qua; backend room tests 19/19 qua; frontend và backend production build hoàn tất. Lần kiểm tra gần nhất giữ route room ở `18.7 kB`, First Load JS `125 kB`. |
 
 Giới hạn kỹ thuật: Embed cross-origin không thể cung cấp đồng bộ điều khiển phát chính xác như HLS. Cảnh báo trực quan đã được bỏ khỏi player để không che nội dung trên cả mobile và desktop; nếu một tập không có Embed, HLS fallback vẫn dùng cơ chế sync player hiện hành.
+Fullscreen container của phòng đã đồng bộ cùng cơ chế ẩn app chrome khi Fullscreen API hoạt động. Trên iPhone, fullscreen của Embed vẫn do iframe/nhà cung cấp quyết định; cần kiểm tra thiết bị thật riêng và đây không thể được bảo đảm bằng API từ trang cha.
 
 ### Các route còn lại
 
-Route `/watch/[slug]` đã được nâng lên **Đạt production** sau failure injection, auth gating và kiểm tra hồi quy nêu trên. Audit production riêng của `/phim-bo` và `/phim-le` đã hoàn tất trong Phase 2 nêu trên.
+Route `/watch/[slug]` đã đạt các kiểm tra production tự động sau failure injection, auth gating và kiểm tra hồi quy nêu trên; trạng thái cuối cho fullscreen iPhone vẫn chờ xác nhận thiết bị thật. Audit production riêng của `/phim-bo` và `/phim-le` đã hoàn tất trong Phase 2 nêu trên.

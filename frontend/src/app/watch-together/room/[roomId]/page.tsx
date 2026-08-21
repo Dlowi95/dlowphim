@@ -152,6 +152,11 @@ export default function RoomPage() {
     };
   }, []);
 
+  useEffect(() => {
+    document.body.classList.toggle("dlowphim-player-fullscreen", isFullscreen);
+    return () => document.body.classList.remove("dlowphim-player-fullscreen");
+  }, [isFullscreen]);
+
   // Hiển thị countdown theo đồng hồ server; backend mới là nguồn quyết định lúc bắt đầu.
   useEffect(() => {
     if (!room) return;

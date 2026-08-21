@@ -318,6 +318,14 @@ body.dlowphim-cinema-mode [data-app-desktop-chrome="true"] {
   display: none !important;
 }
 
+/* Native fullscreen is preferred on iPhone. This also protects Plyr's
+   full-window fallback from exposing desktop chrome after landscape rotation. */
+body.dlowphim-player-fullscreen [data-app-mobile-chrome="true"],
+body.dlowphim-player-fullscreen [data-app-desktop-chrome="true"],
+body.dlowphim-player-fullscreen [data-app-footer-chrome="true"] {
+  display: none !important;
+}
+
 /* `/watch` on a real phone in landscape: reserve the short edge for video.
    These selectors only affect touch devices with a phone-sized landscape height. */
 @media (orientation: landscape) and (max-width: 1024px) and (max-height: 600px) and (pointer: coarse) {

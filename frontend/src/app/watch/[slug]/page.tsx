@@ -1220,7 +1220,7 @@ function WatchContent({ slug }: { slug: string }) {
               },
               speed: { selected: defaultSpeed, options: speedOptions },
               fullscreen: isMobileWatchViewport
-                ? { enabled: true, fallback: true, iosNative: false, container: "#watch-hls-player-shell" }
+                ? { enabled: true, fallback: true, iosNative: true, container: "#watch-hls-player-shell" }
                 : { enabled: true, fallback: true, iosNative: false },
               i18n: {
                 play: "Phát",
@@ -1302,7 +1302,7 @@ function WatchContent({ slug }: { slug: string }) {
             settings: isMobileWatchViewport ? [] : ["speed"],
             speed: { selected: defaultSpeed, options: speedOptions },
             fullscreen: isMobileWatchViewport
-              ? { enabled: true, fallback: true, iosNative: false, container: "#watch-hls-player-shell" }
+              ? { enabled: true, fallback: true, iosNative: true, container: "#watch-hls-player-shell" }
               : { enabled: true, fallback: true, iosNative: false },
           });
           plyrRef.current = player;
