@@ -14,6 +14,17 @@ dns.setServers(['8.8.8.8', '8.8.4.4']);
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  const expressApp = app.getHttpAdapter().getInstance();
+  if (typeof expressApp?.disable === 'function') {
+    expressApp.disable('x-powered-by');
+  }
+
+  // Consistent security headers without breaking CORS/Embed/HLS/Media
+  app.use((_req: express.Request, res: express.Response, next: express.NextFunction) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    next();
+  });
+
   // Set payload limits for Base64 images uploading
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ limit: '10mb', extended: true }));

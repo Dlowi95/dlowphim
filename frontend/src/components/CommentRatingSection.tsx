@@ -805,16 +805,6 @@ export default function CommentRatingSection({
                   const isRevealed = revealedSpoilers[comment.id];
                   const replies = comments.filter((r: Comment) => r.parentId === comment.id).sort((a: Comment, b: Comment) => a.id.localeCompare(b.id));
 
-                  console.log("DEBUG FRONTEND CHECK:", {
-                    commentAuthor: comment.name,
-                    commentUserId: comment.userId,
-                    currentUserId: user?.id,
-                    currentUserRole: user?.role,
-                    isOwner: user?.id === comment.userId,
-                    isAdmin: Boolean(normalizeAdminRole(user?.role)),
-                    showDelete: Boolean(user && (user.id === comment.userId || hasAdminPermission(user.role, "comments.moderate")))
-                  });
-
                   return (
                     <div key={comment.id} className={`flex flex-col gap-4 ${index === 0 ? "pt-0" : "pt-4"}`}>
                       {/* Root Comment Container */}

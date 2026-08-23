@@ -28,14 +28,27 @@ describe('RoomsGateway socket safety', () => {
       }),
     };
     const roomEmit = jest.fn();
-    const gateway = new RoomsGateway(roomsService as any, {
-      verify: jest.fn(() => ({ sub: 'authenticated-user' })),
-    } as any);
+    const authService = {
+      getValidSessionUser: jest.fn().mockResolvedValue({
+        _id: 'authenticated-user',
+        tokenVersion: 0,
+        isActive: true,
+      }),
+    };
+    const jwtService = {
+      verifyAsync: jest.fn().mockResolvedValue({ sub: 'authenticated-user', tokenVersion: 0 }),
+      verify: jest.fn().mockReturnValue({ sub: 'authenticated-user', tokenVersion: 0 }),
+    };
+    const gateway = new RoomsGateway(
+      roomsService as any,
+      jwtService as any,
+      authService as any,
+    );
     (gateway as any).server = {
       to: jest.fn().mockReturnValue({ emit: roomEmit }),
       sockets: { adapter: { rooms: new Map() } },
     };
-    return { gateway, roomsService, roomEmit };
+    return { gateway, roomsService, authService, jwtService, roomEmit };
   }
 
   it('derives host permission from JWT and room data instead of client input', async () => {
@@ -375,6 +388,124 @@ describe('RoomsGateway socket safety', () => {
     expect(roomsService.expireScheduledRoom).toHaveBeenCalledWith('ROOM01');
     expect(roomEmit).toHaveBeenCalledWith('room_closed', {
       reason: 'host_absent',
+    });
+  });
+
+  describe('Session validation in RoomsGateway', () => {
+    it('authenticates user when JWT is valid and tokenVersion matches active session', async () => {
+      const { gateway, authService, jwtService } = createGateway();
+      jwtService.verifyAsync.mockResolvedValueOnce({ sub: 'user-123', tokenVersion: 2 });
+      authService.getValidSessionUser.mockResolvedValueOnce({
+        _id: 'user-123',
+        tokenVersion: 2,
+        isActive: true,
+      });
+
+      const client = {
+        id: 'socket-auth',
+        handshake: { auth: { token: 'Bearer valid.jwt.token' } },
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as any;
+
+      const result = await gateway.handleJoinRoom(client, {
+        roomId: 'ROOM01',
+        userId: 'user-123',
+        name: 'Valid Member',
+        isHost: false,
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect((gateway as any).clients.get(client.id)).toEqual(
+        expect.objectContaining({
+          userId: 'user-123',
+          name: 'Valid Member',
+        }),
+      );
+    });
+
+    it('falls back to guest when JWT has an outdated/revoked tokenVersion', async () => {
+      const { gateway, authService, jwtService } = createGateway();
+      jwtService.verifyAsync.mockResolvedValueOnce({ sub: 'user-123', tokenVersion: 1 });
+      authService.getValidSessionUser.mockResolvedValueOnce(null); // tokenVersion mismatch
+
+      const client = {
+        id: 'socket-revoked',
+        handshake: { auth: { token: 'Bearer revoked.jwt.token' } },
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as any;
+
+      const result = await gateway.handleJoinRoom(client, {
+        roomId: 'ROOM01',
+        userId: 'guest-123',
+        name: 'Guest Tester',
+        isHost: false,
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect((gateway as any).clients.get(client.id)).toEqual(
+        expect.objectContaining({
+          userId: 'guest-123',
+          name: 'Guest Tester',
+          isHost: false,
+        }),
+      );
+    });
+
+    it('falls back to guest when user account is inactive or deleted', async () => {
+      const { gateway, authService, jwtService } = createGateway();
+      jwtService.verifyAsync.mockResolvedValueOnce({ sub: 'banned-user', tokenVersion: 0 });
+      authService.getValidSessionUser.mockResolvedValueOnce(null); // inactive user
+
+      const client = {
+        id: 'socket-inactive',
+        handshake: { auth: { token: 'Bearer inactive.jwt.token' } },
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as any;
+
+      const result = await gateway.handleJoinRoom(client, {
+        roomId: 'ROOM01',
+        userId: '',
+        name: 'Banned User',
+        isHost: false,
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect((gateway as any).clients.get(client.id)).toEqual(
+        expect.objectContaining({
+          userId: 'guest-socket-inactive',
+          name: 'Banned User',
+          isHost: false,
+        }),
+      );
+    });
+
+    it('preserves guest flow for users without tokens', async () => {
+      const { gateway } = createGateway();
+      const client = {
+        id: 'socket-guest-only',
+        handshake: { auth: {} },
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as any;
+
+      const result = await gateway.handleJoinRoom(client, {
+        roomId: 'ROOM01',
+        userId: 'guest-999',
+        name: 'Pure Guest',
+        isHost: false,
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect((gateway as any).clients.get(client.id)).toEqual(
+        expect.objectContaining({
+          userId: 'guest-999',
+          name: 'Pure Guest',
+          isHost: false,
+        }),
+      );
     });
   });
 });

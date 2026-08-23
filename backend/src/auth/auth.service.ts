@@ -160,6 +160,179 @@ export class AuthService implements OnModuleInit {
     }
   }
 
+  validateDisplayName(displayName: unknown): string {
+    if (typeof displayName !== 'string') {
+      throw new BadRequestException('Tên hiển thị không hợp lệ');
+    }
+    const trimmed = displayName.trim();
+    if (trimmed.length < 2 || trimmed.length > 80) {
+      throw new BadRequestException('Tên hiển thị cần từ 2 đến 80 ký tự');
+    }
+    return trimmed;
+  }
+
+  validateGender(gender: unknown): string {
+    if (typeof gender !== 'string') {
+      throw new BadRequestException('Giới tính không hợp lệ');
+    }
+    const normalized = gender.trim().toLowerCase();
+    const validGenders = ['male', 'female', 'other'];
+    if (!validGenders.includes(normalized)) {
+      throw new BadRequestException('Giới tính không hợp lệ. Chỉ chấp nhận male, female hoặc other');
+    }
+    return normalized;
+  }
+
+  private isAllowedLocalAvatarPath(path: string): boolean {
+    if (path === '/images/avatars/default.png') return true;
+    if (/^\/images\/avatars\/hoathinh\/(?:[1-9]|1[0-9]|2[0-6])\.webp$/.test(path)) return true;
+    return false;
+  }
+
+  private verifyImageMagicBytes(buffer: Buffer, mimeType: string): boolean {
+    if (buffer.byteLength < 12) return false;
+
+    if (mimeType === 'png') {
+      // PNG signature: 89 50 4E 47 0D 0A 1A 0A
+      return (
+        buffer[0] === 0x89 &&
+        buffer[1] === 0x50 &&
+        buffer[2] === 0x4e &&
+        buffer[3] === 0x47 &&
+        buffer[4] === 0x0d &&
+        buffer[5] === 0x0a &&
+        buffer[6] === 0x1a &&
+        buffer[7] === 0x0a
+      );
+    }
+
+    if (mimeType === 'jpeg' || mimeType === 'jpg') {
+      // JPEG SOI marker: FF D8 FF
+      return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+    }
+
+    if (mimeType === 'gif') {
+      // GIF87a (47 49 46 38 37 61) or GIF89a (47 49 46 38 39 61)
+      const isGif87 =
+        buffer[0] === 0x47 &&
+        buffer[1] === 0x49 &&
+        buffer[2] === 0x46 &&
+        buffer[3] === 0x38 &&
+        buffer[4] === 0x37 &&
+        buffer[5] === 0x61;
+      const isGif89 =
+        buffer[0] === 0x47 &&
+        buffer[1] === 0x49 &&
+        buffer[2] === 0x46 &&
+        buffer[3] === 0x38 &&
+        buffer[4] === 0x39 &&
+        buffer[5] === 0x61;
+      return isGif87 || isGif89;
+    }
+
+    if (mimeType === 'webp') {
+      // RIFF header (52 49 46 46) ... WEBP (57 45 42 50)
+      const isRiff =
+        buffer[0] === 0x52 &&
+        buffer[1] === 0x49 &&
+        buffer[2] === 0x46 &&
+        buffer[3] === 0x46;
+      const isWebp =
+        buffer[8] === 0x57 &&
+        buffer[9] === 0x45 &&
+        buffer[10] === 0x42 &&
+        buffer[11] === 0x50;
+      return isRiff && isWebp;
+    }
+
+    return false;
+  }
+
+  validateAvatar(avatar: unknown): string {
+    if (avatar === null || avatar === undefined || avatar === '') {
+      return '';
+    }
+    if (typeof avatar !== 'string') {
+      throw new BadRequestException('Ảnh đại diện không hợp lệ');
+    }
+
+    const trimmed = avatar.trim();
+    if (!trimmed) return '';
+
+    // Reject dangerous schemes
+    if (/^(javascript|vbscript|file):/i.test(trimmed)) {
+      throw new BadRequestException('Định dạng ảnh đại diện không an toàn');
+    }
+
+    // Reject encoded traversal or illegal control characters
+    if (/[\x00-\x1f\x7f]|%2e|%2f|%5c|\.\.|\\/i.test(trimmed)) {
+      throw new BadRequestException('Đường dẫn ảnh đại diện không hợp lệ');
+    }
+
+    // Special recognized badge / local token
+    if (trimmed === 'vietnam-flag') {
+      return trimmed;
+    }
+
+    // 1. Data URLs (Base64 raster image uploads only: png, jpeg, webp, gif)
+    if (trimmed.startsWith('data:')) {
+      const match = trimmed.match(/^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/]+={0,2})$/i);
+      if (!match) {
+        throw new BadRequestException('Chỉ chấp nhận ảnh tải lên định dạng PNG, JPEG, WebP hoặc GIF');
+      }
+      const mimeType = match[1].toLowerCase();
+      const base64Data = match[2];
+
+      if (base64Data.length % 4 !== 0) {
+        throw new BadRequestException('Dữ liệu base64 của ảnh không hợp lệ');
+      }
+
+      try {
+        const buffer = Buffer.from(base64Data, 'base64');
+        if (buffer.toString('base64') !== base64Data) {
+          throw new BadRequestException('Dữ liệu base64 của ảnh không hợp lệ');
+        }
+
+        const maxBytes = 5 * 1024 * 1024; // 5MB decoded size limit
+        if (buffer.byteLength > maxBytes) {
+          throw new BadRequestException('Kích thước ảnh đại diện không được vượt quá 5MB');
+        }
+        if (buffer.byteLength < 12) {
+          throw new BadRequestException('Dữ liệu ảnh đại diện quá ngắn hoặc bị rỗng');
+        }
+
+        if (!this.verifyImageMagicBytes(buffer, mimeType)) {
+          throw new BadRequestException('Nội dung ảnh không khớp với định dạng khai báo');
+        }
+      } catch (err) {
+        if (err instanceof BadRequestException) throw err;
+        throw new BadRequestException('Dữ liệu base64 của ảnh không hợp lệ');
+      }
+      return trimmed;
+    }
+
+    // 2. Relative / Public avatar paths (Strict allowlist only)
+    if (trimmed.startsWith('/')) {
+      if (!this.isAllowedLocalAvatarPath(trimmed)) {
+        throw new BadRequestException('Đường dẫn ảnh đại diện không nằm trong danh mục cho phép');
+      }
+      return trimmed;
+    }
+
+    // 3. Remote HTTP/HTTPS URLs
+    try {
+      const parsedUrl = new URL(trimmed);
+      const isLocalhost = parsedUrl.hostname === 'localhost' || parsedUrl.hostname === '127.0.0.1';
+      if (parsedUrl.protocol === 'https:' || (isLocalhost && parsedUrl.protocol === 'http:')) {
+        return trimmed;
+      }
+      throw new BadRequestException('Chỉ chấp nhận đường dẫn ảnh đại diện bảo mật (HTTPS)');
+    } catch (e) {
+      if (e instanceof BadRequestException) throw e;
+      throw new BadRequestException('Đường dẫn ảnh đại diện không hợp lệ');
+    }
+  }
+
   private async createWelcomeNotification(userId: Types.ObjectId) {
     try {
       await this.userNotificationModel.create({
@@ -709,13 +882,13 @@ export class AuthService implements OnModuleInit {
     }
 
     if (updateDto.displayName !== undefined) {
-      user.displayName = updateDto.displayName.trim();
+      user.displayName = this.validateDisplayName(updateDto.displayName);
     }
     if (updateDto.gender !== undefined) {
-      user.gender = updateDto.gender;
+      user.gender = this.validateGender(updateDto.gender);
     }
     if (updateDto.avatar !== undefined) {
-      user.avatar = updateDto.avatar;
+      user.avatar = this.validateAvatar(updateDto.avatar);
     }
 
     await user.save();

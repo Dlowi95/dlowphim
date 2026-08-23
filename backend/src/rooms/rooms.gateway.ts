@@ -12,6 +12,7 @@ import { OnModuleDestroy } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { RoomsService } from './rooms.service';
+import { AuthService } from '../auth/auth.service';
 
 @WebSocketGateway()
 export class RoomsGateway
@@ -49,6 +50,7 @@ export class RoomsGateway
   constructor(
     private readonly roomsService: RoomsService,
     private readonly jwtService: JwtService,
+    private readonly authService: AuthService,
   ) {}
 
   afterInit() {
@@ -164,12 +166,22 @@ export class RoomsGateway
     };
   }
 
-  private getAuthenticatedUserId(client: Socket): string | null {
-    const token = client.handshake.auth?.token;
-    if (!token || typeof token !== 'string') return null;
+  private async getAuthenticatedUserId(client: Socket): Promise<string | null> {
+    const rawToken = String(
+      client.handshake.auth?.token ||
+        client.handshake.headers?.authorization ||
+        '',
+    );
+    const token = rawToken.replace(/^Bearer\s+/i, '').trim();
+    if (!token) return null;
     try {
-      const payload = this.jwtService.verify<{ sub?: string }>(token);
-      return payload.sub ? String(payload.sub) : null;
+      const payload = await this.jwtService.verifyAsync<{ sub?: string; tokenVersion?: number }>(token);
+      if (!payload?.sub) return null;
+      const validUser = await this.authService.getValidSessionUser(
+        payload.sub,
+        payload.tokenVersion,
+      );
+      return validUser ? String(payload.sub) : null;
     } catch {
       return null;
     }
@@ -302,7 +314,7 @@ export class RoomsGateway
       return { ok: false, message: 'Phòng không tồn tại hoặc đã đóng.' };
     }
 
-    const authenticatedUserId = this.getAuthenticatedUserId(client);
+    const authenticatedUserId = await this.getAuthenticatedUserId(client);
     const requestedGuestId = String(data?.userId || '');
     const userId =
       authenticatedUserId ||
