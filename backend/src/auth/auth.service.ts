@@ -219,7 +219,7 @@ export class AuthService implements OnModuleInit {
     });
 
     await newUser.save();
-    const frontendUrl = (this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000').replace(/\/$/, '');
+    const frontendUrl = this.getPrimaryFrontendUrl();
     const verificationUrl = `${frontendUrl}/verify-email?token=${rawVerificationToken}`;
     try {
       await this.sendVerificationEmail(email, displayName, verificationUrl, verificationTokenHash);
@@ -332,6 +332,11 @@ export class AuthService implements OnModuleInit {
         if (this.forgotPasswordAttempts.size <= 4_000) break;
       }
     }
+  }
+
+  private getPrimaryFrontendUrl(): string {
+    const raw = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
+    return raw.split(',')[0].trim().replace(/\/$/, '');
   }
 
   private escapeHtml(value: string) {
@@ -465,7 +470,7 @@ export class AuthService implements OnModuleInit {
     user.emailVerificationRequestedAt = new Date();
     user.emailVerificationExpiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
     await user.save();
-    const frontendUrl = (this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000').replace(/\/$/, '');
+    const frontendUrl = this.getPrimaryFrontendUrl();
     try {
       await this.sendVerificationEmail(email, user.displayName, `${frontendUrl}/verify-email?token=${rawToken}`, tokenHash);
     } catch (error) {
@@ -509,7 +514,7 @@ export class AuthService implements OnModuleInit {
     user.passwordResetRequestedAt = new Date();
     await user.save();
 
-    const frontendUrl = (this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000').replace(/\/$/, '');
+    const frontendUrl = this.getPrimaryFrontendUrl();
     const resetUrl = `${frontendUrl}/reset-password?token=${rawToken}`;
     try {
       await this.sendPasswordResetEmail(email, user.displayName, resetUrl, tokenHash);
