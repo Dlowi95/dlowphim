@@ -207,7 +207,8 @@ export default function RoomPage() {
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [activeEpisodeIndex, setActiveEpisodeIndex] = useState(0);
   // Phòng xem chung dùng Embed theo hợp đồng sản phẩm; HLS chỉ là fallback.
-  const [playerType, setPlayerType] = useState<"hls" | "embed">("embed");
+  // Phòng xem chung ưu tiên HLS làm nguồn mặc định khi có m3u8; Embed chỉ là fallback tương thích.
+  const [playerType, setPlayerType] = useState<"hls" | "embed">("hls");
 
   // Chat/Messages states
   const [messages, setMessages] = useState<Message[]>([]);
@@ -227,7 +228,7 @@ export default function RoomPage() {
   const serverClockOffsetRef = useRef(0);
   const activeEpisodeIndexRef = useRef(0);
   const episodesRef = useRef<Episode[]>([]);
-  const playerTypeRef = useRef<"hls" | "embed">("embed");
+  const playerTypeRef = useRef<"hls" | "embed">("hls");
   const roomStartedRef = useRef(false);
   const hlsNetworkRetriesRef = useRef(0);
   const hlsMediaRetriesRef = useRef(0);
@@ -242,7 +243,8 @@ export default function RoomPage() {
   useEffect(() => {
     const selectedEpisode = episodes[activeEpisodeIndex];
     if (!selectedEpisode) return;
-    setPlayerType(selectedEpisode.link_embed ? "embed" : "hls");
+    // Ưu tiên HLS làm trình phát mặc định nếu có link_m3u8; chỉ dùng embed khi không có link_m3u8
+    setPlayerType(selectedEpisode.link_m3u8 ? "hls" : "embed");
   }, [activeEpisodeIndex, episodes]);
 
   useEffect(() => {
@@ -411,7 +413,9 @@ export default function RoomPage() {
 
           // Embed là nguồn mặc định của phòng xem chung; HLS chỉ dùng khi tập
           // hiện tại không cung cấp embed.
-          setPlayerType(selectedEpisode?.link_embed ? "embed" : "hls");
+          // HLS là nguồn mặc định của phòng xem chung khi có m3u8; Embed chỉ dùng khi tập
+          // hiện tại không cung cấp link_m3u8.
+          setPlayerType(selectedEpisode?.link_m3u8 ? "hls" : "embed");
         };
 
         const fetchCustomMovie = async (slug: string) => {
@@ -438,7 +442,7 @@ export default function RoomPage() {
           }
         };
 
-        // 3. So sánh server từ nguồn active và fallback, ưu tiên Embed.
+        // 3. So sánh server từ nguồn active và fallback, ưu tiên HLS m3u8.
         (async () => {
           const fetchSourceServers = async (source: "active" | "fallback") => {
             try {
@@ -473,9 +477,9 @@ export default function RoomPage() {
             .filter((candidate) => candidate.episodes.length > 0)
             .sort((left, right) => {
               const score = (candidate: { episodes: Episode[] }) =>
-                candidate.episodes.some((episode) => episode.link_embed)
+                candidate.episodes.some((episode) => episode.link_m3u8)
                   ? 2
-                  : candidate.episodes.some((episode) => episode.link_m3u8)
+                  : candidate.episodes.some((episode) => episode.link_embed)
                     ? 1
                     : 0;
               return score(right) - score(left) || left.index - right.index;
@@ -972,8 +976,14 @@ export default function RoomPage() {
               currentTime: video.currentTime,
             });
           } else if (!isHost && !isSyncingRef.current) {
-            // Member không được tự play → pause ngay lại
-            video.pause();
+            // Member không được tự play → nếu host không play thì pause lại, và đưa currentTime về host
+            const state = latestRemoteStateRef.current;
+            if (!state || state.action !== "play") {
+              video.pause();
+            }
+            if (state && Math.abs(video.currentTime - state.currentTime) > 0.5) {
+              video.currentTime = state.currentTime;
+            }
           }
         };
 
@@ -984,6 +994,12 @@ export default function RoomPage() {
               action: "pause",
               currentTime: video.currentTime,
             });
+          } else if (!isHost && !isSyncingRef.current) {
+            // Member không được tự pause → nếu host đang play thì tiếp tục play
+            const state = latestRemoteStateRef.current;
+            if (state && state.action === "play") {
+              video.play().catch(() => {});
+            }
           }
         };
 
@@ -994,6 +1010,12 @@ export default function RoomPage() {
               action: "seek",
               currentTime: video.currentTime,
             });
+          } else if (!isHost && !isSyncingRef.current) {
+            // Member không được tự tua → quay lại thời gian của host
+            const state = latestRemoteStateRef.current;
+            if (state && Math.abs(video.currentTime - state.currentTime) > 0.5) {
+              video.currentTime = state.currentTime;
+            }
           }
         };
 
