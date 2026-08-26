@@ -201,6 +201,7 @@ export default function HomePage() {
   const [logoCache, setLogoCache] = useState<Record<string, string | null>>({});
   const [backdropCache, setBackdropCache] = useState<Record<string, string | null>>({});
   const [posterCache, setPosterCache] = useState<Record<string, string | null>>({});
+  const [failedLogoSlugs, setFailedLogoSlugs] = useState<Record<string, boolean>>({});
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [heroVisualReady, setHeroVisualReady] = useState(false);
   const mobileTouchStartX = useRef<number | null>(null);
@@ -211,6 +212,26 @@ export default function HomePage() {
   const { user, toggleFavorite } = useAuth();
 
   const isFavorited = user?.favorites?.includes(heroCandidates[activeHeroIndex]?.slug || "") || false;
+
+  const handleHeroLogoError = (slug: string) => {
+    if (!slug) return;
+    setFailedLogoSlugs((prev) => {
+      if (prev[slug]) return prev;
+      return { ...prev, [slug]: true };
+    });
+
+    setHeroCandidates((prev) => {
+      const nextCandidates = prev.filter((movie) => movie.slug !== slug);
+      setActiveHeroIndex((currentIndex) => {
+        if (nextCandidates.length === 0) return 0;
+        if (currentIndex >= nextCandidates.length) {
+          return Math.max(0, nextCandidates.length - 1);
+        }
+        return currentIndex;
+      });
+      return nextCandidates;
+    });
+  };
 
   useEffect(() => {
     if (!resolvedHeroLoading && heroCandidates.length === 0) {
@@ -252,39 +273,62 @@ export default function HomePage() {
     if (resolvedHeroLoading) return;
 
     if (resolvedHeroSlots.length > 0) {
-      const preloadedDetails: Record<string, any> = {};
-      const preloadedLogos: Record<string, string | null> = {};
-      const preloadedBackdrops: Record<string, string | null> = {};
-      const preloadedPosters: Record<string, string | null> = {};
+      // STRICT TMDB LOGO POLICY: Only render hero candidates with valid logo and backdrop
+      // AND not marked as failed during this session
+      const validSlots = resolvedHeroSlots.filter((slot) => {
+        const slug = slot.movie?.slug;
+        if (!slug || failedLogoSlugs[slug]) return false;
+        const hasLogo = Boolean(slot.tmdbData?.logoUrl);
+        const hasBackdrop = Boolean(
+          slot.tmdbData?.backdropUrl || slot.movie?.thumb_url || slot.movie?.poster_url
+        );
+        return hasLogo && hasBackdrop;
+      });
 
-      for (const slot of resolvedHeroSlots) {
-        const slug = slot.movie.slug;
-        if (slot.detail) preloadedDetails[slug] = slot.detail;
-        if (slot.tmdbData?.logoUrl) preloadedLogos[slug] = slot.tmdbData.logoUrl;
-        if (slot.tmdbData?.posterUrl) preloadedPosters[slug] = slot.tmdbData.posterUrl;
-        if (slot.isCustomBanner) {
-          preloadedBackdrops[slug] = slot.movie.poster_url || slot.movie.thumb_url;
-        } else if (slot.tmdbData?.backdropUrl) {
-          preloadedBackdrops[slug] = slot.tmdbData.backdropUrl;
+      if (validSlots.length > 0) {
+        const preloadedDetails: Record<string, any> = {};
+        const preloadedLogos: Record<string, string | null> = {};
+        const preloadedBackdrops: Record<string, string | null> = {};
+        const preloadedPosters: Record<string, string | null> = {};
+
+        for (const slot of validSlots) {
+          const slug = slot.movie.slug;
+          if (slot.detail) preloadedDetails[slug] = slot.detail;
+          if (slot.tmdbData?.logoUrl) preloadedLogos[slug] = slot.tmdbData.logoUrl;
+          if (slot.tmdbData?.posterUrl) preloadedPosters[slug] = slot.tmdbData.posterUrl;
+          if (slot.isCustomBanner) {
+            preloadedBackdrops[slug] = slot.movie.poster_url || slot.movie.thumb_url;
+          } else if (slot.tmdbData?.backdropUrl) {
+            preloadedBackdrops[slug] = slot.tmdbData.backdropUrl;
+          }
         }
-      }
 
-      setDetailsCache((previous) => ({ ...previous, ...preloadedDetails }));
-      setLogoCache((previous) => ({ ...previous, ...preloadedLogos }));
-      setBackdropCache((previous) => ({ ...previous, ...preloadedBackdrops }));
-      setPosterCache((previous) => ({ ...previous, ...preloadedPosters }));
-      setHeroCandidates(resolvedHeroSlots.map((slot) => slot.movie));
-      setActiveHeroIndex(0);
+        setDetailsCache((previous) => ({ ...previous, ...preloadedDetails }));
+        setLogoCache((previous) => ({ ...previous, ...preloadedLogos }));
+        setBackdropCache((previous) => ({ ...previous, ...preloadedBackdrops }));
+        setPosterCache((previous) => ({ ...previous, ...preloadedPosters }));
+        setHeroCandidates(validSlots.map((slot) => slot.movie));
+        setActiveHeroIndex((prevIndex) => (prevIndex >= validSlots.length ? 0 : prevIndex));
+      } else {
+        setHeroCandidates([]);
+      }
     } else {
       if (resolvedHeroError) console.error("Không thể đồng bộ Hero Banner:", resolvedHeroError);
-      setHeroCandidates(FALLBACK_CANDIDATES);
+      // STRICT TMDB LOGO POLICY: NEVER assign FALLBACK_CANDIDATES to Hero banner
+      setHeroCandidates([]);
     }
 
     const gridMovies = resolvedLatestMovies.length > 5
       ? resolvedLatestMovies.slice(5, 13)
       : resolvedLatestMovies.slice(0, 8);
     setMovieList(gridMovies.length > 0 ? gridMovies : FALLBACK_CANDIDATES);
-  }, [resolvedHeroError, resolvedHeroLoading, resolvedHeroSlots, resolvedLatestMovies]);
+  }, [
+    resolvedHeroLoading,
+    resolvedHeroSlots,
+    resolvedHeroError,
+    resolvedLatestMovies,
+    failedLogoSlugs,
+  ]);
 
   // Hàm click chọn thumbnail có hiệu ứng chuyển cảnh mượt mà
   const handleThumbnailClick = (index: number) => {
@@ -368,7 +412,7 @@ export default function HomePage() {
     <div className="w-full flex-grow flex flex-col bg-black text-white pb-16">
 
       {/* 1. HERO BANNER - SLIDER CHUYÊN NGHIỆP Y HỆT HÌNH ẢNH */}
-      {!activeMovie && resolvedHeroLoading && (
+      {!activeMovie && (
         <div className="relative w-full h-[75vh] md:h-[88vh] overflow-hidden bg-zinc-950 animate-pulse border-b border-zinc-900/60">
           <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 via-zinc-950 to-black" />
           <div className="absolute left-[8%] bottom-20 space-y-4">
@@ -530,17 +574,21 @@ export default function HomePage() {
                     src={logoUrl}
                     alt={cleanMovieName(heroDetail?.name || activeMovie?.name)}
                     referrerPolicy="no-referrer"
+                    onError={() => handleHeroLogoError(activeMovie?.slug)}
                     className="max-h-full max-w-[85%] md:max-w-[450px] object-contain select-none filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.85)]"
                   />
                 </div>
-              ) : (
-                <h1 className={`${titleStyle.fontClass} ${titleStyle.textStyle} leading-tight drop-shadow-md pb-1`}>
-                  {cleanMovieName(heroDetail?.name || activeMovie?.name)}
-                </h1>
-              )}
-              <h2 className="text-lg md:text-xl font-extrabold text-pink-500 tracking-wide select-text">
-                {cleanMovieName(heroDetail?.origin_name || activeMovie?.origin_name)}
-              </h2>
+              ) : null}
+              {(() => {
+                const nameVi = cleanMovieName(heroDetail?.name || activeMovie?.name);
+                const nameOrigin = cleanMovieName(heroDetail?.origin_name || activeMovie?.origin_name);
+                if (!nameOrigin || nameOrigin.toLowerCase() === nameVi.toLowerCase()) return null;
+                return (
+                  <h2 className="text-lg md:text-xl font-extrabold text-pink-500 tracking-wide select-text">
+                    {nameOrigin}
+                  </h2>
+                );
+              })()}
             </div>
 
             {/* Hàng nhãn phân loại (IMDb, Tuổi, Năm, Tập, Thời lượng) */}

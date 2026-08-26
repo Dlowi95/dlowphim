@@ -20,7 +20,7 @@ export class Banner {
   @Prop()
   description?: string;
 
-  @Prop({ default: 0 })
+  @Prop({ required: true, unique: true, min: 1, max: 5 })
   order: number;
 
   @Prop({ default: true })

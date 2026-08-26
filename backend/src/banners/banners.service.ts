@@ -11,9 +11,9 @@ import { MoviesService } from '../movies/movies.service';
 
 const HERO_SLOT_COUNT = 5;
 const HERO_LATEST_MOVIE_LIMIT = 24;
-const HERO_CANDIDATE_LIMIT = 16;
+const HERO_CANDIDATE_LIMIT = 24;
 const HERO_TMDB_INITIAL_CANDIDATE_LIMIT = 8;
-const HERO_TMDB_CANDIDATE_LIMIT = 16;
+const HERO_TMDB_CANDIDATE_LIMIT = 24;
 const HERO_TMDB_EXPANSION_BATCH_SIZE = 4;
 const HERO_VALID_CANDIDATE_TARGET = HERO_SLOT_COUNT;
 const HERO_DETAIL_CONCURRENCY = 8;
@@ -151,7 +151,8 @@ export class BannersService {
       cursor += batch.length;
 
       const validCount = processed.filter(
-        ({ tmdbData }) => tmdbData?.backdropUrl && tmdbData?.tmdbTitle,
+        ({ tmdbData }) =>
+          tmdbData?.backdropUrl && tmdbData?.logoUrl && tmdbData?.tmdbTitle,
       ).length;
       if (
         cursor >= HERO_TMDB_INITIAL_CANDIDATE_LIMIT &&
@@ -197,15 +198,19 @@ export class BannersService {
     activeBanners: any[],
     processedMovies: ProcessedHeroMovie[],
     processedBySlug: Map<string, ProcessedHeroMovie>,
+    admin = false,
   ): any[] {
     const seenSlugs = new Set<string>();
     const seenNames = new Set<string>();
+
+    // STRICT TMDB LOGO POLICY: Candidates must have valid backdrop AND valid TMDB logo
     const candidates = processedMovies
       .filter(({ movie, detail, tmdbData }) => {
         if (
           !movie?.slug ||
           !detail ||
           !tmdbData?.backdropUrl ||
+          !tmdbData?.logoUrl ||
           !tmdbData?.tmdbTitle
         ) {
           return false;
@@ -215,53 +220,60 @@ export class BannersService {
           !currentEpisode.includes('trailer') &&
           !this.isAnimeOrAnimation(movie, detail)
         );
-      })
-      .sort(
-        (left, right) =>
-          Number(Boolean(right.tmdbData?.logoUrl)) -
-          Number(Boolean(left.tmdbData?.logoUrl)),
-      );
+      });
 
     const slots: any[] = [];
     for (let order = 1; order <= HERO_SLOT_COUNT; order++) {
       const custom = activeBanners.find((banner) => banner.order === order);
       if (custom) {
-        const customNameKey = this.cleanMovieName(custom.title);
-        const customOriginalNameKey = this.cleanMovieName(
-          custom.originName || '',
-        );
-        seenSlugs.add(custom.movieSlug);
-        if (customNameKey) seenNames.add(customNameKey);
-        if (customOriginalNameKey) seenNames.add(customOriginalNameKey);
-
         const resolvedCustom = processedBySlug.get(custom.movieSlug);
-        const detail = resolvedCustom?.detail || {};
-        slots.push({
-          order,
-          movie: {
-            ...detail,
-            _id: custom._id,
-            name: custom.title,
-            origin_name: custom.originName || '',
-            slug: custom.movieSlug,
-            thumb_url: custom.imageUrl,
-            poster_url: custom.imageUrl,
-            content: custom.description || detail.content || '',
+        const hasTmdbLogo = Boolean(resolvedCustom?.tmdbData?.logoUrl);
+        const hasBackdrop = Boolean(
+          custom.imageUrl || resolvedCustom?.tmdbData?.backdropUrl,
+        );
+
+        // On public homepage (admin=false), custom banners missing TMDB logo are excluded
+        if (!admin && (!hasTmdbLogo || !hasBackdrop)) {
+          // Skip inactive / unqualified custom banner on public homepage
+        } else {
+          const customNameKey = this.cleanMovieName(custom.title);
+          const customOriginalNameKey = this.cleanMovieName(
+            custom.originName || '',
+          );
+          seenSlugs.add(custom.movieSlug);
+          if (customNameKey) seenNames.add(customNameKey);
+          if (customOriginalNameKey) seenNames.add(customOriginalNameKey);
+
+          const detail = resolvedCustom?.detail || {};
+          slots.push({
+            order,
+            movie: {
+              ...detail,
+              _id: custom._id,
+              name: custom.title,
+              origin_name: custom.originName || '',
+              slug: custom.movieSlug,
+              thumb_url: custom.imageUrl,
+              poster_url: custom.imageUrl,
+              content: custom.description || detail.content || '',
+              isCustomBanner: true,
+            },
+            detail: {
+              ...detail,
+              name: custom.title,
+              origin_name: custom.originName || '',
+              thumb_url: custom.imageUrl,
+              poster_url: custom.imageUrl,
+              content: custom.description || detail.content || '',
+            },
+            tmdbData: resolvedCustom?.tmdbData || null,
             isCustomBanner: true,
-          },
-          detail: {
-            ...detail,
-            name: custom.title,
-            origin_name: custom.originName || '',
-            thumb_url: custom.imageUrl,
-            poster_url: custom.imageUrl,
-            content: custom.description || detail.content || '',
-          },
-          tmdbData: resolvedCustom?.tmdbData || null,
-          isCustomBanner: true,
-          bannerRecord: custom,
-        });
-        continue;
+            isEligible: hasTmdbLogo && hasBackdrop,
+            missingLogo: !hasTmdbLogo,
+            bannerRecord: custom,
+          });
+          continue;
+        }
       }
 
       const candidate = candidates.find(({ movie, tmdbData }) => {
@@ -306,6 +318,8 @@ export class BannersService {
         },
         tmdbData,
         isCustomBanner: false,
+        isEligible: true,
+        missingLogo: false,
       });
     }
     return slots;
@@ -373,7 +387,7 @@ export class BannersService {
     const processedBySlug = new Map(
       processedMovies.map((processed) => [processed.movie.slug, processed]),
     );
-    const missingCustomMovies = activeBanners
+    const missingCustomMovies = (admin ? rawBanners : activeBanners)
       .filter((banner) => !processedBySlug.has(banner.movieSlug))
       .map((banner) => ({
         slug: banner.movieSlug,
@@ -393,13 +407,49 @@ export class BannersService {
       sourceId,
       generatedAt: new Date().toISOString(),
       slots: this.buildResolvedSlots(
-        activeBanners,
+        admin ? rawBanners : activeBanners,
         processedMovies,
         processedBySlug,
+        admin,
       ),
       rawBanners,
       latestMovies,
     };
+  }
+
+  async verifyMovieSlugExists(movieSlug: string): Promise<any> {
+    const sources = ['active', 'fallback'];
+    let lastError: any = null;
+    for (const source of sources) {
+      try {
+        const detailData = await this.moviesService.fetchOphimProxy(
+          `/v1/api/phim/${movieSlug}`,
+          source,
+        );
+        const detail = detailData?.data?.item || detailData?.movie || null;
+        if (detail?.name || detail?.slug) {
+          return detail;
+        }
+      } catch (err: any) {
+        lastError = err;
+      }
+    }
+
+    // Check custom movie
+    try {
+      const customMovie = await this.moviesService.getCustomMovieBySlug(movieSlug);
+      if (customMovie) return customMovie;
+    } catch {}
+
+    if (lastError && lastError?.status >= 500) {
+      throw new BadRequestException(
+        `Không thể kết nối máy chủ nguồn để xác minh slug "${movieSlug}". Vui lòng thử lại sau.`,
+      );
+    }
+
+    throw new BadRequestException(
+      `Slug phim "${movieSlug}" không tồn tại trên hệ thống nguồn.`,
+    );
   }
 
   // Get active banners for public homepage
@@ -418,14 +468,40 @@ export class BannersService {
   // Create a new banner
   async create(createBannerDto: any): Promise<Banner> {
     const payload = this.normalizeBannerInput(createBannerDto, false);
+
+    // Verify slug exists on upstream source
+    await this.verifyMovieSlugExists(payload.movieSlug);
+
     const occupiedSlot = await this.bannerModel.exists({ order: payload.order });
     if (occupiedSlot) {
       throw new ConflictException(
         `Vị trí ${payload.order} đã có banner. Hãy chỉnh sửa banner hiện tại.`,
       );
     }
-    const newBanner = new this.bannerModel(payload);
-    return newBanner.save();
+
+    if (payload.isActive) {
+      const duplicateSlug = await this.bannerModel.exists({
+        movieSlug: payload.movieSlug,
+        isActive: true,
+      });
+      if (duplicateSlug) {
+        throw new ConflictException(
+          `Phim slug "${payload.movieSlug}" đã có banner đang kích hoạt ở vị trí khác.`,
+        );
+      }
+    }
+
+    try {
+      const newBanner = new this.bannerModel(payload);
+      return await newBanner.save();
+    } catch (error: any) {
+      if (error?.code === 11000) {
+        throw new ConflictException(
+          `Vị trí ${payload.order} hoặc slug "${payload.movieSlug}" đã tồn tại.`,
+        );
+      }
+      throw error;
+    }
   }
 
   // Update a banner
@@ -433,8 +509,21 @@ export class BannersService {
     if (!Types.ObjectId.isValid(id)) {
       throw new BadRequestException('Mã banner không hợp lệ');
     }
+    const existingBanner = await this.bannerModel.findById(id).exec();
+    if (!existingBanner) {
+      throw new NotFoundException('Không tìm thấy banner này');
+    }
+
     const payload = this.normalizeBannerInput(updateBannerDto, true);
-    if (payload.order !== undefined) {
+
+    if (
+      payload.movieSlug !== undefined &&
+      payload.movieSlug !== existingBanner.movieSlug
+    ) {
+      await this.verifyMovieSlugExists(payload.movieSlug);
+    }
+
+    if (payload.order !== undefined && payload.order !== existingBanner.order) {
       const occupiedSlot = await this.bannerModel.exists({
         order: payload.order,
         _id: { $ne: new Types.ObjectId(id) },
@@ -445,14 +534,46 @@ export class BannersService {
         );
       }
     }
-    const updatedBanner = await this.bannerModel
-      .findByIdAndUpdate(id, payload, { returnDocument: 'after' })
-      .exec();
 
-    if (!updatedBanner) {
-      throw new NotFoundException('Không tìm thấy banner này');
+    const effectiveSlug =
+      payload.movieSlug !== undefined
+        ? payload.movieSlug
+        : existingBanner.movieSlug;
+    const effectiveIsActive =
+      payload.isActive !== undefined
+        ? payload.isActive
+        : existingBanner.isActive;
+
+    if (effectiveIsActive) {
+      const duplicateSlug = await this.bannerModel.exists({
+        movieSlug: effectiveSlug,
+        isActive: true,
+        _id: { $ne: new Types.ObjectId(id) },
+      });
+      if (duplicateSlug) {
+        throw new ConflictException(
+          `Phim slug "${effectiveSlug}" đã có banner đang kích hoạt ở vị trí khác.`,
+        );
+      }
     }
-    return updatedBanner;
+
+    try {
+      const updatedBanner = await this.bannerModel
+        .findByIdAndUpdate(id, payload, { returnDocument: 'after' })
+        .exec();
+
+      if (!updatedBanner) {
+        throw new NotFoundException('Không tìm thấy banner này');
+      }
+      return updatedBanner;
+    } catch (error: any) {
+      if (error?.code === 11000) {
+        throw new ConflictException(
+          `Vị trí ${payload.order || existingBanner.order} đã có banner khác.`,
+        );
+      }
+      throw error;
+    }
   }
 
   // Delete a banner

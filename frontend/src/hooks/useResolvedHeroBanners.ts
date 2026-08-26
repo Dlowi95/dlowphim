@@ -30,6 +30,8 @@ export interface ResolvedHeroSlot {
   detail: any;
   tmdbData: HeroTmdbData | null;
   isCustomBanner: boolean;
+  isEligible?: boolean;
+  missingLogo?: boolean;
   bannerRecord?: HeroBannerRecord;
 }
 
@@ -46,7 +48,8 @@ interface UseResolvedHeroBannersOptions {
   admin?: boolean;
 }
 
-const PUBLIC_HERO_CACHE_KEY = "dlowphim:home-hero:v1";
+const PUBLIC_HERO_CACHE_KEY = "dlowphim:home-hero:v2";
+const LEGACY_HERO_CACHE_KEY = "dlowphim:home-hero:v1";
 const PUBLIC_HERO_CACHE_TTL = 30 * 60 * 1000;
 const publicHeroInflight = new Map<string, Promise<ResolvedHeroResponse>>();
 
@@ -140,6 +143,7 @@ export function useResolvedHeroBanners({
   useEffect(() => {
     if (!admin) {
       try {
+        localStorage.removeItem(LEGACY_HERO_CACHE_KEY);
         const cachedValue = localStorage.getItem(PUBLIC_HERO_CACHE_KEY);
         if (cachedValue) {
           const cached = JSON.parse(cachedValue) as {
