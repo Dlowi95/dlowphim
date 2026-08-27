@@ -67,3 +67,38 @@ export function resolveFullscreenAction(options: {
   }
   return "fallback-css";
 }
+
+export interface ScrollPositionSnapshot {
+  scrollTop: number;
+  clientHeight: number;
+  scrollHeight: number;
+}
+
+/**
+ * Kiểm tra xem người dùng có đang ở gần đáy khung chat hay không
+ * dựa trên khoảng cách cách đáy (threshold mặc định 80px).
+ */
+export function isNearBottom(snapshot: ScrollPositionSnapshot, threshold = 80): boolean {
+  const { scrollTop, clientHeight, scrollHeight } = snapshot;
+  return scrollHeight - (scrollTop + clientHeight) <= threshold;
+}
+
+/**
+ * Xác định xem có nên tự động cuộn xuống đáy:
+ * 1. Khi vừa tải danh sách ban đầu (isInitialLoad = true) -> luôn cuộn xuống đáy.
+ * 2. Khi không có tin nhắn mới nào được thêm vào danh sách (hasNewMessages = false, ví dụ component re-render hoặc user object refresh) -> KHÔNG cuộn để giữ nguyên vị trí đọc.
+ * 3. Khi chính người dùng hiện tại vừa gửi tin nhắn (isUserSent = true) -> cuộn xuống đáy để xem tin vừa gửi.
+ * 4. Khi có tin mới từ người khác/hệ thống và người dùng đang ở gần đáy (wasNearBottom = true) -> cuộn theo tin mới.
+ * 5. Khi có tin mới nhưng người dùng đang cuộn lên đọc tin cũ (wasNearBottom = false) -> KHÔNG cuộn để không làm gián đoạn việc đọc.
+ */
+export function shouldAutoScrollChat(options: {
+  wasNearBottom: boolean;
+  isUserSent?: boolean;
+  hasNewMessages?: boolean;
+  isInitialLoad?: boolean;
+}): boolean {
+  if (options.isInitialLoad) return true;
+  if (options.hasNewMessages === false) return false;
+  if (options.isUserSent) return true;
+  return options.wasNearBottom;
+}

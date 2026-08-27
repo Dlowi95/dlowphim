@@ -16,7 +16,7 @@ import { io } from "socket.io-client";
 import { getResilientSocketOptions } from "@/lib/socket-options";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 import { destroyHlsInstance, loadHlsLibrary, WATCH_TOGETHER_HLS_CONFIG } from "@/utils/hlsLoader";
-import { isSelfMessage, isMessageContinuation, resolveFullscreenAction } from "@/utils/watchTogetherFlow";
+import { isSelfMessage, isMessageContinuation, resolveFullscreenAction, isNearBottom, shouldAutoScrollChat } from "@/utils/watchTogetherFlow";
 import MobileRoomHeader from "./MobileRoomHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -218,6 +218,19 @@ export default function RoomPage() {
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [viewerCount, setViewerCount] = useState(1);
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
+  const isNearBottomRef = useRef(true);
+  const prevMessagesCountRef = useRef(0);
+  const justSentMessageRef = useRef(false);
+
+  const handleChatScroll = useCallback(() => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    isNearBottomRef.current = isNearBottom({
+      scrollTop: el.scrollTop,
+      clientHeight: el.clientHeight,
+      scrollHeight: el.scrollHeight,
+    }, 80);
+  }, []);
 
   // Refs for players and socket
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -947,11 +960,29 @@ export default function RoomPage() {
     window.scrollTo(0, 0);
   }, []);
 
-  // Tự động cuộn khung chat xuống dưới cùng khi có tin nhắn mới
+  // Tự động cuộn khung chat thông minh khi có tin nhắn mới
   useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    const el = chatContainerRef.current;
+    if (!el || messages.length === 0) return;
+
+    const isInitialLoad = prevMessagesCountRef.current === 0;
+    const hasNewMessages = messages.length > prevMessagesCountRef.current;
+    const isUserSent = justSentMessageRef.current;
+
+    const shouldScroll = shouldAutoScrollChat({
+      wasNearBottom: isNearBottomRef.current,
+      isUserSent,
+      hasNewMessages,
+      isInitialLoad,
+    });
+
+    if (shouldScroll) {
+      el.scrollTop = el.scrollHeight;
+      isNearBottomRef.current = true;
     }
+
+    justSentMessageRef.current = false;
+    prevMessagesCountRef.current = messages.length;
   }, [messages]);
 
   // Tự động cập nhật query parameter "ep" trên URL theo tập phim đang phát
@@ -1256,6 +1287,7 @@ export default function RoomPage() {
     const activeUserId = authenticatedUserId || guestId;
 
     setIsSendingMessage(true);
+    justSentMessageRef.current = true;
     socket.timeout(6000).emit("send_message", {
       roomId: room?.roomId,
       userId: activeUserId,
@@ -1482,7 +1514,9 @@ export default function RoomPage() {
                   ref={playerContainerRef}
                   className={`relative bg-black overflow-hidden group ${isFullscreen
                     ? "w-screen h-screen !aspect-auto"
-                    : "w-full aspect-video"
+                    : hasMovieStarted
+                      ? "w-full aspect-video"
+                      : "w-full min-h-[380px] sm:min-h-[420px] md:min-h-0 md:aspect-video"
                     }`}
                 >
                   {/* Toast hối thúc của khán giả (chỉ hiển thị cho Host) */}
@@ -1498,7 +1532,7 @@ export default function RoomPage() {
 
                   {/* Countdown/waiting screen overlay for scheduled rooms */}
                   {!hasMovieStarted ? (
-                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#07070a] px-6 text-center select-none overflow-hidden">
+                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#07070a] px-4 py-4 sm:px-6 sm:py-6 text-center select-none overflow-y-auto">
                       {posterUrl && (
                         <img
                           src={getImageUrl(posterUrl)}
@@ -1527,32 +1561,32 @@ export default function RoomPage() {
                       )}
                       <HalftoneOverlay />
 
-                      <div className="relative z-20 flex flex-col items-center justify-center max-w-md space-y-4">
-                        <div className="w-20 h-20 rounded-3xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mb-2 animate-pulse shadow-[0_0_40px_rgba(245,158,11,0.3)]">
-                          <Clock size={36} className="text-amber-400 animate-[spin_10s_linear_infinite]" />
+                      <div className="relative z-20 flex flex-col items-center justify-center max-w-md space-y-3 sm:space-y-4">
+                        <div className="w-14 h-14 sm:w-18 sm:h-18 rounded-2xl sm:rounded-3xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mb-1 animate-pulse shadow-[0_0_40px_rgba(245,158,11,0.3)]">
+                          <Clock size={28} className="text-amber-400 animate-[spin_10s_linear_infinite]" />
                         </div>
 
-                        <span className="inline-flex items-center gap-1.5 bg-amber-500/15 border border-amber-500/35 text-amber-400 text-xs font-black uppercase tracking-widest px-4 py-2 rounded-full shadow-lg">
-                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping" />
+                        <span className="inline-flex items-center gap-1.5 bg-amber-500/15 border border-amber-500/35 text-amber-400 text-[10px] sm:text-xs font-black uppercase tracking-widest px-3 py-1.5 sm:px-4 sm:py-2 rounded-full shadow-lg">
+                          <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-amber-500 animate-ping" />
                           Đang Chờ Công Chiếu
                         </span>
                         
-                        <h2 className="text-2xl md:text-3xl font-black text-white uppercase tracking-tight drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)]">
+                        <h2 className="text-lg sm:text-2xl md:text-3xl font-black text-white uppercase tracking-tight drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)] break-words max-w-full px-2 line-clamp-2">
                           {room?.movieName ? cleanMovieName(room.movieName) : "Phim sắp chiếu"}
                         </h2>
                         
-                        <p className="text-sm md:text-base text-zinc-300 font-bold leading-relaxed">
+                        <p className="text-xs sm:text-sm md:text-base text-zinc-300 font-bold leading-relaxed px-2">
                           Thời gian chiếu: <span className="text-pink-400 font-extrabold">{room?.startTime ? new Date(room.startTime).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }) : "Đang chờ Trưởng phòng"}</span>
                         </p>
 
                         {countdownText && (
-                          <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-2xl px-8 py-4.5 mt-3 inline-block shadow-2xl">
-                            <p className="text-[10px] text-zinc-400 font-black uppercase tracking-wider mb-1">Bắt đầu sau</p>
-                            <p className="text-2xl md:text-3xl font-black text-amber-400 tracking-tight drop-shadow-[0_0_15px_rgba(245,158,11,0.4)]">{countdownText}</p>
+                          <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-2xl px-4 py-2 sm:px-8 sm:py-3.5 mt-2 sm:mt-3 inline-block shadow-2xl max-w-full">
+                            <p className="text-[9px] sm:text-[10px] text-zinc-400 font-black uppercase tracking-wider mb-0.5">Bắt đầu sau</p>
+                            <p className="text-xl sm:text-2xl md:text-3xl font-black text-amber-400 tracking-tight drop-shadow-[0_0_15px_rgba(245,158,11,0.4)]">{countdownText}</p>
                           </div>
                         )}
 
-                        <p className="text-xs text-zinc-400 leading-relaxed max-w-sm mx-auto">
+                        <p className="text-[11px] sm:text-xs text-zinc-400 leading-relaxed max-w-sm mx-auto px-2">
                           {room?.startTime && Date.now() >= new Date(room.startTime).getTime()
                             ? "Phòng sẽ bắt đầu ngay khi Trưởng phòng có mặt và tự đóng nếu vắng quá 30 phút."
                             : "Bạn vẫn có thể gửi tin nhắn trò chuyện ở ô chat bên cạnh trong lúc chờ đợi nhé!"}
@@ -1566,9 +1600,9 @@ export default function RoomPage() {
                                 socketRef.current.emit("start_scheduled_movie", { roomId: room?.roomId });
                               }
                             }}
-                            className="mt-4 px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-wider bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-lg shadow-amber-500/25 active:scale-95 transition-all cursor-pointer border-none flex items-center gap-2"
+                            className="mt-2 sm:mt-4 min-h-[40px] px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl sm:rounded-2xl text-xs font-black uppercase tracking-wider bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-lg shadow-amber-500/25 active:scale-95 transition-all cursor-pointer border-none flex items-center gap-2"
                           >
-                            <Sparkles size={15} />
+                            <Sparkles size={14} />
                             <span>🚀 Bắt Đầu Chiếu Phim Ngay</span>
                           </button>
                         ) : (
@@ -1582,7 +1616,7 @@ export default function RoomPage() {
                               setHasUrgedHost(true);
                               window.setTimeout(() => setHasUrgedHost(false), 60_000);
                             }}
-                            className={`mt-4 px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 cursor-pointer border ${hasUrgedHost
+                            className={`mt-2 sm:mt-4 min-h-[40px] px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl sm:rounded-2xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 cursor-pointer border ${hasUrgedHost
                               ? "bg-zinc-900 text-zinc-500 border-zinc-800 cursor-not-allowed shadow-inner"
                               : "bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white border-pink-500/20 shadow-lg shadow-pink-500/20 hover:shadow-pink-500/35"
                               }`}
@@ -1813,12 +1847,12 @@ export default function RoomPage() {
             {/* CỘT PHẢI (NHỎ): Chatbox Realtime */}
             <div className="lg:col-span-4">
               <div
-                style={{ height: isDesktop ? `${playerHeight}px` : "clamp(360px, 52dvh, 460px)" }}
-                className="relative flex flex-col overflow-hidden rounded-2xl border border-zinc-800/80 bg-[#161622]/95 shadow-2xl shadow-black/80 backdrop-blur-md transition-all duration-150 md:rounded-3xl"
+                style={isDesktop ? { height: `${playerHeight}px` } : undefined}
+                className="relative flex flex-col h-[400px] sm:h-[420px] md:h-[clamp(360px,52dvh,460px)] lg:h-auto overflow-hidden rounded-2xl border border-zinc-800/80 bg-[#161622]/95 shadow-2xl shadow-black/80 backdrop-blur-md md:rounded-3xl"
               >
 
                 {/* Chatbox Header */}
-                <div className="flex items-center gap-2 border-b border-zinc-900 bg-gradient-to-b from-zinc-950/60 to-transparent p-3 select-none md:p-4">
+                <div className="flex items-center gap-2 border-b border-zinc-900 bg-gradient-to-b from-zinc-950/60 to-transparent p-3 select-none shrink-0 md:p-4">
                   <MessageSquare size={16} className="text-pink-500" />
                   <span className="text-xs font-black text-zinc-300 uppercase tracking-wider">Hộp thoại xem chung</span>
 
@@ -1843,7 +1877,11 @@ export default function RoomPage() {
                 </div>
 
                 {/* List tin nhắn */}
-                <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-3 text-left scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent md:p-4">
+                <div
+                  ref={chatContainerRef}
+                  onScroll={handleChatScroll}
+                  className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 text-left scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent md:p-4"
+                >
                   {messages.map((msg, index) => {
                     if (msg.isSystem) {
                       return (
@@ -1904,7 +1942,7 @@ export default function RoomPage() {
                           </div>
                         )}
 
-                        <div className={`flex flex-col space-y-1 ${isMe ? "items-end" : "items-start"}`}>
+                        <div className={`flex flex-col space-y-1 min-w-0 max-w-full ${isMe ? "items-end" : "items-start"}`}>
                           {/* Name & Time */}
                           {!isContinuation && (
                             <div className={`flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider select-none ${isMe ? "justify-end text-pink-400" : msg.senderId === 'dlow-ai-bot' ? "text-purple-400" : "text-zinc-500"
@@ -1921,7 +1959,7 @@ export default function RoomPage() {
                           )}
 
                           {/* Bubble */}
-                          <div className={`px-3 py-2 rounded-2xl text-[11px] font-bold leading-relaxed whitespace-pre-wrap break-words w-fit max-w-full ${isMe
+                          <div className={`px-3 py-2 rounded-2xl text-[11px] font-bold leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] break-words w-fit max-w-full ${isMe
                             ? `bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md shadow-pink-500/20 ${isGroupEnd ? "rounded-br-none" : "rounded-br-md"}`
                             : msg.senderId === 'dlow-ai-bot'
                               ? `bg-gradient-to-br from-[#2f225e] to-[#1a1438] text-purple-100 border border-purple-400/35 shadow-md shadow-purple-500/10 ${isGroupEnd ? "rounded-bl-none" : "rounded-bl-md"}`
@@ -1936,14 +1974,14 @@ export default function RoomPage() {
                 </div>
 
                 {socketError && (
-                  <div className="bg-red-500/10 border-t border-red-500/20 px-3.5 py-2 text-[10px] text-red-450 font-extrabold flex items-center gap-1.5 select-none animate-in fade-in duration-200">
+                  <div className="bg-red-500/10 border-t border-red-500/20 px-3.5 py-2 text-[10px] text-red-450 font-extrabold flex items-center gap-1.5 select-none shrink-0 animate-in fade-in duration-200">
                     <AlertCircle size={12} className="shrink-0 animate-pulse text-red-500" />
                     <span>{socketError}</span>
                   </div>
                 )}
 
                 {/* Input gửi tin nhắn */}
-                <form onSubmit={handleSendMessage} className="flex items-center gap-2 border-t border-zinc-900/45 bg-zinc-950/80 p-3 backdrop-blur-md md:p-3.5">
+                <form onSubmit={handleSendMessage} className="flex items-center gap-2 border-t border-zinc-900/45 bg-zinc-950/80 p-3 backdrop-blur-md shrink-0 md:p-3.5">
                   <input
                     type="text"
                     required

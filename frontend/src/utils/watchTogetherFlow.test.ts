@@ -4,6 +4,8 @@ import {
   isSelfMessage,
   isMessageContinuation,
   resolveFullscreenAction,
+  isNearBottom,
+  shouldAutoScrollChat,
   type ChatMessageLike,
 } from "./watchTogetherFlow.ts";
 
@@ -263,5 +265,82 @@ test("resolves correct fullscreen action across desktop container vs iOS Safari 
       hasNativeVideoFullscreen: false,
     }),
     "fallback-css"
+  );
+});
+
+test("isNearBottom: detects whether chat scroll is within bottom threshold", () => {
+  // 1. Ở sát đáy (distance = 0px <= 80px) -> true
+  assert.equal(
+    isNearBottom({ scrollTop: 400, clientHeight: 400, scrollHeight: 800 }, 80),
+    true
+  );
+
+  // 2. Cách đáy 50px (distance = 50px <= 80px) -> true
+  assert.equal(
+    isNearBottom({ scrollTop: 350, clientHeight: 400, scrollHeight: 800 }, 80),
+    true
+  );
+
+  // 3. Cuộn lên đọc tin cũ (distance = 300px > 80px) -> false
+  assert.equal(
+    isNearBottom({ scrollTop: 100, clientHeight: 400, scrollHeight: 800 }, 80),
+    false
+  );
+});
+
+test("shouldAutoScrollChat: preserves reader position when reading old messages, ignores user object re-renders without new messages", () => {
+  // 1. Lần nạp tin nhắn ban đầu -> Luôn cuộn xuống đáy
+  assert.equal(
+    shouldAutoScrollChat({
+      wasNearBottom: false,
+      isUserSent: false,
+      hasNewMessages: true,
+      isInitialLoad: true,
+    }),
+    true
+  );
+
+  // 2. Không có tin nhắn mới (ví dụ: user object update / avatar refresh / component re-render) -> Tuyệt đối KHÔNG cuộn
+  assert.equal(
+    shouldAutoScrollChat({
+      wasNearBottom: false,
+      isUserSent: false,
+      hasNewMessages: false,
+      isInitialLoad: false,
+    }),
+    false
+  );
+
+  // 3. Đang ở đáy và nhận tin nhắn mới từ người khác -> Cuộn theo xuống đáy
+  assert.equal(
+    shouldAutoScrollChat({
+      wasNearBottom: true,
+      isUserSent: false,
+      hasNewMessages: true,
+      isInitialLoad: false,
+    }),
+    true
+  );
+
+  // 4. Đang cuộn lên trên đọc tin cũ và nhận tin nhắn mới từ người khác -> KHÔNG cuộn (giữ vị trí đọc)
+  assert.equal(
+    shouldAutoScrollChat({
+      wasNearBottom: false,
+      isUserSent: false,
+      hasNewMessages: true,
+      isInitialLoad: false,
+    }),
+    false
+  );
+
+  // 5. Đang cuộn lên trên nhưng chính người dùng vừa gửi tin nhắn -> Tự động cuộn xuống đáy để xem tin của mình
+  assert.equal(
+    shouldAutoScrollChat({
+      wasNearBottom: false,
+      isUserSent: true,
+      hasNewMessages: true,
+      isInitialLoad: false,
+    }),
+    true
   );
 });
