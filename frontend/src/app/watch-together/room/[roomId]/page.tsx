@@ -86,7 +86,6 @@ export default function RoomPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [socketError, setSocketError] = useState<string | null>(null);
-  const [streamNotice, setStreamNotice] = useState<string | null>(null);
   const [codeCopied, setCodeCopied] = useState(false);
   const [isAiActive, setIsAiActive] = useState(false);
   const [privateAccessRequired, setPrivateAccessRequired] = useState(false);
@@ -616,10 +615,8 @@ export default function RoomPage() {
         setIsMuted(true);
         video.play().then(() => {
           pendingVideoStateRef.current = null;
-          setStreamNotice("Video đang phát tắt tiếng. Bấm biểu tượng loa để bật âm thanh.");
         }).catch(() => {
           pendingVideoStateRef.current = state;
-          setStreamNotice("Hãy bấm biểu tượng loa để bắt đầu phát và tiếp tục đồng bộ.");
         });
       });
     }
@@ -791,7 +788,6 @@ export default function RoomPage() {
         video.play().then(() => {
           pendingVideoStateRef.current = null;
         }).catch(() => {
-          setStreamNotice("Trình duyệt đang chặn tự phát. Hãy bấm nút phát để bắt đầu xem.");
         }).finally(() => {
           setTimeout(() => { isSyncingRef.current = false; }, 500);
         });
@@ -950,21 +946,15 @@ export default function RoomPage() {
 
     if (playerType === "hls" && activeEp?.link_m3u8) {
       const initPlayer = async () => {
+        let Hls: any = null;
+        try {
+          Hls = await loadHlsLibrary();
+        } catch (loadError) {
+          console.error("[WatchTogether] Không tải được HLS.js:", loadError);
+        }
+        if (!active) return;
         const video = videoRef.current;
         if (!video) return;
-        const nativeHlsSupport = video.canPlayType("application/vnd.apple.mpegurl");
-        let Hls: any = null;
-
-        // Safari/iOS dùng media pipeline native, vì vậy không chờ hoặc phụ thuộc
-        // Hls.js từ CDN. Các trình duyệt không có native HLS mới tải Hls.js.
-        if (!nativeHlsSupport) {
-          try {
-            Hls = await loadHlsLibrary();
-          } catch (loadError) {
-            console.error("[WatchTogether] Không tải được HLS.js:", loadError);
-          }
-          if (!active) return;
-        }
 
         currentM3u8Ref.current = activeEp.link_m3u8;
 
@@ -1068,63 +1058,8 @@ export default function RoomPage() {
           onCanPlay,
         };
 
-        if (nativeHlsSupport) {
-          // Safari/iOS phát HLS ổn định nhất bằng media pipeline native. Ưu tiên
-          // nhánh này trước Hls.js để tránh iPhone đời mới chọn nhầm MSE rồi đen hình.
-          nativeVideo = video;
-
-          const loadNativeSource = (resetMedia = false) => {
-            if (!active) return;
-            try {
-              if (resetMedia) {
-                // Không để thao tác dọn src tự kích hoạt nhầm handler lỗi của
-                // Safari trước khi nguồn mới được gắn lại.
-                if (onNativeError) video.removeEventListener("error", onNativeError);
-                video.pause();
-                video.removeAttribute("src");
-                video.load();
-                if (onNativeError) video.addEventListener("error", onNativeError);
-              }
-              video.src = activeEp.link_m3u8;
-              video.load();
-            } catch (nativeLoadError) {
-              console.error("[WatchTogether] Không thể nạp HLS native:", nativeLoadError);
-            }
-          };
-
-          onNativeLoadedMetadata = () => {
-            if (!active) return;
-            setStreamNotice(null);
-            const pendingState = pendingVideoStateRef.current;
-            if (pendingState) applyRemotePlaybackState(pendingState);
-            if (!isHost) socketRef.current?.emit("request_sync", { roomId });
-          };
-
-          onNativeError = () => {
-            if (!active) return;
-
-            // Safari đôi lúc giữ media state lỗi sau khi đổi tập/nguồn. Làm sạch
-            // và nạp lại đúng một lần trước khi dùng Embed dự phòng.
-            if (nativeRetryCount < 1) {
-              nativeRetryCount += 1;
-              setStreamNotice("Safari đang tải lại nguồn phát...");
-              nativeRetryTimer = setTimeout(() => loadNativeSource(true), 350);
-              return;
-            }
-
-            console.error("[WatchTogether] HLS native error:", video.error);
-            if (activeEp.link_embed) {
-              setPlayerType("embed");
-              setStreamNotice("Safari không mở được HLS, đã chuyển sang Embed dự phòng.");
-            } else {
-              setErrorModal("Safari không mở được nguồn HLS của tập này và không có Embed dự phòng.");
-            }
-          };
-
-          video.addEventListener("loadedmetadata", onNativeLoadedMetadata);
-          video.addEventListener("error", onNativeError);
-          loadNativeSource();
-        } else if (Hls && Hls.isSupported()) {
+        // Ưu tiên 1: Hls.js cho Chrome Desktop, Android, Firefox, Edge, etc.
+        if (Hls && Hls.isSupported()) {
           hlsNetworkRetriesRef.current = 0;
           hlsMediaRetriesRef.current = 0;
           const hls = new Hls(WATCH_TOGETHER_HLS_CONFIG);
@@ -1134,7 +1069,6 @@ export default function RoomPage() {
 
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             if (!active) return;
-            setStreamNotice(null);
             hlsNetworkRetriesRef.current = 0;
             hlsMediaRetriesRef.current = 0;
             const pendingState = pendingVideoStateRef.current;
@@ -1166,14 +1100,55 @@ export default function RoomPage() {
             destroyHlsInstance(hls);
             if (activeEp.link_embed) {
               setPlayerType("embed");
-              setStreamNotice("HLS không phản hồi, đã chuyển sang Embed dự phòng.");
             } else {
               setErrorModal("Nguồn HLS của tập này đang lỗi và không có Embed dự phòng.");
             }
           });
+        } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+          // Ưu tiên 2: Safari / iOS native pipeline (khi Hls.isSupported() là false)
+          nativeVideo = video;
+
+          onNativeLoadedMetadata = () => {
+            if (!active) return;
+            const pendingState = pendingVideoStateRef.current;
+            if (pendingState) {
+              applyRemotePlaybackState(pendingState);
+            }
+            if (!isHost) {
+              socketRef.current?.emit("request_sync", { roomId });
+            }
+          };
+
+          onNativeError = () => {
+            if (!active) return;
+            if (nativeRetryCount < 1) {
+              nativeRetryCount += 1;
+              nativeRetryTimer = setTimeout(() => {
+                if (!active || !video) return;
+                try {
+                  video.src = activeEp.link_m3u8;
+                  video.load();
+                } catch (err) {
+                  console.error("[WatchTogether] Safari retry error:", err);
+                }
+              }, 350);
+              return;
+            }
+
+            console.error("[WatchTogether] Safari native HLS error:", video.error);
+            if (activeEp.link_embed) {
+              setPlayerType("embed");
+            } else {
+              setErrorModal("Safari không mở được nguồn HLS của tập này và không có Embed dự phòng.");
+            }
+          };
+
+          video.addEventListener("loadedmetadata", onNativeLoadedMetadata);
+          video.addEventListener("error", onNativeError);
+          video.src = activeEp.link_m3u8;
+          video.load();
         } else if (activeEp.link_embed) {
           setPlayerType("embed");
-          setStreamNotice("Trình duyệt không hỗ trợ HLS, đang dùng Embed dự phòng.");
         } else {
           setErrorModal("Trình duyệt không hỗ trợ nguồn HLS của tập này.");
         }
@@ -1470,11 +1445,6 @@ export default function RoomPage() {
                     : "w-full aspect-video"
                     }`}
                 >
-                  {streamNotice && (
-                    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 max-w-[90%] rounded-xl bg-amber-500/15 border border-amber-500/30 backdrop-blur-md px-3 py-2 text-[10px] font-bold text-amber-300 shadow-lg">
-                      {streamNotice}
-                    </div>
-                  )}
                   {/* Toast hối thúc của khán giả (chỉ hiển thị cho Host) */}
                   {isHost && reminderToast && (
                     <div className="absolute top-4 right-4 z-40 bg-[#0e0f17]/95 backdrop-blur-md border border-pink-500/30 text-pink-400 px-4.5 py-3 rounded-2xl shadow-[0_10px_30px_rgba(236,72,153,0.15)] flex items-center gap-2.5 animate-in fade-in slide-in-from-top-3 duration-300 max-w-xs border-l-4 border-l-pink-500">
@@ -1603,6 +1573,8 @@ export default function RoomPage() {
                           id="dlow-room-video"
                           ref={videoRef}
                           playsInline
+                          webkit-playsinline="true"
+                          preload="auto"
                           controls={!!isHost}
                           className="absolute inset-0 w-full h-full object-contain bg-black"
                           title="DlowPhim Watch Together Player"
@@ -1617,7 +1589,20 @@ export default function RoomPage() {
                             onMouseEnter={handleMemberMouseMove}
                             onMouseLeave={scheduleMemberControlsHide}
                             onMouseDown={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
-                            onClick={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
+                            onClick={(e) => {
+                              if (e.target === e.currentTarget) {
+                                e.preventDefault();
+                                const video = videoRef.current;
+                                if (video && video.paused && latestRemoteStateRef.current?.action === "play") {
+                                  isSyncingRef.current = true;
+                                  video.play().then(() => {
+                                    pendingVideoStateRef.current = null;
+                                  }).catch(() => {}).finally(() => {
+                                    setTimeout(() => { isSyncingRef.current = false; }, 350);
+                                  });
+                                }
+                              }
+                            }}
                             onDoubleClick={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
                           >
                             {/* Vùng chặn click chính */}
@@ -1649,13 +1634,10 @@ export default function RoomPage() {
                                       video.muted = !video.muted;
                                       setIsMuted(video.muted);
                                       if (!video.muted) {
-                                        setStreamNotice(null);
                                         if (video.paused) {
                                           isSyncingRef.current = true;
                                           void video.play()
-                                            .catch(() => {
-                                              setStreamNotice("Trình duyệt chưa cho phép phát. Hãy bấm biểu tượng loa thêm một lần.");
-                                            })
+                                            .catch(() => {})
                                             .finally(() => {
                                               window.setTimeout(() => {
                                                 isSyncingRef.current = false;
