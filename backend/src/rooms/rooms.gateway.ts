@@ -606,7 +606,7 @@ export class RoomsGateway
     const chatMsg = {
       id: savedMsg._id.toString(),
       senderName: savedMsg.senderName,
-      senderId: savedMsg.sender?.toString(),
+      senderId: savedMsg.senderId || savedMsg.sender?.toString() || userId,
       senderAvatar: savedMsg.senderAvatar,
       text: savedMsg.text,
       isSystem: savedMsg.isSystem,

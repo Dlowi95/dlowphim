@@ -11,6 +11,9 @@ export class Message {
   @Prop({ type: Types.ObjectId, ref: 'User' })
   sender?: Types.ObjectId;
 
+  @Prop()
+  senderId?: string;
+
   @Prop({ required: true })
   senderName: string;
 

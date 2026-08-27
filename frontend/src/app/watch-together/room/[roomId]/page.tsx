@@ -16,6 +16,7 @@ import { io } from "socket.io-client";
 import { getResilientSocketOptions } from "@/lib/socket-options";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 import { destroyHlsInstance, loadHlsLibrary, WATCH_TOGETHER_HLS_CONFIG } from "@/utils/hlsLoader";
+import { isSelfMessage, isMessageContinuation, resolveFullscreenAction } from "@/utils/watchTogetherFlow";
 import MobileRoomHeader from "./MobileRoomHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -94,6 +95,25 @@ export default function RoomPage() {
   const [verifyingPin, setVerifyingPin] = useState(false);
   const [accessRevision, setAccessRevision] = useState(0);
   const [hostPrivatePin, setHostPrivatePin] = useState("");
+  const [guestId, setGuestId] = useState<string>("");
+
+  useEffect(() => {
+    if (!roomId) return;
+    const storageKey = `dlowphim_room_guest:${roomId}`;
+    let stableId = "";
+    try {
+      stableId = localStorage.getItem(storageKey) || sessionStorage.getItem(storageKey) || "";
+    } catch {}
+    if (!stableId) {
+      const uuid = globalThis.crypto?.randomUUID?.() || Date.now().toString();
+      stableId = `guest-${uuid}`;
+      try {
+        localStorage.setItem(storageKey, stableId);
+        sessionStorage.removeItem(storageKey);
+      } catch {}
+    }
+    setGuestId(stableId);
+  }, [roomId]);
 
   // Custom modal states (thay thế alert/confirm của trình duyệt)
   const [roomClosedModal, setRoomClosedModal] = useState(false);
@@ -133,23 +153,6 @@ export default function RoomPage() {
   };
 
   useEffect(() => () => clearMemberControlsTimer(), []);
-
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      const isFull = !!(
-        document.fullscreenElement ||
-        (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement
-      );
-      setIsFullscreen(isFull);
-      setShowMemberControls(true);
-    };
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
-    return () => {
-      document.removeEventListener("fullscreenchange", handleFullscreenChange);
-      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
-    };
-  }, []);
 
   useEffect(() => {
     document.body.classList.toggle("dlowphim-player-fullscreen", isFullscreen);
@@ -218,6 +221,11 @@ export default function RoomPage() {
 
   // Refs for players and socket
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
+  const videoRefCallback = useCallback((node: HTMLVideoElement | null) => {
+    videoRef.current = node;
+    setVideoElement(node);
+  }, []);
   const hlsRef = useRef<any>(null);
   const socketRef = useRef<any>(null);
   const isSyncingRef = useRef<boolean>(false);
@@ -251,6 +259,44 @@ export default function RoomPage() {
       room && (room.status === "live" || room.status === "active" || room.startedAt),
     );
   }, [room?.status, room?.startedAt]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isDocFull = !!(
+        document.fullscreenElement ||
+        (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement
+      );
+      const isVideoFull = !!(videoElement as (HTMLVideoElement & { webkitDisplayingFullscreen?: boolean }) | null)?.webkitDisplayingFullscreen;
+      setIsFullscreen(isDocFull || isVideoFull);
+      setShowMemberControls(true);
+    };
+
+    const handleVideoBeginFullscreen = () => {
+      setIsFullscreen(true);
+      setShowMemberControls(true);
+    };
+
+    const handleVideoEndFullscreen = () => {
+      setIsFullscreen(false);
+      setShowMemberControls(true);
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+    if (videoElement) {
+      videoElement.addEventListener("webkitbeginfullscreen", handleVideoBeginFullscreen);
+      videoElement.addEventListener("webkitendfullscreen", handleVideoEndFullscreen);
+    }
+
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
+      if (videoElement) {
+        videoElement.removeEventListener("webkitbeginfullscreen", handleVideoBeginFullscreen);
+        videoElement.removeEventListener("webkitendfullscreen", handleVideoEndFullscreen);
+      }
+    };
+  }, [videoElement]);
 
   // States quản lý chiều cao đồng bộ giữa trình phát và chatbox
   const [playerHeight, setPlayerHeight] = useState<number>(550);
@@ -374,7 +420,7 @@ export default function RoomPage() {
             const formattedMsgs = msgsData.map((m: any) => ({
               id: m._id,
               sender: m.senderName,
-              senderId: m.sender,
+              senderId: m.senderId || (m.sender ? String(m.sender) : undefined),
               avatar: m.senderAvatar,
               text: m.text,
               isSystem: m.isSystem,
@@ -646,26 +692,14 @@ export default function RoomPage() {
     socketRef.current = socket;
     let failedConnectionAttempts = 0;
 
-    const authenticatedUserId = user ? (user.id || (user as any)._id) : "";
-    let guestId = "";
-    if (!authenticatedUserId) {
-      const storageKey = `dlowphim_room_guest:${room.roomId}`;
-      const generatedGuestId = `guest-${globalThis.crypto?.randomUUID?.() || Date.now()}`;
-      try {
-        guestId =
-          localStorage.getItem(storageKey) ||
-          sessionStorage.getItem(storageKey) ||
-          generatedGuestId;
-        localStorage.setItem(storageKey, guestId);
-        sessionStorage.removeItem(storageKey);
-      } catch {
-        guestId = generatedGuestId;
-      }
-    }
+    const authenticatedUserId = user ? String(user.id || (user as any)._id) : "";
+    const activeUserId = authenticatedUserId || guestId;
+    if (!activeUserId) return;
+
     const joinPayload = {
       roomId: room.roomId,
-      userId: authenticatedUserId || guestId,
-      name: user?.displayName || `Khách ${guestId.slice(-4)}`,
+      userId: activeUserId,
+      name: user?.displayName || (guestId ? `Khách ${guestId.slice(-4)}` : "Khách"),
       avatar: user?.avatar,
       isHost: !!isHost,
       roomAccessToken: sessionStorage.getItem(
@@ -678,7 +712,10 @@ export default function RoomPage() {
       failedConnectionAttempts = 0;
       setSocketError(null);
       // A reconnect creates a new server-side socket, so it must rejoin room.
-      socket.emit("join_room", joinPayload, () => {
+      socket.emit("join_room", joinPayload, (response?: { ok?: boolean; confirmedUserId?: string; isHost?: boolean }) => {
+        if (response?.confirmedUserId && response.confirmedUserId !== activeUserId) {
+          console.warn("[WatchTogether] Server confirmed different userId:", response.confirmedUserId, "vs local:", activeUserId);
+        }
         if (!isHost) socket.emit("request_sync", { roomId: room.roomId });
       });
     });
@@ -1215,11 +1252,14 @@ export default function RoomPage() {
       return;
     }
 
+    const authenticatedUserId = user ? String(user.id || (user as any)._id) : "";
+    const activeUserId = authenticatedUserId || guestId;
+
     setIsSendingMessage(true);
     socket.timeout(6000).emit("send_message", {
       roomId: room?.roomId,
-      userId: user?.id,
-      name: user?.displayName || "Khách",
+      userId: activeUserId,
+      name: user?.displayName || (guestId ? `Khách ${guestId.slice(-4)}` : "Khách"),
       avatar: user?.avatar,
       text,
     }, (timeoutError: Error | null, response?: { ok?: boolean; message?: string }) => {
@@ -1571,7 +1611,7 @@ export default function RoomPage() {
                       <div className="relative w-full h-full">
                         <video
                           id="dlow-room-video"
-                          ref={videoRef}
+                          ref={videoRefCallback}
                           playsInline
                           webkit-playsinline="true"
                           preload="auto"
@@ -1590,17 +1630,17 @@ export default function RoomPage() {
                             onMouseLeave={scheduleMemberControlsHide}
                             onMouseDown={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
                             onClick={(e) => {
-                              if (e.target === e.currentTarget) {
-                                e.preventDefault();
-                                const video = videoRef.current;
-                                if (video && video.paused && latestRemoteStateRef.current?.action === "play") {
-                                  isSyncingRef.current = true;
-                                  video.play().then(() => {
-                                    pendingVideoStateRef.current = null;
-                                  }).catch(() => {}).finally(() => {
-                                    setTimeout(() => { isSyncingRef.current = false; }, 350);
-                                  });
-                                }
+                              const targetEl = e.target as HTMLElement | null;
+                              if (targetEl && targetEl.closest("button, input, a")) return;
+                              e.preventDefault();
+                              const video = videoRef.current;
+                              if (video && video.paused && latestRemoteStateRef.current?.action === "play") {
+                                isSyncingRef.current = true;
+                                video.play().then(() => {
+                                  pendingVideoStateRef.current = null;
+                                }).catch(() => {}).finally(() => {
+                                  setTimeout(() => { isSyncingRef.current = false; }, 350);
+                                });
                               }
                             }}
                             onDoubleClick={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
@@ -1660,28 +1700,84 @@ export default function RoomPage() {
                                   onClick={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
-                                    const container = playerContainerRef.current;
-                                    if (container) {
-                                      const fullscreenElement = document.fullscreenElement ||
-                                        (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement;
-                                      try {
-                                        if (fullscreenElement) {
-                                          const exitFullscreen = document.exitFullscreen?.bind(document) ||
-                                            (document as Document & { webkitExitFullscreen?: () => Promise<void> }).webkitExitFullscreen?.bind(document);
-                                          void exitFullscreen?.().catch(() => {
-                                            setErrorModal("Không thể thoát chế độ toàn màn hình. Bạn có thể nhấn Esc để thoát.");
-                                          });
-                                        } else {
-                                          const requestFullscreen = container.requestFullscreen?.bind(container) ||
-                                            (container as HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> }).webkitRequestFullscreen?.bind(container);
-                                          void requestFullscreen?.().catch(() => {
-                                            setErrorModal("Trình duyệt đang chặn chế độ toàn màn hình. Vui lòng thử lại.");
-                                          });
+                                    const video = videoRef.current as (HTMLVideoElement & {
+                                      webkitEnterFullscreen?: () => void;
+                                      webkitExitFullscreen?: () => void;
+                                      webkitDisplayingFullscreen?: boolean;
+                                    }) | null;
+                                    const isDocFullscreen = Boolean(
+                                      document.fullscreenElement ||
+                                      (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement
+                                    );
+                                    const isNativeFullscreen = Boolean(video?.webkitDisplayingFullscreen);
+
+                                    if (isDocFullscreen || isNativeFullscreen || isFullscreen) {
+                                      if (isNativeFullscreen && video?.webkitExitFullscreen) {
+                                        try {
+                                          video.webkitExitFullscreen();
+                                        } catch (err) {
+                                          console.warn("[WatchTogether] webkitExitFullscreen failed:", err);
                                         }
-                                      } catch {
-                                        setErrorModal("Không thể chuyển chế độ toàn màn hình trên trình duyệt này.");
+                                        return;
+                                      }
+                                      const exitFullscreen = document.exitFullscreen?.bind(document) ||
+                                        (document as Document & { webkitExitFullscreen?: () => Promise<void> | void }).webkitExitFullscreen?.bind(document);
+                                      if (exitFullscreen) {
+                                        try {
+                                          const res = exitFullscreen();
+                                          if (res && typeof (res as Promise<void>).catch === "function") {
+                                            (res as Promise<void>).catch((err) => {
+                                              console.warn("[WatchTogether] exitFullscreen rejected:", err);
+                                            });
+                                          }
+                                        } catch (err) {
+                                          console.warn("[WatchTogether] exitFullscreen threw:", err);
+                                        }
+                                      }
+                                      return;
+                                    }
+
+                                    const container = playerContainerRef.current;
+                                    const hasContainerApi = Boolean(
+                                      container?.requestFullscreen ||
+                                      (container as HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> | void })?.webkitRequestFullscreen
+                                    );
+                                    const hasNativeApi = Boolean(video?.webkitEnterFullscreen);
+
+                                    const action = resolveFullscreenAction({
+                                      isFullscreenActive: false,
+                                      hasContainerFullscreen: hasContainerApi,
+                                      hasNativeVideoFullscreen: hasNativeApi,
+                                    });
+
+                                    if (action === "container" && container) {
+                                      const requestFullscreen = container.requestFullscreen?.bind(container) ||
+                                        (container as HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> | void })?.webkitRequestFullscreen?.bind(container);
+                                      if (requestFullscreen) {
+                                        try {
+                                          const res = requestFullscreen();
+                                          if (res && typeof (res as Promise<void>).catch === "function") {
+                                            (res as Promise<void>).catch(() => {
+                                              setErrorModal("Trình duyệt đang chặn chế độ toàn màn hình. Vui lòng thử lại.");
+                                            });
+                                          }
+                                        } catch {
+                                          setErrorModal("Không thể chuyển chế độ toàn màn hình trên trình duyệt này.");
+                                        }
+                                        return;
                                       }
                                     }
+
+                                    if (action === "native-video" && video?.webkitEnterFullscreen) {
+                                      try {
+                                        video.webkitEnterFullscreen();
+                                      } catch {
+                                        setErrorModal("Trình duyệt không cho phép phóng to video lúc này.");
+                                      }
+                                      return;
+                                    }
+
+                                    setErrorModal("Trình duyệt không hỗ trợ chế độ toàn màn hình.");
                                   }}
                                   className="h-9 px-3 rounded-xl bg-black/80 backdrop-blur-md border border-white/10 hover:border-pink-500/50 text-zinc-200 hover:text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-xl active:scale-95 font-bold text-xs"
                                   title={isFullscreen ? "Thoát toàn màn hình" : "Toàn màn hình"}
@@ -1759,39 +1855,21 @@ export default function RoomPage() {
                       );
                     }
 
-                    const currentUserId = user?.id || (user as any)?._id;
-                    const isMe = Boolean(
-                      user &&
-                      (msg.senderId && currentUserId
-                        ? msg.senderId === currentUserId
-                        : msg.sender === user.displayName)
-                    );
+                    const authenticatedUserId = user ? String(user.id || (user as any)._id) : "";
+                    const isMe = isSelfMessage(msg, authenticatedUserId, guestId);
                     const previousMessage = messages[index - 1];
-                    const currentTimestamp = msg.createdAt ? Date.parse(msg.createdAt) : Number.NaN;
-                    const previousTimestamp = previousMessage?.createdAt
-                      ? Date.parse(previousMessage.createdAt)
-                      : Number.NaN;
-                    const isSameSender = Boolean(
-                      previousMessage &&
-                      !previousMessage.isSystem &&
-                      (msg.senderId && previousMessage.senderId
-                        ? msg.senderId === previousMessage.senderId
-                        : msg.sender === previousMessage.sender)
-                    );
-                    const isWithinOneMinute = Number.isFinite(currentTimestamp) && Number.isFinite(previousTimestamp)
-                      ? currentTimestamp >= previousTimestamp && currentTimestamp - previousTimestamp <= 60_000
-                      : previousMessage?.time === msg.time;
-                    const isContinuation = isSameSender && isWithinOneMinute;
+                    const isContinuation = isMessageContinuation(msg, previousMessage);
                     const nextMessage = messages[index + 1];
                     const nextTimestamp = nextMessage?.createdAt
                       ? Date.parse(nextMessage.createdAt)
                       : Number.NaN;
+                    const currentTimestamp = msg.createdAt ? Date.parse(msg.createdAt) : Number.NaN;
                     const isSameNextSender = Boolean(
                       nextMessage &&
                       !nextMessage.isSystem &&
-                      (msg.senderId && nextMessage.senderId
-                        ? msg.senderId === nextMessage.senderId
-                        : msg.sender === nextMessage.sender)
+                      msg.senderId &&
+                      nextMessage.senderId &&
+                      String(msg.senderId) === String(nextMessage.senderId)
                     );
                     const isNextWithinOneMinute = Number.isFinite(currentTimestamp) && Number.isFinite(nextTimestamp)
                       ? nextTimestamp >= currentTimestamp && nextTimestamp - currentTimestamp <= 60_000

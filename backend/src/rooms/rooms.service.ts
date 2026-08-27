@@ -452,12 +452,11 @@ export class RoomsService implements OnModuleInit {
     text: string,
     isSystem = false,
   ): Promise<MessageDocument> {
+    const isMongoId = senderId && Types.ObjectId.isValid(senderId);
     const createdMessage = new this.messageModel({
       roomId,
-      sender:
-        senderId && Types.ObjectId.isValid(senderId)
-          ? new Types.ObjectId(senderId)
-          : undefined,
+      sender: isMongoId ? new Types.ObjectId(senderId) : undefined,
+      senderId: senderId || undefined,
       senderName,
       senderAvatar,
       text,
