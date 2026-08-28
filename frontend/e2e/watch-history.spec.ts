@@ -302,22 +302,22 @@ test("Watch ghép nguồn và chuyển đúng tập từ URL", async ({ page }) 
 test("Watch chỉ tải nguồn dự phòng một lần sau khi phim chính sẵn sàng", async ({ page }) => {
   await mockBackend(page);
   const requestCounts = {
-    blocked: 0,
-    resolvedDetail: 0,
+    blockedFinished: 0,
+    resolvedDetailFinished: 0,
   };
 
-  page.on("request", (request) => {
+  page.on("requestfinished", (request) => {
     const pathname = new URL(request.url()).pathname;
-    if (pathname.includes("/movies/check-blocked/")) requestCounts.blocked += 1;
-    if (pathname.includes("/movies/resolved-detail/")) requestCounts.resolvedDetail += 1;
+    if (pathname.includes("/movies/check-blocked/")) requestCounts.blockedFinished += 1;
+    if (pathname.includes("/movies/resolved-detail/")) requestCounts.resolvedDetailFinished += 1;
   });
 
   await page.goto("/watch/phim-kiem-thu-e2e?ep=T%E1%BA%ADp%2002");
   await expect(page.getByText("Phim kiểm thử E2E", { exact: false }).first()).toBeVisible();
-  await expect.poll(() => requestCounts.resolvedDetail).toBe(1);
+  await expect.poll(() => requestCounts.resolvedDetailFinished).toBe(1);
 
-  expect(requestCounts.blocked).toBe(1);
-  expect(requestCounts.resolvedDetail).toBe(1);
+  expect(requestCounts.blockedFinished).toBe(1);
+  expect(requestCounts.resolvedDetailFinished).toBe(1);
 });
 
 test("Lịch sử khôi phục đúng phim, tập và tiến độ", async ({ page }) => {

@@ -27,6 +27,7 @@ import {
 import { normalizeEpisodeKey } from "@/utils/episodeUtils";
 import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
 import {
+  evaluateWatchKeyboardShortcut,
   findEpisodeHistory,
   findNextEpisode,
   getResumeTime,
@@ -937,25 +938,48 @@ function WatchContent({ slug }: { slug: string }) {
   useEffect(() => {
     if (playerType !== "hls") return;
     const handleSeekShortcut = (event: KeyboardEvent) => {
-      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-      const target = event.target as HTMLElement | null;
-      if (
-        target?.isContentEditable ||
-        target?.tagName === "INPUT" ||
-        target?.tagName === "TEXTAREA" ||
-        target?.tagName === "SELECT"
-      ) return;
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      const { action, shouldPreventDefault } = evaluateWatchKeyboardShortcut(
+        event,
+        {
+          showReportModal,
+          showEpisodeDrawer,
+          showMobileServerPicker,
+          showPlaylistDropdown,
+        },
+      );
+
+      if (shouldPreventDefault) {
+        event.preventDefault();
+      }
+
+      if (action === "ignore") return;
+
       const video = videoRef.current;
       if (!video) return;
-      event.preventDefault();
-      const delta = event.key === "ArrowLeft" ? -5 : 5;
-      const duration = Number.isFinite(video.duration) ? video.duration : Infinity;
-      video.currentTime = Math.max(0, Math.min(duration, video.currentTime + delta));
+
+      if (action === "toggle-play") {
+        if (plyrRef.current) {
+          plyrRef.current.togglePlay();
+        } else {
+          if (video.paused) {
+            const res = video.play();
+            if (res && typeof res.catch === "function") res.catch(() => undefined);
+          } else {
+            video.pause();
+          }
+        }
+        return;
+      }
+
+      if (action === "seek-left" || action === "seek-right") {
+        const delta = action === "seek-left" ? -5 : 5;
+        const duration = Number.isFinite(video.duration) ? video.duration : Infinity;
+        video.currentTime = Math.max(0, Math.min(duration, video.currentTime + delta));
+      }
     };
     window.addEventListener("keydown", handleSeekShortcut);
     return () => window.removeEventListener("keydown", handleSeekShortcut);
-  }, [playerType]);
+  }, [playerType, showReportModal, showEpisodeDrawer, showMobileServerPicker, showPlaylistDropdown]);
 
   const handleStreamFailure = () => {
     if (!browserIsOnline()) {

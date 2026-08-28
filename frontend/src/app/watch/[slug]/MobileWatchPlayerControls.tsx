@@ -111,6 +111,7 @@ export default function MobileWatchPlayerControls({
   const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTapRef = useRef<{ time: number; zone: "left" | "right" | "center" } | null>(null);
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+  const isScrubbingRef = useRef(false);
 
   const clearSingleTapTimer = useCallback(() => {
     if (singleTapTimerRef.current) {
@@ -119,6 +120,11 @@ export default function MobileWatchPlayerControls({
     }
   }, []);
 
+  const dismissPendingGestures = useCallback(() => {
+    clearSingleTapTimer();
+    lastTapRef.current = null;
+  }, [clearSingleTapTimer]);
+
   const clearHideTimer = useCallback(() => {
     if (hideTimerRef.current) {
       clearTimeout(hideTimerRef.current);
@@ -126,9 +132,23 @@ export default function MobileWatchPlayerControls({
     }
   }, []);
 
-  const showControls = useCallback(() => {
+  const startAutoHideTimer = useCallback(() => {
     clearHideTimer();
+    if (isPlaying && !settingsView && !volumeOpen && !isScrubbingRef.current) {
+      hideTimerRef.current = setTimeout(() => {
+        setControlsVisible(false);
+      }, CONTROLS_HIDE_DELAY_MS);
+    }
+  }, [clearHideTimer, isPlaying, settingsView, volumeOpen]);
+
+  const showControls = useCallback(() => {
     setControlsVisible(true);
+    startAutoHideTimer();
+  }, [startAutoHideTimer]);
+
+  const hideControls = useCallback(() => {
+    clearHideTimer();
+    setControlsVisible(false);
   }, [clearHideTimer]);
 
   const togglePlayback = useCallback(() => {
@@ -226,12 +246,13 @@ export default function MobileWatchPlayerControls({
   }, [isFullscreen]);
 
   useEffect(() => {
-    clearHideTimer();
-    if (isPlaying && controlsVisible && !settingsView && !volumeOpen) {
-      hideTimerRef.current = setTimeout(() => setControlsVisible(false), CONTROLS_HIDE_DELAY_MS);
+    if (controlsVisible && isPlaying && !settingsView && !volumeOpen) {
+      startAutoHideTimer();
+    } else {
+      clearHideTimer();
     }
     return clearHideTimer;
-  }, [clearHideTimer, controlsVisible, isPlaying, settingsView, volumeOpen]);
+  }, [controlsVisible, isPlaying, settingsView, volumeOpen, startAutoHideTimer, clearHideTimer]);
 
   useEffect(() => {
     if (!settingsView) return;
@@ -246,11 +267,33 @@ export default function MobileWatchPlayerControls({
     };
   }, [settingsView]);
 
+  useEffect(() => {
+    const handleGlobalPointerRelease = () => {
+      if (isScrubbingRef.current) {
+        isScrubbingRef.current = false;
+        if (isPlaying && !settingsView && !volumeOpen) {
+          startAutoHideTimer();
+        }
+      }
+    };
+    window.addEventListener("pointerup", handleGlobalPointerRelease);
+    window.addEventListener("pointercancel", handleGlobalPointerRelease);
+    window.addEventListener("touchend", handleGlobalPointerRelease);
+    window.addEventListener("touchcancel", handleGlobalPointerRelease);
+    return () => {
+      window.removeEventListener("pointerup", handleGlobalPointerRelease);
+      window.removeEventListener("pointercancel", handleGlobalPointerRelease);
+      window.removeEventListener("touchend", handleGlobalPointerRelease);
+      window.removeEventListener("touchcancel", handleGlobalPointerRelease);
+    };
+  }, [isPlaying, settingsView, volumeOpen, startAutoHideTimer]);
+
   useEffect(() => () => {
-    clearSingleTapTimer();
+    dismissPendingGestures();
     clearHideTimer();
     if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
-  }, [clearHideTimer, clearSingleTapTimer]);
+    isScrubbingRef.current = false;
+  }, [clearHideTimer, dismissPendingGestures]);
 
   const handleSurfacePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     pointerStartRef.current = { x: event.clientX, y: event.clientY };
@@ -282,6 +325,7 @@ export default function MobileWatchPlayerControls({
       }
     }
     if (volumeOpen) {
+      dismissPendingGestures();
       setVolumeOpen(false);
       showControls();
       return;
@@ -306,27 +350,41 @@ export default function MobileWatchPlayerControls({
     }
 
     lastTapRef.current = { time: now, zone };
-    if (!controlsVisible) {
-      showControls();
-      return;
-    }
 
     clearSingleTapTimer();
-    singleTapTimerRef.current = setTimeout(() => {
+    if (zone === "center") {
       lastTapRef.current = null;
-      togglePlayback();
-    }, TAP_DELAY_MS);
+      if (controlsVisible) {
+        hideControls();
+      } else {
+        showControls();
+      }
+    } else {
+      singleTapTimerRef.current = setTimeout(() => {
+        lastTapRef.current = null;
+        if (controlsVisible) {
+          hideControls();
+        } else {
+          showControls();
+        }
+      }, TAP_DELAY_MS);
+    }
   };
 
   const handleSeek = (event: React.ChangeEvent<HTMLInputElement>) => {
+    dismissPendingGestures();
     if (!player) return;
     const nextTime = Number(event.target.value);
     player.currentTime = nextTime;
     setCurrentTime(nextTime);
-    showControls();
+    setControlsVisible(true);
+    if (!isScrubbingRef.current) {
+      startAutoHideTimer();
+    }
   };
 
   const toggleMute = () => {
+    dismissPendingGestures();
     if (!player) return;
     player.muted = !player.muted;
     setIsMuted(player.muted);
@@ -334,6 +392,7 @@ export default function MobileWatchPlayerControls({
   };
 
   const handleVolumeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    dismissPendingGestures();
     if (!player) return;
     const nextVolume = Number(event.target.value);
     player.volume = nextVolume;
@@ -344,6 +403,7 @@ export default function MobileWatchPlayerControls({
   };
 
   const toggleFullscreen = () => {
+    dismissPendingGestures();
     if (!player) return;
     const media = player.media as IOSFullscreenVideo | undefined;
     const nativeFullscreenActive = Boolean(media?.webkitDisplayingFullscreen);
@@ -381,6 +441,7 @@ export default function MobileWatchPlayerControls({
   };
 
   const chooseSpeed = (nextSpeed: number) => {
+    dismissPendingGestures();
     if (!player) return;
     player.speed = nextSpeed;
     setSpeed(nextSpeed);
@@ -432,7 +493,10 @@ export default function MobileWatchPlayerControls({
           <button
             type="button"
             data-player-interactive="true"
-            onClick={onOpenEpisodes}
+            onClick={() => {
+              dismissPendingGestures();
+              onOpenEpisodes();
+            }}
             className="flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-white/15 bg-black/55 px-3 text-[11px] font-extrabold text-white backdrop-blur-md"
           >
             <Tv size={14} className="text-pink-400" />
@@ -444,7 +508,17 @@ export default function MobileWatchPlayerControls({
       <button
         type="button"
         data-player-interactive="true"
-        onClick={togglePlayback}
+        onClick={(e) => {
+          e.stopPropagation();
+          dismissPendingGestures();
+          togglePlayback();
+          if (isPlaying) {
+            setControlsVisible(true);
+            clearHideTimer();
+          } else {
+            showControls();
+          }
+        }}
         aria-label={isPlaying ? "Tạm dừng" : "Phát phim"}
         className={`absolute left-1/2 top-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-pink-500/90 text-white shadow-[0_0_28px_rgba(236,72,153,0.45)] transition-all duration-200 ${controlsVisible ? "scale-100 opacity-100" : "pointer-events-none scale-90 opacity-0"}`}
       >
@@ -472,6 +546,42 @@ export default function MobileWatchPlayerControls({
             step={0.1}
             value={progressValue}
             onChange={handleSeek}
+            onPointerDown={() => {
+              dismissPendingGestures();
+              isScrubbingRef.current = true;
+              clearHideTimer();
+              setControlsVisible(true);
+            }}
+            onPointerUp={() => {
+              isScrubbingRef.current = false;
+              if (isPlaying && !settingsView && !volumeOpen) {
+                startAutoHideTimer();
+              }
+            }}
+            onPointerCancel={() => {
+              isScrubbingRef.current = false;
+              if (isPlaying && !settingsView && !volumeOpen) {
+                startAutoHideTimer();
+              }
+            }}
+            onTouchStart={() => {
+              dismissPendingGestures();
+              isScrubbingRef.current = true;
+              clearHideTimer();
+              setControlsVisible(true);
+            }}
+            onTouchEnd={() => {
+              isScrubbingRef.current = false;
+              if (isPlaying && !settingsView && !volumeOpen) {
+                startAutoHideTimer();
+              }
+            }}
+            onTouchCancel={() => {
+              isScrubbingRef.current = false;
+              if (isPlaying && !settingsView && !volumeOpen) {
+                startAutoHideTimer();
+              }
+            }}
             aria-label="Tiến trình phim"
             className="mobile-watch-progress h-[2px] min-w-0 flex-1 cursor-pointer accent-pink-500"
             style={{
@@ -484,17 +594,9 @@ export default function MobileWatchPlayerControls({
         </div>
 
         <div data-player-interactive="true" className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={togglePlayback}
-            aria-label={isPlaying ? "Tạm dừng" : "Phát phim"}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-white"
-          >
-            {isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
-          </button>
           <div className="relative" data-player-interactive="true">
             {volumeOpen && (
-              <div className="absolute bottom-11 left-1/2 flex h-28 w-11 -translate-x-1/2 flex-col items-center justify-between rounded-2xl border border-white/10 bg-black/80 py-2 shadow-xl backdrop-blur-md">
+              <div className="absolute bottom-11 left-0 flex h-28 w-11 flex-col items-center justify-between rounded-2xl border border-white/10 bg-black/80 py-2 shadow-xl backdrop-blur-md">
                 <Volume2 size={13} className="text-zinc-300" />
                 <input
                   type="range"
@@ -520,6 +622,7 @@ export default function MobileWatchPlayerControls({
             <button
               type="button"
               onClick={() => {
+                dismissPendingGestures();
                 showControls();
                 setVolumeOpen((value) => !value);
               }}
@@ -534,6 +637,7 @@ export default function MobileWatchPlayerControls({
           <button
             type="button"
             onClick={() => {
+              dismissPendingGestures();
               showControls();
               setVolumeOpen(false);
               setSettingsView("main");
