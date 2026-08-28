@@ -16,7 +16,19 @@ import { io } from "socket.io-client";
 import { getResilientSocketOptions } from "@/lib/socket-options";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 import { destroyHlsInstance, loadHlsLibrary, WATCH_TOGETHER_HLS_CONFIG } from "@/utils/hlsLoader";
-import { isSelfMessage, isMessageContinuation, resolveFullscreenAction, isNearBottom, shouldAutoScrollChat } from "@/utils/watchTogetherFlow";
+import {
+  isSelfMessage,
+  isMessageContinuation,
+  resolveFullscreenAction,
+  isNearBottom,
+  createSendTrackerState,
+  recordLocalSendAttempt,
+  confirmLocalSendAck,
+  cancelLocalSendAttempt,
+  evaluateBatchAutoScroll,
+  formatVietnamChatTime,
+  type SendTrackerState,
+} from "@/utils/watchTogetherFlow";
 import MobileRoomHeader from "./MobileRoomHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -119,6 +131,90 @@ export default function RoomPage() {
   const [roomClosedModal, setRoomClosedModal] = useState(false);
   const [confirmCloseModal, setConfirmCloseModal] = useState(false);
   const [errorModal, setErrorModal] = useState<string | null>(null);
+  const [cannotChangeEpisodeModal, setCannotChangeEpisodeModal] = useState(false);
+  const modalContainerRef = useRef<HTMLDivElement | null>(null);
+  const modalConfirmButtonRef = useRef<HTMLButtonElement | null>(null);
+  const lastTriggerElementRef = useRef<HTMLElement | null>(null);
+  const lastEpisodeIdxRef = useRef<number | null>(null);
+  const episodeSelectorContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const closeCannotChangeEpisodeModal = useCallback(() => {
+    setCannotChangeEpisodeModal(false);
+    const container = episodeSelectorContainerRef.current;
+    const triggerEl = lastTriggerElementRef.current;
+
+    // 1. Khôi phục focus nếu triggerElement còn gắn trong DOM và focus được
+    if (triggerEl && typeof triggerEl.focus === "function" && document.body.contains(triggerEl)) {
+      triggerEl.focus();
+      return;
+    }
+
+    // 2. Nếu triggerElement đã unmount, tìm lại chính xác nút tập theo data-episode-index trong container
+    if (container && lastEpisodeIdxRef.current !== null) {
+      const btn = container.querySelector<HTMLButtonElement>(`button[data-episode-index="${lastEpisodeIdxRef.current}"]`);
+      if (btn && typeof btn.focus === "function") {
+        btn.focus();
+        return;
+      }
+
+      // 3. Fallback an toàn: focus nút đầu tiên trong vùng chọn tập (không quét ngoài document)
+      const firstFocusable = container.querySelector<HTMLElement>("button, [tabindex='0']");
+      if (firstFocusable && typeof firstFocusable.focus === "function") {
+        firstFocusable.focus();
+        return;
+      }
+    }
+  }, []);
+
+  // Quản lý focus trap và phím Escape cho modal "Không thể đổi tập"
+  useEffect(() => {
+    if (!cannotChangeEpisodeModal) return;
+
+    const timer = setTimeout(() => {
+      modalConfirmButtonRef.current?.focus();
+    }, 20);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        closeCannotChangeEpisodeModal();
+        return;
+      }
+
+      if (e.key === "Tab") {
+        const modalEl = modalContainerRef.current;
+        if (!modalEl) return;
+        const focusableEls = modalEl.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusableEls.length === 0) {
+          e.preventDefault();
+          return;
+        }
+        const firstEl = focusableEls[0];
+        const lastEl = focusableEls[focusableEls.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === firstEl || !modalEl.contains(document.activeElement)) {
+            e.preventDefault();
+            lastEl.focus();
+          }
+        } else {
+          if (document.activeElement === lastEl || !modalEl.contains(document.activeElement)) {
+            e.preventDefault();
+            firstEl.focus();
+          }
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [cannotChangeEpisodeModal, closeCannotChangeEpisodeModal]);
 
   // States quản lý đếm ngược công chiếu cho member
   const [hasMovieStarted, setHasMovieStarted] = useState(false);
@@ -220,7 +316,8 @@ export default function RoomPage() {
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
   const isNearBottomRef = useRef(true);
   const prevMessagesCountRef = useRef(0);
-  const justSentMessageRef = useRef(false);
+  const sessionEpochRef = useRef(1);
+  const sendTrackerRef = useRef<SendTrackerState>(createSendTrackerState("session_1"));
 
   const handleChatScroll = useCallback(() => {
     const el = chatContainerRef.current;
@@ -419,7 +516,8 @@ export default function RoomPage() {
           id: "sys-welcome",
           sender: "Hệ Thống",
           text: `📢 Chào mừng bạn đến với phòng xem chung "${roomData.roomName}". Cùng xem phim vui vẻ nhé!`,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: formatVietnamChatTime(new Date()),
+          createdAt: new Date().toISOString(),
           isSystem: true,
         };
 
@@ -437,7 +535,7 @@ export default function RoomPage() {
               avatar: m.senderAvatar,
               text: m.text,
               isSystem: m.isSystem,
-              time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              time: formatVietnamChatTime(m.createdAt, m.time),
               createdAt: m.createdAt,
             }));
             if (!disposed) setMessages([welcomeMsg, ...formattedMsgs]);
@@ -774,8 +872,8 @@ export default function RoomPage() {
             avatar: msg.senderAvatar,
             text: msg.text,
             isSystem: msg.isSystem,
-            time: msg.time,
-            createdAt: msg.createdAt || new Date().toISOString(),
+            time: formatVietnamChatTime(msg.createdAt, msg.time),
+            createdAt: msg.createdAt,
           },
         ];
       });
@@ -924,6 +1022,9 @@ export default function RoomPage() {
 
     return () => {
       window.clearInterval(heartbeatInterval);
+      sessionEpochRef.current += 1;
+      sendTrackerRef.current = createSendTrackerState(`session_${sessionEpochRef.current}`);
+      setIsSendingMessage(false);
       socket.removeAllListeners();
       socket.disconnect();
       socketRef.current = null;
@@ -966,24 +1067,29 @@ export default function RoomPage() {
     if (!el || messages.length === 0) return;
 
     const isInitialLoad = prevMessagesCountRef.current === 0;
-    const hasNewMessages = messages.length > prevMessagesCountRef.current;
-    const isUserSent = justSentMessageRef.current;
+    const newMessages = isInitialLoad
+      ? messages
+      : messages.slice(prevMessagesCountRef.current);
+    const authenticatedUserId = user ? String(user.id || (user as any)._id) : "";
 
-    const shouldScroll = shouldAutoScrollChat({
+    const { shouldScroll, nextSendTracker } = evaluateBatchAutoScroll({
       wasNearBottom: isNearBottomRef.current,
-      isUserSent,
-      hasNewMessages,
+      newMessages,
       isInitialLoad,
+      currentUserId: authenticatedUserId,
+      currentGuestId: guestId,
+      sendTracker: sendTrackerRef.current,
     });
+
+    sendTrackerRef.current = nextSendTracker;
 
     if (shouldScroll) {
       el.scrollTop = el.scrollHeight;
       isNearBottomRef.current = true;
     }
 
-    justSentMessageRef.current = false;
     prevMessagesCountRef.current = messages.length;
-  }, [messages]);
+  }, [messages, user, guestId]);
 
   // Tự động cập nhật query parameter "ep" trên URL theo tập phim đang phát
   useEffect(() => {
@@ -1286,22 +1392,49 @@ export default function RoomPage() {
     const authenticatedUserId = user ? String(user.id || (user as any)._id) : "";
     const activeUserId = authenticatedUserId || guestId;
 
+    const clientNonce = `send_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const sendEpoch = sessionEpochRef.current;
+    const sendRoomId = room?.roomId;
+
+    sendTrackerRef.current = recordLocalSendAttempt(sendTrackerRef.current, clientNonce);
     setIsSendingMessage(true);
-    justSentMessageRef.current = true;
+
     socket.timeout(6000).emit("send_message", {
-      roomId: room?.roomId,
+      roomId: sendRoomId,
       userId: activeUserId,
       name: user?.displayName || (guestId ? `Khách ${guestId.slice(-4)}` : "Khách"),
       avatar: user?.avatar,
       text,
-    }, (timeoutError: Error | null, response?: { ok?: boolean; message?: string }) => {
+    }, (timeoutError: Error | null, response?: { ok?: boolean; message?: string; messageId?: string }) => {
+      // Bỏ qua callback trễ nếu phiên phòng hoặc socket đã thay đổi
+      if (sessionEpochRef.current !== sendEpoch || room?.roomId !== sendRoomId) {
+        return;
+      }
+
       setIsSendingMessage(false);
       if (timeoutError || !response?.ok) {
+        sendTrackerRef.current = cancelLocalSendAttempt(sendTrackerRef.current, clientNonce);
         setSocketError(
           response?.message || "Gửi tin nhắn thất bại, vui lòng thử lại."
         );
         return;
       }
+
+      const { state: nextTracker, shouldImmediateScroll } = confirmLocalSendAck(
+        sendTrackerRef.current,
+        clientNonce,
+        response.messageId
+      );
+      sendTrackerRef.current = nextTracker;
+
+      if (shouldImmediateScroll) {
+        const el = chatContainerRef.current;
+        if (el) {
+          el.scrollTop = el.scrollHeight;
+          isNearBottomRef.current = true;
+        }
+      }
+
       setSocketError(null);
       setMessageInput((current) => (current.trim() === text ? "" : current));
     });
@@ -1532,7 +1665,7 @@ export default function RoomPage() {
 
                   {/* Countdown/waiting screen overlay for scheduled rooms */}
                   {!hasMovieStarted ? (
-                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#07070a] px-4 py-4 sm:px-6 sm:py-6 text-center select-none overflow-y-auto">
+                    <div className="absolute inset-0 z-30 flex flex-col items-center md:justify-center bg-[#07070a] px-4 md:px-6 text-center select-none overflow-y-auto md:overflow-hidden">
                       {posterUrl && (
                         <img
                           src={getImageUrl(posterUrl)}
@@ -1561,32 +1694,33 @@ export default function RoomPage() {
                       )}
                       <HalftoneOverlay />
 
-                      <div className="relative z-20 flex flex-col items-center justify-center max-w-md space-y-3 sm:space-y-4">
-                        <div className="w-14 h-14 sm:w-18 sm:h-18 rounded-2xl sm:rounded-3xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mb-1 animate-pulse shadow-[0_0_40px_rgba(245,158,11,0.3)]">
-                          <Clock size={28} className="text-amber-400 animate-[spin_10s_linear_infinite]" />
+                      <div className="relative z-20 my-auto md:my-0 flex flex-col items-center max-w-md space-y-3 md:space-y-4 py-4 md:py-0 shrink-0">
+                        <div className="w-14 h-14 md:w-20 md:h-20 rounded-2xl md:rounded-3xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mb-1 md:mb-2 animate-pulse shadow-[0_0_40px_rgba(245,158,11,0.3)]">
+                          <Clock size={28} className="text-amber-400 animate-[spin_10s_linear_infinite] md:hidden" />
+                          <Clock size={36} className="text-amber-400 animate-[spin_10s_linear_infinite] hidden md:block" />
                         </div>
 
-                        <span className="inline-flex items-center gap-1.5 bg-amber-500/15 border border-amber-500/35 text-amber-400 text-[10px] sm:text-xs font-black uppercase tracking-widest px-3 py-1.5 sm:px-4 sm:py-2 rounded-full shadow-lg">
-                          <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-amber-500 animate-ping" />
+                        <span className="inline-flex items-center gap-1.5 bg-amber-500/15 border border-amber-500/35 text-amber-400 text-[10px] md:text-xs font-black uppercase tracking-widest px-3 py-1.5 md:px-4 md:py-2 rounded-full shadow-lg">
+                          <span className="w-2 h-2 md:w-2.5 md:h-2.5 rounded-full bg-amber-500 animate-ping" />
                           Đang Chờ Công Chiếu
                         </span>
                         
-                        <h2 className="text-lg sm:text-2xl md:text-3xl font-black text-white uppercase tracking-tight drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)] break-words max-w-full px-2 line-clamp-2">
+                        <h2 className="text-lg md:text-3xl font-black text-white uppercase tracking-tight drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)] break-words max-w-full px-2 md:px-0 line-clamp-2 md:line-clamp-none">
                           {room?.movieName ? cleanMovieName(room.movieName) : "Phim sắp chiếu"}
                         </h2>
                         
-                        <p className="text-xs sm:text-sm md:text-base text-zinc-300 font-bold leading-relaxed px-2">
+                        <p className="text-xs md:text-base text-zinc-300 font-bold leading-relaxed px-2 md:px-0">
                           Thời gian chiếu: <span className="text-pink-400 font-extrabold">{room?.startTime ? new Date(room.startTime).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }) : "Đang chờ Trưởng phòng"}</span>
                         </p>
 
                         {countdownText && (
-                          <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-2xl px-4 py-2 sm:px-8 sm:py-3.5 mt-2 sm:mt-3 inline-block shadow-2xl max-w-full">
-                            <p className="text-[9px] sm:text-[10px] text-zinc-400 font-black uppercase tracking-wider mb-0.5">Bắt đầu sau</p>
-                            <p className="text-xl sm:text-2xl md:text-3xl font-black text-amber-400 tracking-tight drop-shadow-[0_0_15px_rgba(245,158,11,0.4)]">{countdownText}</p>
+                          <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-2xl px-4 py-2 md:px-8 md:py-4.5 mt-2 md:mt-3 inline-block shadow-2xl max-w-full">
+                            <p className="text-[9px] md:text-[10px] text-zinc-400 font-black uppercase tracking-wider mb-0.5 md:mb-1">Bắt đầu sau</p>
+                            <p className="text-xl md:text-3xl font-black text-amber-400 tracking-tight drop-shadow-[0_0_15px_rgba(245,158,11,0.4)]">{countdownText}</p>
                           </div>
                         )}
 
-                        <p className="text-[11px] sm:text-xs text-zinc-400 leading-relaxed max-w-sm mx-auto px-2">
+                        <p className="text-[11px] md:text-xs text-zinc-400 leading-relaxed max-w-sm mx-auto px-2 md:px-0">
                           {room?.startTime && Date.now() >= new Date(room.startTime).getTime()
                             ? "Phòng sẽ bắt đầu ngay khi Trưởng phòng có mặt và tự đóng nếu vắng quá 30 phút."
                             : "Bạn vẫn có thể gửi tin nhắn trò chuyện ở ô chat bên cạnh trong lúc chờ đợi nhé!"}
@@ -1600,9 +1734,10 @@ export default function RoomPage() {
                                 socketRef.current.emit("start_scheduled_movie", { roomId: room?.roomId });
                               }
                             }}
-                            className="mt-2 sm:mt-4 min-h-[40px] px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl sm:rounded-2xl text-xs font-black uppercase tracking-wider bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-lg shadow-amber-500/25 active:scale-95 transition-all cursor-pointer border-none flex items-center gap-2"
+                            className="mt-2 md:mt-4 min-h-[40px] md:min-h-0 px-5 py-2.5 md:px-6 md:py-3 rounded-xl md:rounded-2xl text-xs font-black uppercase tracking-wider bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-lg shadow-amber-500/25 active:scale-95 transition-all cursor-pointer border-none flex items-center gap-2"
                           >
-                            <Sparkles size={14} />
+                            <Sparkles size={14} className="md:hidden" />
+                            <Sparkles size={15} className="hidden md:inline" />
                             <span>🚀 Bắt Đầu Chiếu Phim Ngay</span>
                           </button>
                         ) : (
@@ -1616,7 +1751,7 @@ export default function RoomPage() {
                               setHasUrgedHost(true);
                               window.setTimeout(() => setHasUrgedHost(false), 60_000);
                             }}
-                            className={`mt-2 sm:mt-4 min-h-[40px] px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl sm:rounded-2xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 cursor-pointer border ${hasUrgedHost
+                            className={`mt-2 md:mt-4 min-h-[40px] md:min-h-0 px-5 py-2.5 md:px-6 md:py-3 rounded-xl md:rounded-2xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 cursor-pointer border ${hasUrgedHost
                               ? "bg-zinc-900 text-zinc-500 border-zinc-800 cursor-not-allowed shadow-inner"
                               : "bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white border-pink-500/20 shadow-lg shadow-pink-500/20 hover:shadow-pink-500/35"
                               }`}
@@ -1953,8 +2088,15 @@ export default function RoomPage() {
                                   AI Trợ lý
                                 </span>
                               )}
-                              <span>•</span>
-                              <span>{msg.time}</span>
+                              {(() => {
+                                const displayTime = formatVietnamChatTime(msg.createdAt, msg.time);
+                                return displayTime ? (
+                                  <>
+                                    <span>•</span>
+                                    <span>{displayTime}</span>
+                                  </>
+                                ) : null;
+                              })()}
                             </div>
                           )}
 
@@ -2013,7 +2155,7 @@ export default function RoomPage() {
           {/* Dòng danh sách tập phim phía dưới player */}
           {episodes.length > 1 && (
             <div className="lg:w-8/12 pr-0 lg:pr-3 mt-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="space-y-3.5 rounded-2xl border border-zinc-900/60 bg-[#0e0f17]/40 p-3 text-left shadow-lg md:p-5">
+              <div ref={episodeSelectorContainerRef} className="space-y-3.5 rounded-2xl border border-zinc-900/60 bg-[#0e0f17]/40 p-3 text-left shadow-lg md:p-5">
                 <span className="block text-xs font-black text-zinc-400 uppercase tracking-wider select-none">
                   Danh sách tập phim xem chung:
                 </span>
@@ -2022,7 +2164,11 @@ export default function RoomPage() {
                   activeEpisodeIndex={activeEpisodeIndex}
                   onSelectEpisode={(idx) => {
                     if (!isHost) {
-                      alert("Chỉ có Trưởng phòng mới được quyền chuyển tập phim nhé! 🎬");
+                      lastEpisodeIdxRef.current = idx;
+                      const container = episodeSelectorContainerRef.current;
+                      const targetBtn = container?.querySelector<HTMLButtonElement>(`button[data-episode-index="${idx}"]`);
+                      lastTriggerElementRef.current = targetBtn || (document.activeElement instanceof HTMLElement && container?.contains(document.activeElement) ? document.activeElement : null);
+                      setCannotChangeEpisodeModal(true);
                       return;
                     }
                     const ep = episodes[idx];
@@ -2044,6 +2190,47 @@ export default function RoomPage() {
           )}
         </div>
       </div>
+
+      {/* ── MODAL: Cảnh báo quyền chuyển tập cho Khách ── */}
+      {cannotChangeEpisodeModal && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cannot-change-ep-title"
+          aria-describedby="cannot-change-ep-desc"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              closeCannotChangeEpisodeModal();
+            }
+          }}
+        >
+          <div
+            ref={modalContainerRef}
+            className="relative w-full max-w-sm rounded-3xl border border-amber-500/30 bg-[#0e0f17] p-6 text-center shadow-[0_20px_50px_rgba(0,0,0,0.85)] space-y-4 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto shadow-inner">
+              <Tv size={28} />
+            </div>
+            <div>
+              <h3 id="cannot-change-ep-title" className="text-lg font-black text-white uppercase tracking-tight">
+                Không thể đổi tập
+              </h3>
+              <p id="cannot-change-ep-desc" className="text-xs text-zinc-300 font-medium leading-relaxed mt-2">
+                Chỉ chủ phòng mới được đổi tập phim. Bạn đang xem đồng bộ theo chủ phòng.
+              </p>
+            </div>
+            <button
+              ref={modalConfirmButtonRef}
+              type="button"
+              onClick={closeCannotChangeEpisodeModal}
+              className="w-full py-3 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white text-xs font-black uppercase tracking-wider shadow-lg shadow-pink-500/25 active:scale-95 transition-all cursor-pointer border-none"
+            >
+              Đã hiểu
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── MODAL: Phòng bị đóng ── */}
       {roomClosedModal && (

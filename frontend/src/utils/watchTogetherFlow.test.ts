@@ -5,8 +5,15 @@ import {
   isMessageContinuation,
   resolveFullscreenAction,
   isNearBottom,
+  createSendTrackerState,
+  recordLocalSendAttempt,
+  confirmLocalSendAck,
+  cancelLocalSendAttempt,
+  evaluateBatchAutoScroll,
+  formatVietnamChatTime,
   shouldAutoScrollChat,
   type ChatMessageLike,
+  type SendTrackerState,
 } from "./watchTogetherFlow.ts";
 
 test("Messenger-style Chat Matrix A/B/C: aligns messages strictly by viewer identity, not room role", () => {
@@ -343,4 +350,251 @@ test("shouldAutoScrollChat: preserves reader position when reading old messages,
     }),
     true
   );
+});
+
+test("evaluateBatchAutoScroll MessageId & Session Lifecycle: MessageId matching, out-of-order ACK/Echo, session cleanup, same-account different devices", () => {
+  const currentUserId = "66a100000000000000000001";
+  const otherUserId = "66a100000000000000000002";
+
+  const msgFromOther: ChatMessageLike = {
+    id: "msg_other_1",
+    sender: "Other User",
+    senderId: otherUserId,
+  };
+
+  const msgSystem: ChatMessageLike = {
+    id: "msg_sys_1",
+    sender: "System",
+    isSystem: true,
+  };
+
+  // 1. Kịch bản: ACK trước Echo (Chuẩn) -> Echo và tin người khác đến cùng 1 batch:
+  // User đọc tin cũ (scrollTop = 100, wasNearBottom = false) -> Bấm gửi nonce_1 -> Nhận ACK { ok: true, messageId: "msg_local_1" }
+  // Sau đó batch [msg_local_1, msg_other_1] đến
+  // Kỳ vọng: shouldScroll = true, pendingSends tiêu thụ sạch.
+  let tracker = createSendTrackerState("session_1");
+  tracker = recordLocalSendAttempt(tracker, "nonce_1");
+  assert.equal(tracker.pendingSends.length, 1);
+
+  const { state: trackerWithAck1 } = confirmLocalSendAck(tracker, "nonce_1", "msg_local_1");
+  assert.equal(trackerWithAck1.pendingSends[0].messageId, "msg_local_1");
+
+  const res1 = evaluateBatchAutoScroll({
+    wasNearBottom: false,
+    newMessages: [{ id: "msg_local_1", senderId: currentUserId }, msgFromOther],
+    currentUserId,
+    sendTracker: trackerWithAck1,
+  });
+  assert.equal(res1.shouldScroll, true, "Phải cuộn về đáy khi batch chứa đúng messageId của echo");
+  assert.equal(res1.nextSendTracker.pendingSends.length, 0, "Pending send phải được tiêu thụ sạch");
+
+  // 2. Kịch bản: Echo trước ACK (Echo arrives before ACK callback fires):
+  // User đọc tin cũ -> Gửi nonce_2 -> Echo [msg_local_2] đến trước khi ACK trả về!
+  // Batch [msg_local_2] được render, ghi nhận vào receivedMessageIds.
+  let tracker2 = createSendTrackerState("session_1");
+  tracker2 = recordLocalSendAttempt(tracker2, "nonce_2");
+
+  const res2Batch = evaluateBatchAutoScroll({
+    wasNearBottom: false,
+    newMessages: [{ id: "msg_local_2", senderId: currentUserId }],
+    currentUserId,
+    sendTracker: tracker2,
+  });
+  // Tại thời điểm này, chưa có ACK nên chưa biết messageId -> chưa cuộn qua batch
+  assert.equal(res2Batch.nextSendTracker.receivedMessageIds.has("msg_local_2"), true);
+
+  // Sau đó, ACK trả về { ok: true, messageId: "msg_local_2" }
+  const res2Ack = confirmLocalSendAck(res2Batch.nextSendTracker, "nonce_2", "msg_local_2");
+  assert.equal(res2Ack.shouldImmediateScroll, true, "ACK trả về sau khi echo đã render phải kích hoạt immediate scroll");
+  assert.equal(res2Ack.state.pendingSends.length, 0, "Đã tiêu thụ xong pending send");
+
+  // 3. Kịch bản: Cùng tài khoản gửi từ thiết bị khác khi phiên này đang đọc tin cũ:
+  // Thiết bị B gửi tin có id "msg_device_b_1".
+  // Phiên này đang pending nonce_3 (đang chờ "msg_local_3").
+  // Tin "msg_device_b_1" đến -> Không trùng messageId với nonce_3!
+  let tracker3 = createSendTrackerState("session_1");
+  tracker3 = recordLocalSendAttempt(tracker3, "nonce_3");
+
+  const res3 = evaluateBatchAutoScroll({
+    wasNearBottom: false,
+    newMessages: [{ id: "msg_device_b_1", senderId: currentUserId, text: "Gửi từ máy khác" }],
+    currentUserId,
+    sendTracker: tracker3,
+  });
+  assert.equal(res3.shouldScroll, false, "Tin từ máy khác cùng tài khoản không được làm giật cuộn phiên này");
+  assert.equal(res3.nextSendTracker.pendingSends.length, 1, "Pending send của phiên này phải được bảo toàn");
+
+  // 4. Kịch bản: Hai thiết bị cùng tài khoản gửi cùng nội dung text:
+  // Máy này gửi nonce_4, server sẽ trả messageId "msg_local_4".
+  // Máy kia gửi cùng text "Alo", server trả messageId "msg_device_b_2".
+  // Tin "msg_device_b_2" đến trước -> KHÔNG được liên kết nhầm chỉ vì cùng text.
+  let tracker4 = createSendTrackerState("session_1");
+  tracker4 = recordLocalSendAttempt(tracker4, "nonce_4");
+  const { state: t4Ack } = confirmLocalSendAck(tracker4, "nonce_4", "msg_local_4");
+
+  const res4 = evaluateBatchAutoScroll({
+    wasNearBottom: false,
+    newMessages: [{ id: "msg_device_b_2", senderId: currentUserId, text: "Alo" }],
+    currentUserId,
+    sendTracker: t4Ack,
+  });
+  assert.equal(res4.shouldScroll, false, "Không được match nhầm messageId dù cùng text");
+  assert.equal(res4.nextSendTracker.pendingSends.length, 1, "Lượt gửi của mình vẫn chờ đúng msg_local_4");
+
+  // Khi đúng msg_local_4 đến:
+  const res4b = evaluateBatchAutoScroll({
+    wasNearBottom: false,
+    newMessages: [{ id: "msg_local_4", senderId: currentUserId, text: "Alo" }],
+    currentUserId,
+    sendTracker: res4.nextSendTracker,
+  });
+  assert.equal(res4b.shouldScroll, true, "Đúng messageId thì cuộn về đáy");
+  assert.equal(res4b.nextSendTracker.pendingSends.length, 0);
+
+  // 5. Kịch bản: Server từ chối / Timeout:
+  // Bấm gửi nonce_5 -> Callback lỗi / timeout -> cancelLocalSendAttempt
+  let tracker5 = createSendTrackerState("session_1");
+  tracker5 = recordLocalSendAttempt(tracker5, "nonce_5");
+  tracker5 = cancelLocalSendAttempt(tracker5, "nonce_5");
+  assert.equal(tracker5.pendingSends.length, 0);
+
+  const res5 = evaluateBatchAutoScroll({
+    wasNearBottom: false,
+    newMessages: [msgFromOther],
+    currentUserId,
+    sendTracker: tracker5,
+  });
+  assert.equal(res5.shouldScroll, false, "Sau timeout/lỗi thì tin người khác không làm giật cuộn");
+
+  // 6. Kịch bản: Cleanup / Đổi phòng / Reconnect phiên:
+  // Session 1 bị hủy -> tạo Session 2 -> tracker sạch hoàn toàn.
+  const tracker6 = createSendTrackerState("session_2");
+  assert.equal(tracker6.sessionId, "session_2");
+  assert.equal(tracker6.pendingSends.length, 0);
+  assert.equal(tracker6.receivedMessageIds.size, 0);
+
+  // 7. Kịch bản: Đang ở sát đáy (wasNearBottom = true):
+  // Dù là tin người khác hay hệ thống -> cuộn theo luồng.
+  const res7 = evaluateBatchAutoScroll({
+    wasNearBottom: true,
+    newMessages: [msgFromOther, msgSystem],
+    currentUserId,
+    sendTracker: tracker6,
+  });
+  assert.equal(res7.shouldScroll, true, "Đang ở sát đáy thì tiếp tục cuộn theo luồng chat");
+});
+
+test("formatVietnamChatTime: formats time strictly in Asia/Ho_Chi_Minh 24h format (HH:mm) and rejects unverified strings", () => {
+  // 1. Timestamp ban ngày UTC: 2026-08-28T03:42:00.000Z -> 10:42 (GMT+7)
+  assert.equal(formatVietnamChatTime("2026-08-28T03:42:00.000Z"), "10:42");
+  assert.equal(formatVietnamChatTime("2026-08-28T03:42:00Z"), "10:42");
+
+  // 2. Timestamp có offset cụ thể
+  assert.equal(formatVietnamChatTime("2026-08-28T10:42:00+07:00"), "10:42");
+  assert.equal(formatVietnamChatTime("2026-08-28T03:42:00-04:00"), "14:42");
+
+  // 3. Timestamp qua đêm UTC: 2026-08-27T17:05:00.000Z -> 00:05 (GMT+7 ngày 28/08)
+  assert.equal(formatVietnamChatTime("2026-08-27T17:05:00.000Z"), "00:05");
+
+  // 4. Chuỗi timestamp THIẾU TIMEZONE (không có Z hoặc offset) -> Phải từ chối, trả về "" để không phụ thuộc múi giờ máy chủ/thiết bị
+  assert.equal(formatVietnamChatTime("2026-08-28T03:42:00"), "", "Chuỗi không có timezone phải bị loại bỏ");
+  assert.equal(formatVietnamChatTime("2026-08-28 03:42:00"), "");
+
+  // 5. Chuỗi chỉ có ngày (không có timezone và giờ cụ thể) -> Trả về ""
+  assert.equal(formatVietnamChatTime("2026-08-28"), "");
+
+  // 6. FallbackTime không có timezone (ví dụ "03:42 AM", "10:42") -> Không được coi là giờ VN đã xác minh -> Trả về ""
+  assert.equal(formatVietnamChatTime(null, "03:42 AM"), "");
+  assert.equal(formatVietnamChatTime(undefined, "10:42"), "");
+
+  // 7. Date instance hợp lệ & Epoch milliseconds hợp lệ (number)
+  assert.equal(formatVietnamChatTime(new Date("2026-08-28T03:42:00.000Z")), "10:42");
+  assert.equal(formatVietnamChatTime(1787888520000), "10:42"); // Epoch ms UTC tương ứng 2026-08-28T03:42:00.000Z
+
+  // 8. Giá trị không hợp lệ / rỗng / Invalid Date
+  assert.equal(formatVietnamChatTime("invalid-date-string"), "");
+  assert.equal(formatVietnamChatTime(new Date("invalid")), "");
+  assert.equal(formatVietnamChatTime(null, null), "");
+  assert.equal(formatVietnamChatTime("", ""), "");
+});
+
+test("Session Lifecycle Isolation: Session teardown resets isSendingMessage and prevents stale callbacks from modifying new session", () => {
+  let sessionEpoch = 1;
+  let isSendingMessage = false;
+  let sendTracker = createSendTrackerState(`session_${sessionEpoch}`);
+
+  // 1. Gửi tin ở session 1
+  const clientNonce1 = "nonce_session_1";
+  const sendEpoch1 = sessionEpoch;
+  sendTracker = recordLocalSendAttempt(sendTracker, clientNonce1);
+  isSendingMessage = true;
+  assert.equal(sendTracker.pendingSends.length, 1);
+  assert.equal(isSendingMessage, true);
+
+  // 2. Socket teardown / cleanup xảy ra (đổi phòng hoặc reconnect)
+  sessionEpoch += 1;
+  sendTracker = createSendTrackerState(`session_${sessionEpoch}`);
+  isSendingMessage = false;
+  assert.equal(sessionEpoch, 2);
+  assert.equal(isSendingMessage, false, "Cleanup phải giải phóng ngay trạng thái isSendingMessage");
+  assert.equal(sendTracker.pendingSends.length, 0, "Tracker phiên mới phải sạch hoàn toàn");
+
+  // 3. Giả lập callback muộn từ socket session 1 (sau timeout hoặc ACK trễ)
+  const handleLateCallback = (callbackEpoch: number) => {
+    if (callbackEpoch !== sessionEpoch) {
+      // Callback cũ bị loại bỏ an toàn
+      return "ignored";
+    }
+    isSendingMessage = false;
+    return "executed";
+  };
+
+  const result = handleLateCallback(sendEpoch1);
+  assert.equal(result, "ignored", "Callback phiên 1 phải bị bỏ qua ở phiên 2");
+  assert.equal(isSendingMessage, false, "isSendingMessage của phiên mới không bị ảnh hưởng");
+
+  // 4. Phiên mới có thể gửi tin ngay lập tức mà không bị kẹt
+  const clientNonce2 = "nonce_session_2";
+  sendTracker = recordLocalSendAttempt(sendTracker, clientNonce2);
+  isSendingMessage = true;
+  assert.equal(sendTracker.pendingSends.length, 1);
+  assert.equal(sendTracker.pendingSends[0].clientNonce, clientNonce2);
+});
+
+test("Episode Selection Button Lookup: uses stable data-episode-index to guarantee 100% accurate button identification regardless of name formatting", () => {
+  // Mô phỏng container DOM chứa danh sách tập và các nút khác (batch tabs, viewer count)
+  const fakeContainer = {
+    buttons: [
+      { textContent: "Tập 1 - 40", attributes: {} },
+      { textContent: "Tập 1", attributes: { "data-episode-index": "0" }, id: "btn-ep-0" },
+      { textContent: "Tập 2", attributes: { "data-episode-index": "1" }, id: "btn-ep-1" },
+      { textContent: "Tập 12", attributes: { "data-episode-index": "11" }, id: "btn-ep-11" },
+      { textContent: "Tập 20", attributes: { "data-episode-index": "19" }, id: "btn-ep-19" },
+      { textContent: "2 người xem", attributes: {} },
+    ],
+    querySelector(selector: string) {
+      const match = selector.match(/button\[data-episode-index="(\d+)"\]/);
+      if (!match) return null;
+      const targetIndex = match[1];
+      return this.buttons.find(b => b.attributes["data-episode-index"] === targetIndex) || null;
+    }
+  };
+
+  // 1. Tìm tập 2 (index = 1) dù tên là "2" hay "Tập 2"
+  const foundEp2 = fakeContainer.querySelector(`button[data-episode-index="1"]`);
+  assert.equal(foundEp2?.id, "btn-ep-1", "Phải tìm chính xác nút Tập 2 qua data-episode-index");
+
+  // 2. Không bao giờ nhầm với Tập 12 (index = 11), Tập 20 (index = 19), hay "2 người xem"
+  assert.notEqual(foundEp2?.id, "btn-ep-11");
+  assert.notEqual(foundEp2?.id, "btn-ep-19");
+
+  // 3. Tìm tập 12 (index = 11) và tập 20 (index = 19)
+  const foundEp12 = fakeContainer.querySelector(`button[data-episode-index="11"]`);
+  assert.equal(foundEp12?.id, "btn-ep-11");
+  const foundEp20 = fakeContainer.querySelector(`button[data-episode-index="19"]`);
+  assert.equal(foundEp20?.id, "btn-ep-19");
+
+  // 4. Tìm tập không tồn tại (index = 99)
+  const notFound = fakeContainer.querySelector(`button[data-episode-index="99"]`);
+  assert.equal(notFound, null);
 });

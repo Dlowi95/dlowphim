@@ -82,6 +82,7 @@ export default function EpisodeSelector({
           return (
             <button
               key={`episode-item-btn-${globalIdx}`}
+              data-episode-index={globalIdx}
               type="button"
               onClick={() => onSelectEpisode(globalIdx)}
               className={`h-10 rounded-xl font-extrabold text-xs flex items-center justify-center transition-all cursor-pointer border-none ${

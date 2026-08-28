@@ -210,20 +210,22 @@ export default function WatchTogetherPage() {
     <div className="min-h-screen bg-[#07070a] text-white">
       {/* Toast thông báo chủ phòng đã đóng phòng */}
       {closedToast && (
-        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[9999] animate-in fade-in slide-in-from-top-4 duration-300">
-          <div className="bg-[#12131d]/95 backdrop-blur-xl border border-pink-500/30 text-white px-5 py-3 rounded-2xl shadow-[0_20px_50px_rgba(236,72,153,0.2)] flex items-center gap-3 border-l-4 border-l-pink-500">
+        <div className="fixed top-20 sm:top-24 left-1/2 -translate-x-1/2 z-[9999] w-[calc(100%-2rem)] max-w-md animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="bg-[#12131d]/95 backdrop-blur-xl border border-pink-500/30 text-white px-4 sm:px-5 py-3 rounded-2xl shadow-[0_20px_50px_rgba(236,72,153,0.2)] flex items-center gap-3 border-l-4 border-l-pink-500 w-full">
             <div className="w-8 h-8 rounded-xl bg-pink-500/10 flex items-center justify-center shrink-0">
               <AlertCircle size={18} className="text-pink-400" />
             </div>
-            <div>
+            <div className="flex-1 min-w-0 text-left">
               <p className="text-[10px] font-black text-pink-400 uppercase tracking-wider">Thông báo phòng xem chung</p>
-              <p className="text-xs text-zinc-200 font-bold">{closedMessage}</p>
+              <p className="text-xs text-zinc-200 font-bold leading-normal mt-0.5 break-words">{closedMessage}</p>
             </div>
             <button
+              type="button"
               onClick={() => setClosedToast(false)}
-              className="ml-3 text-zinc-400 hover:text-white p-1 transition-colors cursor-pointer border-none bg-transparent"
+              className="text-zinc-400 hover:text-white p-1.5 transition-colors cursor-pointer border-none bg-transparent shrink-0 rounded-lg hover:bg-white/10"
+              aria-label="Đóng thông báo"
             >
-              <X size={14} />
+              <X size={16} />
             </button>
           </div>
         </div>

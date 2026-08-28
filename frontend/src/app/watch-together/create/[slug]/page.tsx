@@ -407,7 +407,7 @@ export default function CreateRoomPage() {
             </div>
 
             {/* Bước 3: Lên lịch công chiếu */}
-            <div className="bg-[#0e0f17]/40 rounded-2xl sm:rounded-3xl p-4 sm:p-6 space-y-4 text-left">
+            <div className="bg-[#0e0f17]/40 rounded-2xl md:rounded-3xl p-4 md:p-6 space-y-4 text-left">
               <div className="flex items-center justify-between gap-3">
                 <label className="text-xs font-black text-zinc-450 uppercase tracking-widest flex items-center gap-2 select-none">
                   <span className="w-5 h-5 rounded-full bg-pink-500/10 text-pink-500 flex items-center justify-center font-bold text-[10px]">3</span>
@@ -418,24 +418,24 @@ export default function CreateRoomPage() {
                 <button
                   type="button"
                   onClick={() => setIsAutoStart(!isAutoStart)}
-                  className={`w-11 h-6 rounded-full transition-colors duration-250 relative outline-none border-none cursor-pointer flex items-center p-0.5 shrink-0 ${
+                  className={`w-11 h-6 md:w-10 md:h-6 rounded-full transition-colors duration-250 relative outline-none border-none cursor-pointer flex items-center p-0.5 shrink-0 ${
                     isAutoStart ? "bg-pink-500" : "bg-zinc-800"
                   }`}
                   aria-label="Bật tắt lên lịch công chiếu"
                 >
                   <div
                     className={`w-5 h-5 rounded-full bg-white transition-transform duration-200 ease-in-out ${
-                      isAutoStart ? "translate-x-5" : "translate-x-0"
+                      isAutoStart ? "translate-x-5 md:translate-x-4" : "translate-x-0"
                     }`}
                   />
                 </button>
               </div>
-              <p className="text-[11px] text-zinc-400 font-medium leading-relaxed">
+              <p className="text-[11px] text-zinc-500 font-semibold leading-relaxed">
                 Đến giờ, phim tự phát khi Trưởng phòng có mặt. Nếu vắng quá 30 phút, phòng sẽ tự đóng.
               </p>
 
               {isAutoStart && (
-                <div className="space-y-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
                   <span className="text-[10px] font-black text-zinc-450 uppercase tracking-wider flex items-center gap-1.5">
                     <Calendar size={12} className="text-pink-500" />
                     Thời gian phát phim:
@@ -446,7 +446,7 @@ export default function CreateRoomPage() {
                     min={minStartTime}
                     value={startTime}
                     onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full min-h-[44px] bg-zinc-950 border border-zinc-900/60 hover:border-zinc-800/50 focus:border-pink-500 rounded-xl px-3 sm:px-4 text-xs sm:text-sm text-zinc-200 outline-none font-bold transition-colors [color-scheme:dark]"
+                    className="w-full h-12 bg-zinc-950 border border-zinc-900/60 hover:border-zinc-800/50 focus:border-pink-500 rounded-xl px-4 text-sm text-zinc-200 outline-none font-bold transition-colors [color-scheme:dark]"
                   />
                   <div className="flex flex-wrap gap-2 pt-1">
                     {[15, 30, 60].map((minutes) => (
@@ -454,7 +454,7 @@ export default function CreateRoomPage() {
                         key={minutes}
                         type="button"
                         onClick={() => chooseQuickSchedule(minutes)}
-                        className="min-h-[36px] rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-[11px] font-black text-zinc-400 transition-colors hover:border-pink-500/40 hover:text-pink-400 active:scale-95 cursor-pointer"
+                        className="min-h-[36px] md:min-h-0 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-[10px] font-black text-zinc-400 transition-colors hover:border-pink-500/40 hover:text-pink-400 active:scale-95 cursor-pointer"
                       >
                         +{minutes < 60 ? `${minutes} phút` : "1 giờ"}
                       </button>
