@@ -31,7 +31,7 @@ describe('AuthService watch history', () => {
       updatedAt,
     });
 
-    const [filter, pipeline] = userModel.updateOne.mock.calls[0];
+    const [filter, pipeline, options] = userModel.updateOne.mock.calls[0];
     expect(filter).toEqual({
       _id: 'user-id',
       watchHistory: {
@@ -55,6 +55,7 @@ describe('AuthService watch history', () => {
       }),
     );
     expect(pipeline[0].$set.watchHistory.$slice[1]).toBe(50);
+    expect(options).toEqual({ updatePipeline: true });
   });
 
   it('normalizes invalid progress values without storing negative numbers', async () => {

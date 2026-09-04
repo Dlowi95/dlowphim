@@ -41,7 +41,7 @@ export class AdminJob {
   @Prop({ index: true })
   dedupeKey?: string;
 
-  @Prop({ required: true, index: true })
+  @Prop({ required: true })
   expiresAt: Date;
 }
 

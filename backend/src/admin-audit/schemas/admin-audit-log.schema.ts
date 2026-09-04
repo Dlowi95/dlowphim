@@ -44,7 +44,7 @@ export class AdminAuditLog {
   @Prop({ maxlength: 300 })
   userAgent?: string;
 
-  @Prop({ required: true, index: true })
+  @Prop({ required: true })
   expiresAt: Date;
 }
 

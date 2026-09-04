@@ -1073,6 +1073,7 @@ export class AuthService implements OnModuleInit {
           },
         },
       ],
+      { updatePipeline: true },
     );
 
     const updatedUser = await this.userModel.findById(userId).select('watchHistory');
