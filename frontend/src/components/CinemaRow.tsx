@@ -10,6 +10,7 @@ import MovieQualityBadge from "./MovieQualityBadge";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
 import { fetchMovieArtwork, LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
+import { canTriggerHoverPopup, isFineHoverCapability, isTouchOrPenInteraction, recordTouchInteraction, subscribeToFineHoverCapability } from "@/utils/hoverCardGuard";
 
 interface Movie {
   _id: string;
@@ -250,14 +251,30 @@ function CinemaMovieCard({ movie, wasDraggingRef }: CinemaMovieCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [showPopup, setShowPopup] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
+  const [isNavigating, setIsNavigating] = useState(false);
 
-  const cardRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLAnchorElement>(null);
   const hoverTimer = useRef<NodeJS.Timeout | null>(null);
   const closeTimer = useRef<NodeJS.Timeout | null>(null);
+  const navTimer = useRef<NodeJS.Timeout | null>(null);
   const router = useRouter();
 
   useEffect(() => {
     setMounted(true);
+    const unsubscribe = subscribeToFineHoverCapability((hasCapability) => {
+      if (!hasCapability) {
+        if (hoverTimer.current) clearTimeout(hoverTimer.current);
+        if (closeTimer.current) clearTimeout(closeTimer.current);
+        setIsHovered(false);
+        setShowPopup(false);
+      }
+    });
+    return () => {
+      unsubscribe();
+      if (hoverTimer.current) clearTimeout(hoverTimer.current);
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+      if (navTimer.current) clearTimeout(navTimer.current);
+    };
   }, []);
 
   const cleanedName = cleanMovieName(movie.name);
@@ -326,18 +343,34 @@ function CinemaMovieCard({ movie, wasDraggingRef }: CinemaMovieCardProps) {
     }
   };
 
-  const handleMouseEnter = (e: React.MouseEvent) => {
+  const cancelHoverAndClose = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
     if (closeTimer.current) clearTimeout(closeTimer.current);
-    
-    // Immediately mount the popup (so it pre-fetches API details)
-    setShowPopup(true);
+    setIsHovered(false);
+    setShowPopup(false);
+  };
+
+  const handlePointerEnter = (e: React.PointerEvent<HTMLAnchorElement>) => {
+    if (!canTriggerHoverPopup(e)) {
+      cancelHoverAndClose();
+      return;
+    }
+    if (closeTimer.current) clearTimeout(closeTimer.current);
 
     if (isHovered) return;
+
+    try {
+      router.prefetch(`/movie/${movie.slug}`);
+    } catch {}
 
     const currentTarget = e.currentTarget;
     
     // Standard 800ms hover delay
     hoverTimer.current = setTimeout(() => {
+      if (!isFineHoverCapability()) {
+        cancelHoverAndClose();
+        return;
+      }
       const rect = currentTarget.getBoundingClientRect();
       const scrollY = window.scrollY || window.pageYOffset;
       const scrollX = window.scrollX || window.pageXOffset;
@@ -359,11 +392,16 @@ function CinemaMovieCard({ movie, wasDraggingRef }: CinemaMovieCardProps) {
         left: finalLeft,
         width: scaledWidth
       });
+      setShowPopup(true);
       setIsHovered(true);
     }, 800);
   };
 
-  const handleMouseLeave = () => {
+  const handlePointerLeave = (e: React.PointerEvent<HTMLAnchorElement>) => {
+    if (isTouchOrPenInteraction(e)) {
+      cancelHoverAndClose();
+      return;
+    }
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     closeTimer.current = setTimeout(() => {
       setIsHovered(false);
@@ -371,13 +409,57 @@ function CinemaMovieCard({ movie, wasDraggingRef }: CinemaMovieCardProps) {
     }, 200);
   };
 
+  const handlePointerDown = (e: React.PointerEvent<HTMLAnchorElement>) => {
+    if (isTouchOrPenInteraction(e)) {
+      recordTouchInteraction();
+      cancelHoverAndClose();
+    }
+  };
+
+  const handleTouchStart = () => {
+    recordTouchInteraction();
+    cancelHoverAndClose();
+  };
+
   const clearCloseTimer = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
   };
 
-  const handleClick = () => {
-    if (wasDraggingRef.current) return;
-    router.push(`/movie/${movie.slug}`);
+  const handlePopupLeave = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    closeTimer.current = setTimeout(() => {
+      setShowPopup(false);
+      setIsHovered(false);
+    }, 200);
+  };
+
+  const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (wasDraggingRef.current) {
+      e.preventDefault();
+      return;
+    }
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
+      return;
+    }
+    if (isNavigating) {
+      e.preventDefault();
+      return;
+    }
+    setIsNavigating(true);
+    if (navTimer.current) clearTimeout(navTimer.current);
+    navTimer.current = setTimeout(() => setIsNavigating(false), 3500);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLAnchorElement>) => {
+    if (e.key === " ") {
+      e.preventDefault();
+      if (!isNavigating) {
+        setIsNavigating(true);
+        if (navTimer.current) clearTimeout(navTimer.current);
+        navTimer.current = setTimeout(() => setIsNavigating(false), 3500);
+        router.push(`/movie/${movie.slug}`);
+      }
+    }
   };
 
   const cardWidthClass =
@@ -388,12 +470,20 @@ function CinemaMovieCard({ movie, wasDraggingRef }: CinemaMovieCardProps) {
   const durationText = movie.time && !movie.time.includes("phút") ? movie.time : "1h 45m";
 
   return (
-    <div
+    <Link
       ref={cardRef}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+      href={`/movie/${movie.slug}`}
+      data-testid="cinema-card"
+      data-movie-slug={movie.slug}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
+      onPointerDown={handlePointerDown}
+      onTouchStart={handleTouchStart}
       onClick={handleClick}
-      className={`${cardWidthClass} group/cinema relative flex snap-start cursor-pointer select-none flex-col`}
+      onKeyDown={handleKeyDown}
+      aria-label={`Xem thông tin phim ${cleanedName}`}
+      aria-busy={isNavigating}
+      className={`${cardWidthClass} group/cinema relative flex snap-start cursor-pointer select-none flex-col transition-opacity duration-200 outline-none focus-visible:ring-2 focus-visible:ring-pink-500 rounded-xl ${isNavigating ? "opacity-70" : ""}`}
       style={{ zIndex: zIndexStyle }}
     >
       <div className="relative flex flex-col w-full h-full">
@@ -473,9 +563,9 @@ function CinemaMovieCard({ movie, wasDraggingRef }: CinemaMovieCardProps) {
           aspect="landscape"
           isVisible={isHovered}
           onMouseEnter={clearCloseTimer}
-          onMouseLeave={handleMouseLeave}
+          onMouseLeave={handlePopupLeave}
         />
       )}
-    </div>
+    </Link>
   );
 }

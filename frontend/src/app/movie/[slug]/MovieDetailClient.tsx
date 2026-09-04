@@ -285,8 +285,8 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
                   }
                   setTmdbImages(images);
                 }
-              } catch (e) {
-                if ((e as any)?.name !== "AbortError") {
+              } catch (e: any) {
+                if (!cancelled && e?.name !== "AbortError") {
                   console.error("Lỗi tải ảnh TMDB cho MovieDetail qua proxy:", e);
                 }
               }

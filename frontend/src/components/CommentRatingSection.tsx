@@ -238,7 +238,7 @@ export default function CommentRatingSection({
         });
         if (res.ok && !disposed) setComments(await res.json());
       } catch (err: any) {
-        if (err?.name !== "AbortError") console.error("Lỗi lấy bình luận:", err);
+        if (!disposed && err?.name !== "AbortError") console.error("Lỗi lấy bình luận:", err);
       }
     };
 

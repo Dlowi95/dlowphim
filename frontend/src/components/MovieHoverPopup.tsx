@@ -1,15 +1,15 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Play, Heart, Info } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
 import { useAuth } from "@/context/AuthContext";
-import Cookies from "js-cookie";
 import { getProxyUrl, MOVIE_API_DOMAIN } from "@/utils/api";
 import MovieQualityBadge from "./MovieQualityBadge";
 import { fetchMovieArtwork, LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
+import { recordTouchInteraction, subscribeToFineHoverCapability } from "@/utils/hoverCardGuard";
 
 interface Movie {
   _id: string;
@@ -43,6 +43,8 @@ export default function MovieHoverPopup({
   const [mounted, setMounted] = useState(false);
   const [details, setDetails] = useState<any | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [isNavigating, setIsNavigating] = useState(false);
+  const popupRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const { user, toggleFavorite: toggleFavoriteCtx } = useAuth();
 
@@ -82,13 +84,39 @@ export default function MovieHoverPopup({
     };
   }, [movie.slug]);
 
-  // Close hover card on window scroll
+  // Close hover card on window scroll, resize, touch, or breakpoint change
   useEffect(() => {
-    const handleScroll = () => {
+    const handleDismiss = () => {
       onMouseLeave();
     };
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
+    const handleTouchDismiss = () => {
+      recordTouchInteraction();
+      onMouseLeave();
+    };
+    const handlePointerDismiss = (e: PointerEvent) => {
+      if (e.pointerType && e.pointerType !== "mouse") {
+        recordTouchInteraction();
+        onMouseLeave();
+      }
+    };
+    const unsubscribe = subscribeToFineHoverCapability((hasCapability) => {
+      if (!hasCapability) onMouseLeave();
+    });
+
+    window.addEventListener("scroll", handleDismiss, { passive: true });
+    window.addEventListener("resize", handleDismiss, { passive: true });
+    window.addEventListener("orientationchange", handleDismiss, { passive: true });
+    window.addEventListener("touchstart", handleTouchDismiss, { passive: true });
+    window.addEventListener("pointerdown", handlePointerDismiss, { passive: true });
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener("scroll", handleDismiss);
+      window.removeEventListener("resize", handleDismiss);
+      window.removeEventListener("orientationchange", handleDismiss);
+      window.removeEventListener("touchstart", handleTouchDismiss);
+      window.removeEventListener("pointerdown", handlePointerDismiss);
+    };
   }, [onMouseLeave]);
 
   const initialPopupUrl = movie.poster_url || movie.thumb_url;
@@ -141,12 +169,65 @@ export default function MovieHoverPopup({
     await toggleFavoriteCtx(movie.slug);
   };
 
+  const navTimer = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (navTimer.current) clearTimeout(navTimer.current);
+    };
+  }, []);
+
+  const handleCardClick = (e: React.MouseEvent) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    if (isNavigating) return;
+    setIsNavigating(true);
+    if (navTimer.current) clearTimeout(navTimer.current);
+    navTimer.current = setTimeout(() => setIsNavigating(false), 3500);
+    router.push(`/movie/${movie.slug}`);
+  };
+
+  const handleWatchClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    if (isNavigating) return;
+    setIsNavigating(true);
+    if (navTimer.current) clearTimeout(navTimer.current);
+    navTimer.current = setTimeout(() => setIsNavigating(false), 3500);
+    router.push(`/watch/${movie.slug}`);
+  };
+
+  const handleDetailClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    if (isNavigating) return;
+    setIsNavigating(true);
+    if (navTimer.current) clearTimeout(navTimer.current);
+    navTimer.current = setTimeout(() => setIsNavigating(false), 3500);
+    router.push(`/movie/${movie.slug}`);
+  };
+
   if (!mounted) return null;
 
   const showPopup = isVisible && !loadingDetails && !!details;
 
+  const handleMouseEnter = () => {
+    onMouseEnter();
+  };
+
+  const handleMouseLeave = (e: React.MouseEvent<HTMLDivElement>) => {
+    const currentTarget = e.currentTarget;
+    const relatedTarget = e.relatedTarget as Node | null;
+    if (currentTarget && relatedTarget && currentTarget.contains(relatedTarget)) {
+      return;
+    }
+    onMouseLeave();
+  };
+
   const hoverCard = (
     <div
+      ref={popupRef}
+      data-testid="movie-hover-popup"
+      data-movie-slug={movie.slug}
       style={{
         position: "absolute",
         top: position.top,
@@ -154,16 +235,16 @@ export default function MovieHoverPopup({
         width: position.width,
         zIndex: 9999,
       }}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       className={`bg-[#12131b] border border-zinc-800/60 rounded-2xl shadow-[0_25px_60px_rgba(0,0,0,0.95)] overflow-hidden select-none transition-all duration-300 ease-out flex flex-col ${
         showPopup 
           ? "opacity-100 scale-100 pointer-events-auto" 
           : "opacity-0 scale-95 pointer-events-none"
-      }`}
+      } ${isNavigating ? "opacity-70" : ""}`}
     >
       <div 
-        onClick={() => router.push(`/movie/${movie.slug}`)}
+        onClick={handleCardClick}
         className="cursor-pointer"
       >
         {/* Aspect Ratio matched image */}
@@ -204,16 +285,15 @@ export default function MovieHoverPopup({
           {/* Action Row */}
           <div className="flex items-center gap-2">
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                router.push(`/watch/${movie.slug}`);
-              }}
+              data-testid="hover-watch-btn"
+              onClick={handleWatchClick}
               className="flex-1 h-11 rounded-xl bg-pink-500/10 border border-pink-500/30 hover:bg-pink-500/20 active:scale-95 text-pink-500 font-extrabold text-sm flex items-center justify-center gap-1.5 shadow-md shadow-pink-500/5 cursor-pointer transition-all duration-200"
             >
               <Play size={15} className="fill-pink-500 text-pink-500" /> Xem ngay
             </button>
             
             <button
+              data-testid="hover-favorite-btn"
               onClick={toggleFavorite}
               className={`w-11 h-11 rounded-xl border flex items-center justify-center transition-all duration-200 active:scale-90 cursor-pointer ${
                 isFavorite 
@@ -225,10 +305,8 @@ export default function MovieHoverPopup({
             </button>
 
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                router.push(`/movie/${movie.slug}`);
-              }}
+              data-testid="hover-detail-btn"
+              onClick={handleDetailClick}
               className="w-11 h-11 rounded-xl bg-zinc-800/80 border border-zinc-700/50 hover:border-zinc-600 text-zinc-300 hover:text-white flex items-center justify-center transition-all duration-200 active:scale-90 cursor-pointer"
             >
               <Info size={16} />

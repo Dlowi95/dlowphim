@@ -24,7 +24,7 @@ const AnimeRow = dynamic(() => import("@/components/AnimeRow"), { ssr: false });
 function DeferredHomeSection({
   children,
   minHeightClass = "min-h-[360px]",
-  rootMargin = "0px",
+  rootMargin = "600px 0px",
   enabled = true,
 }: {
   children: ReactNode;
@@ -207,9 +207,33 @@ export default function HomePage() {
   const mobileTouchStartX = useRef<number | null>(null);
 
   const [movieList, setMovieList] = useState<any[]>([]);
+  const [heroNavigating, setHeroNavigating] = useState<string | null>(null);
+  const heroNavTimer = useRef<NodeJS.Timeout | null>(null);
   const isMobileViewport = useIsMobileViewport();
   const router = useRouter();
   const { user, toggleFavorite } = useAuth();
+
+  useEffect(() => {
+    return () => {
+      if (heroNavTimer.current) clearTimeout(heroNavTimer.current);
+    };
+  }, []);
+
+  const handleHeroWatch = (slug: string) => {
+    if (heroNavigating) return;
+    setHeroNavigating(slug);
+    if (heroNavTimer.current) clearTimeout(heroNavTimer.current);
+    heroNavTimer.current = setTimeout(() => setHeroNavigating(null), 3500);
+    router.push(`/watch/${slug}`);
+  };
+
+  const handleHeroDetail = (slug: string) => {
+    if (heroNavigating) return;
+    setHeroNavigating(slug);
+    if (heroNavTimer.current) clearTimeout(heroNavTimer.current);
+    heroNavTimer.current = setTimeout(() => setHeroNavigating(null), 3500);
+    router.push(`/movie/${slug}`);
+  };
 
   const isFavorited = user?.favorites?.includes(heroCandidates[activeHeroIndex]?.slug || "") || false;
 
@@ -234,8 +258,12 @@ export default function HomePage() {
   };
 
   useEffect(() => {
-    if (!resolvedHeroLoading && heroCandidates.length === 0) {
-      setHeroVisualReady(true);
+    if (!resolvedHeroLoading) {
+      const timer = setTimeout(() => setHeroVisualReady(true), 600);
+      if (heroCandidates.length === 0) {
+        setHeroVisualReady(true);
+      }
+      return () => clearTimeout(timer);
     }
   }, [heroCandidates.length, resolvedHeroLoading]);
 
@@ -507,16 +535,20 @@ export default function HomePage() {
 
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button
-                  onClick={() => router.push(`/watch/${activeMovie.slug}`)}
-                  className="flex h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 text-sm font-black text-white shadow-lg shadow-pink-500/20 active:scale-[0.98]"
+                  onClick={() => handleHeroWatch(activeMovie.slug)}
+                  disabled={Boolean(heroNavigating)}
+                  aria-busy={heroNavigating === activeMovie.slug}
+                  className={`flex h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 text-sm font-black text-white shadow-lg shadow-pink-500/20 active:scale-[0.98] transition-opacity duration-200 ${heroNavigating ? "opacity-75" : ""}`}
                 >
-                  <Play size={15} className="fill-current" /> Xem phim
+                  <Play size={15} className="fill-current" /> {heroNavigating === activeMovie.slug ? "Đang mở..." : "Xem phim"}
                 </button>
                 <button
-                  onClick={() => router.push(`/movie/${activeMovie.slug}`)}
-                  className="flex h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 text-sm font-black text-white backdrop-blur-md active:scale-[0.98]"
+                  onClick={() => handleHeroDetail(activeMovie.slug)}
+                  disabled={Boolean(heroNavigating)}
+                  aria-busy={heroNavigating === activeMovie.slug}
+                  className={`flex h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 text-sm font-black text-white backdrop-blur-md active:scale-[0.98] transition-opacity duration-200 ${heroNavigating ? "opacity-75" : ""}`}
                 >
-                  <Info size={15} /> Thông tin
+                  <Info size={15} /> {heroNavigating === activeMovie.slug ? "Đang tải..." : "Thông tin"}
                 </button>
               </div>
 
@@ -649,9 +681,16 @@ export default function HomePage() {
             <div className="flex items-center gap-3.5 pt-3">
               {/* Nút Play to lớn màu Hồng */}
               <button
-                onClick={() => router.push(`/watch/${activeMovie.slug}`)}
+                onClick={() => handleHeroWatch(activeMovie.slug)}
+                onPointerEnter={(e) => {
+                  if (e.pointerType === "mouse") {
+                    try { router.prefetch(`/watch/${activeMovie.slug}`); } catch {}
+                  }
+                }}
+                disabled={Boolean(heroNavigating)}
                 aria-label={`Xem ngay ${activeMovie.name}`}
-                className="w-14 h-14 rounded-full bg-pink-500 hover:bg-pink-600 flex items-center justify-center shadow-lg shadow-pink-500/25 hover:scale-110 active:scale-95 transition-all duration-300 group"
+                aria-busy={heroNavigating === activeMovie.slug}
+                className={`w-14 h-14 rounded-full bg-pink-500 hover:bg-pink-600 flex items-center justify-center shadow-lg shadow-pink-500/25 hover:scale-110 active:scale-95 transition-all duration-300 group ${heroNavigating ? "opacity-75 pointer-events-none" : ""}`}
               >
                 <Play className="text-white fill-white ml-1 group-hover:scale-105 transition-transform" size={22} />
               </button>
@@ -670,9 +709,16 @@ export default function HomePage() {
 
               {/* Nút Xem thông tin chi tiết */}
               <button
-                onClick={() => router.push(`/movie/${activeMovie.slug}`)}
+                onClick={() => handleHeroDetail(activeMovie.slug)}
+                onPointerEnter={(e) => {
+                  if (e.pointerType === "mouse") {
+                    try { router.prefetch(`/movie/${activeMovie.slug}`); } catch {}
+                  }
+                }}
+                disabled={Boolean(heroNavigating)}
                 aria-label={`Xem thông tin ${activeMovie.name}`}
-                className="w-12 h-12 rounded-full border border-zinc-800/80 bg-zinc-900/60 hover:border-zinc-700 text-zinc-300 hover:text-white flex items-center justify-center backdrop-blur-md hover:scale-105 active:scale-95 transition-all duration-300"
+                aria-busy={heroNavigating === activeMovie.slug}
+                className={`w-12 h-12 rounded-full border border-zinc-800/80 bg-zinc-900/60 hover:border-zinc-700 text-zinc-300 hover:text-white flex items-center justify-center backdrop-blur-md hover:scale-105 active:scale-95 transition-all duration-300 ${heroNavigating ? "opacity-75 pointer-events-none" : ""}`}
               >
                 <Info size={20} />
               </button>

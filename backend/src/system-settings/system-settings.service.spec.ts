@@ -141,4 +141,257 @@ describe('SystemSettingsService movie source configuration', () => {
     expect(settings.tmdbApiKey).toBe('0123456789abcdef0123456789abcdef');
     expect((settings as any).lastUpdatedBy).toBe('admin-id');
   });
+
+  describe('testMovieSource', () => {
+    let originalFetch: typeof global.fetch;
+
+    beforeEach(() => {
+      originalFetch = global.fetch;
+    });
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+      jest.restoreAllMocks();
+    });
+
+    it('returns healthy status when provider returns 200 with items schema', async () => {
+      const settings = {
+        movieSources,
+        movieSourceConfigVersion: 1,
+        save: jest.fn(),
+      };
+      const service = createService(settings);
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ status: true, items: [{ slug: 'movie-1' }] }),
+      } as any);
+
+      const result = await service.testMovieSource('phimapi');
+      expect(result.ok).toBe(true);
+      expect(result.statusCode).toBe(200);
+      expect(result.errorType).toBe('none');
+      expect(result.testedEndpoint).toBe('https://phimapi.com/danh-sach/phim-moi-cap-nhat');
+      expect(result.message).toContain('HTTP 200');
+      expect(typeof result.latencyMs).toBe('number');
+    });
+
+    it('classifies 404 responses accurately as http_error with testedEndpoint', async () => {
+      const settings = {
+        movieSources,
+        movieSourceConfigVersion: 1,
+        save: jest.fn(),
+      };
+      const service = createService(settings);
+      const cancelMock = jest.fn().mockResolvedValue(undefined);
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        body: { cancel: cancelMock },
+      } as any);
+
+      const result = await service.testMovieSource('ophim');
+      expect(result.ok).toBe(false);
+      expect(result.statusCode).toBe(404);
+      expect(result.errorType).toBe('http_error');
+      expect(result.testedEndpoint).toBe('https://ophim1.com/danh-sach/phim-moi-cap-nhat');
+      expect(result.message).toContain('404 Not Found');
+      expect(cancelMock).toHaveBeenCalled();
+    });
+
+    it('classifies 500 server errors as http_error', async () => {
+      const settings = {
+        movieSources,
+        movieSourceConfigVersion: 1,
+        save: jest.fn(),
+      };
+      const service = createService(settings);
+      const cancelMock = jest.fn().mockResolvedValue(undefined);
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        body: { cancel: cancelMock },
+      } as any);
+
+      const result = await service.testMovieSource('phimapi');
+      expect(result.ok).toBe(false);
+      expect(result.statusCode).toBe(500);
+      expect(result.errorType).toBe('http_error');
+      expect(result.message).toContain('máy chủ (HTTP 500)');
+      expect(cancelMock).toHaveBeenCalled();
+    });
+
+    it('classifies network and DNS errors accurately as network_error', async () => {
+      const settings = {
+        movieSources,
+        movieSourceConfigVersion: 1,
+        save: jest.fn(),
+      };
+      const service = createService(settings);
+
+      global.fetch = jest.fn().mockRejectedValue(new Error('getaddrinfo ENOTFOUND ophim1.com'));
+
+      const result = await service.testMovieSource('ophim');
+      expect(result.ok).toBe(false);
+      expect(result.statusCode).toBeNull();
+      expect(result.errorType).toBe('network_error');
+      expect(result.message).toContain('ENOTFOUND');
+    });
+
+    it('classifies unparseable non-JSON responses as invalid_schema', async () => {
+      const settings = {
+        movieSources,
+        movieSourceConfigVersion: 1,
+        save: jest.fn(),
+      };
+      const service = createService(settings);
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockRejectedValue(new SyntaxError('Unexpected token < in JSON at position 0')),
+      } as any);
+
+      const result = await service.testMovieSource('phimapi');
+      expect(result.ok).toBe(false);
+      expect(result.statusCode).toBe(200);
+      expect(result.errorType).toBe('invalid_schema');
+      expect(result.message).toContain('không phải dữ liệu JSON hợp lệ');
+    });
+
+    it('classifies HTTP 200 responses missing expected items/status as invalid_schema', async () => {
+      const settings = {
+        movieSources,
+        movieSourceConfigVersion: 1,
+        save: jest.fn(),
+      };
+      const service = createService(settings);
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ message: 'Welcome to proxy root' }),
+      } as any);
+
+      const result = await service.testMovieSource('phimapi');
+      expect(result.ok).toBe(false);
+      expect(result.statusCode).toBe(200);
+      expect(result.errorType).toBe('invalid_schema');
+      expect(result.message).toContain('không chứa danh sách phim');
+    });
+
+    it('aborts slow fetch after 5000ms using controlled fake timers and cleans up timer', async () => {
+      jest.useFakeTimers();
+      const clearTimeoutSpy = jest.spyOn(global, 'clearTimeout');
+
+      const settings = {
+        movieSources,
+        movieSourceConfigVersion: 1,
+        save: jest.fn(),
+      };
+      const service = createService(settings);
+
+      global.fetch = jest.fn().mockImplementation((url: string, init?: RequestInit) => {
+        return new Promise((resolve, reject) => {
+          if (init?.signal) {
+            init.signal.addEventListener('abort', () => {
+              const abortErr = new Error('The operation was aborted');
+              abortErr.name = 'AbortError';
+              reject(abortErr);
+            });
+          }
+        });
+      });
+
+      const testPromise = service.testMovieSource('ophim');
+
+      // Flush microtasks so getSettings() resolves and setTimeout is registered
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Fast forward time past 5000ms
+      jest.advanceTimersByTime(5001);
+
+      const result = await testPromise;
+      expect(result.ok).toBe(false);
+      expect(result.statusCode).toBeNull();
+      expect(result.errorType).toBe('timeout');
+      expect(result.message).toContain('Quá thời gian kết nối (> 5000ms)');
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+
+      jest.useRealTimers();
+    });
+
+    it('aborts slow body/JSON parsing when signal triggers after 5000ms', async () => {
+      jest.useFakeTimers();
+
+      const settings = {
+        movieSources,
+        movieSourceConfigVersion: 1,
+        save: jest.fn(),
+      };
+      const service = createService(settings);
+
+      global.fetch = jest.fn().mockImplementation((url: string, init?: RequestInit) => {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => new Promise((resolve, reject) => {
+            if (init?.signal) {
+              init.signal.addEventListener('abort', () => {
+                const abortErr = new Error('The operation was aborted');
+                abortErr.name = 'AbortError';
+                reject(abortErr);
+              });
+            }
+          }),
+        } as any);
+      });
+
+      const testPromise = service.testMovieSource('phimapi');
+
+      // Flush microtasks so getSettings() and fetch resolve, registering json listener
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Advance timers by 5001ms to trigger abort during JSON parse
+      jest.advanceTimersByTime(5001);
+
+      const result = await testPromise;
+      expect(result.ok).toBe(false);
+      expect(result.errorType).toBe('timeout');
+      expect(result.message).toContain('Quá thời gian kết nối (> 5000ms)');
+
+      jest.useRealTimers();
+    });
+
+    it('cleans up timeout immediately on fast successful response', async () => {
+      jest.useFakeTimers();
+      const clearTimeoutSpy = jest.spyOn(global, 'clearTimeout');
+
+      const settings = {
+        movieSources,
+        movieSourceConfigVersion: 1,
+        save: jest.fn(),
+      };
+      const service = createService(settings);
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ status: true, items: [{ slug: 'fast-movie' }] }),
+      } as any);
+
+      const result = await service.testMovieSource('phimapi');
+      expect(result.ok).toBe(true);
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+
+      jest.useRealTimers();
+    });
+  });
 });

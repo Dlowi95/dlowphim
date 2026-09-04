@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import MovieHoverPopup from "@/components/MovieHoverPopup";
@@ -8,6 +9,7 @@ import ProgressiveImage from "@/components/ProgressiveImage";
 import MovieLanguageBadges from "@/components/MovieLanguageBadges";
 import { cleanMovieName, getImageUrl } from "@/utils/movieUtils";
 import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
+import { canTriggerHoverPopup, isFineHoverCapability, isTouchOrPenInteraction, recordTouchInteraction, subscribeToFineHoverCapability } from "@/utils/hoverCardGuard";
 
 interface Movie {
   _id: string;
@@ -181,26 +183,57 @@ export default function Top10Row() {
 
 function Top10MovieCard({ movie, index }: { movie: Movie; index: number }) {
   const router = useRouter();
-  const cardRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLAnchorElement>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [popupMounted, setPopupMounted] = useState(false);
   const [popupVisible, setPopupVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
   const [image, setImage] = useState(getImageUrl(movie.poster_url || movie.thumb_url));
+  const [isNavigating, setIsNavigating] = useState(false);
 
   useEffect(() => {
     setImage(getImageUrl(movie.poster_url || movie.thumb_url));
+    const unsubscribe = subscribeToFineHoverCapability((hasCapability) => {
+      if (!hasCapability) {
+        if (hoverTimer.current) clearTimeout(hoverTimer.current);
+        if (closeTimer.current) clearTimeout(closeTimer.current);
+        setPopupVisible(false);
+        setPopupMounted(false);
+      }
+    });
     return () => {
+      unsubscribe();
       if (hoverTimer.current) clearTimeout(hoverTimer.current);
       if (closeTimer.current) clearTimeout(closeTimer.current);
+      if (navTimer.current) clearTimeout(navTimer.current);
     };
   }, [movie.slug, movie.poster_url, movie.thumb_url]);
 
-  const openPopup = () => {
-    if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+  const cancelPopupAndTimers = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
     if (closeTimer.current) clearTimeout(closeTimer.current);
+    setPopupVisible(false);
+    setPopupMounted(false);
+  };
+
+  const handlePointerEnter = (e: React.PointerEvent<HTMLAnchorElement>) => {
+    if (!canTriggerHoverPopup(e)) {
+      cancelPopupAndTimers();
+      return;
+    }
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+
+    try {
+      router.prefetch(`/movie/${movie.slug}`);
+    } catch {}
+
     hoverTimer.current = setTimeout(() => {
+      if (!isFineHoverCapability()) {
+        cancelPopupAndTimers();
+        return;
+      }
       const rect = cardRef.current?.getBoundingClientRect();
       if (!rect) return;
       const cardCenter = rect.left + rect.width / 2;
@@ -217,7 +250,11 @@ function Top10MovieCard({ movie, index }: { movie: Movie; index: number }) {
     }, 650);
   };
 
-  const closePopup = () => {
+  const handlePointerLeave = (e: React.PointerEvent<HTMLAnchorElement>) => {
+    if (isTouchOrPenInteraction(e)) {
+      cancelPopupAndTimers();
+      return;
+    }
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     closeTimer.current = setTimeout(() => {
       setPopupVisible(false);
@@ -225,16 +262,69 @@ function Top10MovieCard({ movie, index }: { movie: Movie; index: number }) {
     }, 180);
   };
 
+  const handlePopupLeave = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    closeTimer.current = setTimeout(() => {
+      setPopupVisible(false);
+      setPopupMounted(false);
+    }, 180);
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLAnchorElement>) => {
+    if (isTouchOrPenInteraction(e)) {
+      recordTouchInteraction();
+      cancelPopupAndTimers();
+    }
+  };
+
+  const handleTouchStart = () => {
+    recordTouchInteraction();
+    cancelPopupAndTimers();
+  };
+
+  const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
+      return;
+    }
+    if (isNavigating) {
+      e.preventDefault();
+      return;
+    }
+    setIsNavigating(true);
+    if (navTimer.current) clearTimeout(navTimer.current);
+    navTimer.current = setTimeout(() => setIsNavigating(false), 3500);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLAnchorElement>) => {
+    if (e.key === " ") {
+      e.preventDefault();
+      if (!isNavigating) {
+        setIsNavigating(true);
+        if (navTimer.current) clearTimeout(navTimer.current);
+        navTimer.current = setTimeout(() => setIsNavigating(false), 3500);
+        router.push(`/movie/${movie.slug}`);
+      }
+    }
+  };
+
   const metadata = [movie.year, movie.episode_current].filter(Boolean).join(" · ");
   const fanShape = index % 2 === 0 ? ODD_POSTER_SHAPE : EVEN_POSTER_SHAPE;
 
   return (
-    <article
+    <Link
       ref={cardRef}
-      onMouseEnter={openPopup}
-      onMouseLeave={closePopup}
-      onClick={() => router.push(`/movie/${movie.slug}`)}
-      className="group relative w-[calc((100%_-_10px)/2)] shrink-0 snap-start cursor-pointer md:w-[calc((100%_-_32px)/3)] min-[1025px]:w-[calc((100%_-_48px)/4)] xl:w-[calc((100%_-_64px)/5)] min-[1600px]:w-[calc((100%_-_80px)/6)]"
+      href={`/movie/${movie.slug}`}
+      data-testid="top10-card"
+      data-movie-slug={movie.slug}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
+      onPointerDown={handlePointerDown}
+      onTouchStart={handleTouchStart}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      aria-label={`Xem thông tin phim ${cleanMovieName(movie.name)}`}
+      aria-busy={isNavigating}
+      className={`group relative block w-[calc((100%_-_10px)/2)] shrink-0 snap-start cursor-pointer transition-opacity duration-200 outline-none focus-visible:ring-2 focus-visible:ring-pink-500 md:w-[calc((100%_-_32px)/3)] min-[1025px]:w-[calc((100%_-_48px)/4)] xl:w-[calc((100%_-_64px)/5)] min-[1600px]:w-[calc((100%_-_80px)/6)] ${isNavigating ? "opacity-70" : ""}`}
     >
       <div
         className="relative aspect-[2/3] overflow-hidden bg-white/5 shadow-[0_0_10px_5px_rgba(0,0,0,0.1)] transition-colors duration-300 group-hover:bg-pink-500"
@@ -282,9 +372,9 @@ function Top10MovieCard({ movie, index }: { movie: Movie; index: number }) {
           aspect="landscape"
           isVisible={popupVisible}
           onMouseEnter={() => closeTimer.current && clearTimeout(closeTimer.current)}
-          onMouseLeave={closePopup}
+          onMouseLeave={handlePopupLeave}
         />
       )}
-    </article>
+    </Link>
   );
 }

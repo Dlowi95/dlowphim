@@ -2231,9 +2231,7 @@ export class MoviesService {
     const resolveOne = async (slug: string) => {
       const attempts = [
         { path: `/phim/${slug}`, source: 'active' },
-        { path: `/v1/api/phim/${slug}`, source: 'active' },
         { path: `/phim/${slug}`, source: 'fallback' },
-        { path: `/v1/api/phim/${slug}`, source: 'fallback' },
       ];
 
       for (const attempt of attempts) {

@@ -46,6 +46,8 @@ type SourceCheck = {
   ok: boolean;
   latencyMs: number;
   statusCode: number | null;
+  errorType?: "none" | "timeout" | "network_error" | "http_error" | "invalid_schema";
+  message?: string;
 };
 
 const DEFAULT_SETTINGS: SystemSettingsData = {
@@ -269,7 +271,8 @@ export default function SettingsView() {
       const data = await response.json().catch(() => null);
       if (!response.ok) throw new Error(data?.message || "Không thể kiểm tra nguồn");
       setSourceChecks((current) => ({ ...current, [sourceId]: data }));
-      showToast(data.ok ? `Nguồn hoạt động tốt (${data.latencyMs}ms)` : "Nguồn đang không phản hồi", data.ok ? "success" : "warning");
+      const toastMsg = data.message || (data.ok ? `Nguồn hoạt động tốt (${data.latencyMs}ms)` : "Nguồn đang không phản hồi");
+      showToast(toastMsg, data.ok ? "success" : "warning");
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Không thể kiểm tra nguồn", "error");
     } finally {
@@ -431,9 +434,11 @@ export default function SettingsView() {
                       </button>
                     </div>
                     {check && (
-                      <div className={`flex items-center gap-2 text-[10px] font-bold ${check.ok ? "text-emerald-400" : "text-red-400"}`}>
-                        {check.ok ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
-                        {check.ok ? `Hoạt động · ${check.latencyMs}ms · HTTP ${check.statusCode}` : "Nguồn không phản hồi ổn định"}
+                      <div className={`flex items-start gap-2 text-[10px] font-bold ${check.ok ? "text-emerald-400" : check.statusCode === 404 ? "text-amber-400" : "text-red-400"}`}>
+                        {check.ok ? <CheckCircle2 size={13} className="shrink-0 mt-0.5" /> : <AlertTriangle size={13} className="shrink-0 mt-0.5" />}
+                        <span>
+                          {check.message || (check.ok ? `Hoạt động · ${check.latencyMs}ms · HTTP ${check.statusCode}` : `Lỗi ${check.statusCode ? `HTTP ${check.statusCode}` : "kết nối"}`)}
+                        </span>
                       </div>
                     )}
                   </section>

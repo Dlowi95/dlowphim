@@ -177,24 +177,84 @@ export class SystemSettingsService {
     const startedAt = Date.now();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
+    const testedEndpoint = source.crawlUrl || source.domain;
+
     try {
-      const response = await fetch(source.crawlUrl || source.domain, {
+      const response = await fetch(testedEndpoint, {
         signal: controller.signal,
         headers: { Accept: 'application/json' },
       });
-      void response.body?.cancel().catch(() => undefined);
+
+      if (!response.ok) {
+        void response.body?.cancel().catch(() => undefined);
+        let message = `Endpoint lấy phim phản hồi lỗi HTTP ${response.status}`;
+        if (response.status === 404) {
+          message = 'Endpoint lấy phim phản hồi lỗi 404 Not Found (Không tìm thấy danh sách)';
+        } else if (response.status >= 500) {
+          message = `Endpoint lấy phim phản hồi lỗi máy chủ (HTTP ${response.status})`;
+        }
+        return {
+          sourceId: source.id,
+          testedEndpoint,
+          ok: false,
+          statusCode: response.status,
+          errorType: 'http_error',
+          message,
+          latencyMs: Date.now() - startedAt,
+          checkedAt: new Date().toISOString(),
+        };
+      }
+
+      let parsed: any = null;
+      try {
+        parsed = await response.json();
+      } catch (err: any) {
+        if (err?.name === 'AbortError' || controller.signal.aborted) {
+          throw err;
+        }
+        return {
+          sourceId: source.id,
+          testedEndpoint,
+          ok: false,
+          statusCode: response.status,
+          errorType: 'invalid_schema',
+          message: 'Endpoint phản hồi HTTP 200 nhưng không phải dữ liệu JSON hợp lệ',
+          latencyMs: Date.now() - startedAt,
+          checkedAt: new Date().toISOString(),
+        };
+      }
+
+      const isValid = Boolean(
+        parsed &&
+          (parsed.status === true ||
+            parsed.status === 'success' ||
+            Array.isArray(parsed.items) ||
+            Array.isArray(parsed.data?.items)),
+      );
+
       return {
         sourceId: source.id,
-        ok: response.ok,
+        testedEndpoint,
+        ok: isValid,
         statusCode: response.status,
+        errorType: isValid ? 'none' : 'invalid_schema',
+        message: isValid
+          ? `Endpoint lấy phim hoạt động tốt (HTTP ${response.status})`
+          : 'Endpoint phản hồi HTTP 200 nhưng schema không chứa danh sách phim',
         latencyMs: Date.now() - startedAt,
         checkedAt: new Date().toISOString(),
       };
-    } catch {
+    } catch (error: any) {
+      const isTimeout = error?.name === 'AbortError';
       return {
         sourceId: source.id,
+        testedEndpoint,
         ok: false,
         statusCode: null,
+        errorType: isTimeout ? 'timeout' : 'network_error',
+        message: isTimeout
+          ? 'Quá thời gian kết nối (> 5000ms)'
+          : `Không thể kết nối tới endpoint lấy phim (${error?.message || 'Lỗi mạng hoặc DNS'})`,
         latencyMs: Date.now() - startedAt,
         checkedAt: new Date().toISOString(),
       };

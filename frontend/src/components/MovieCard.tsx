@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cleanMovieName, getImageUrl, getBestMovieImage } from "@/utils/movieUtils";
 import MovieHoverPopup from "./MovieHoverPopup";
@@ -8,6 +9,7 @@ import ProgressiveImage from "./ProgressiveImage";
 import MovieLanguageBadges from "./MovieLanguageBadges";
 import MovieQualityBadge from "./MovieQualityBadge";
 import { fetchMovieArtwork, LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
+import { canTriggerHoverPopup, isFineHoverCapability, isTouchOrPenInteraction, recordTouchInteraction, subscribeToFineHoverCapability } from "@/utils/hoverCardGuard";
 
 interface Movie {
   _id: string;
@@ -33,18 +35,31 @@ export default function MovieCard({ movie, aspect = "landscape", variant = "defa
   const [showPopup, setShowPopup] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
 
-  const cardRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLAnchorElement>(null);
   const hoverTimer = useRef<NodeJS.Timeout | null>(null);
   const closeTimer = useRef<NodeJS.Timeout | null>(null);
+  const navTimer = useRef<NodeJS.Timeout | null>(null);
   const router = useRouter();
 
   const cleanedName = cleanMovieName(movie.name);
   const cleanedOriginName = cleanMovieName(movie.origin_name);
+  const [isNavigating, setIsNavigating] = useState(false);
+
   useEffect(() => {
     setMounted(true);
+    const unsubscribe = subscribeToFineHoverCapability((hasCapability) => {
+      if (!hasCapability) {
+        if (hoverTimer.current) clearTimeout(hoverTimer.current);
+        if (closeTimer.current) clearTimeout(closeTimer.current);
+        setIsHovered(false);
+        setShowPopup(false);
+      }
+    });
     return () => {
+      unsubscribe();
       if (hoverTimer.current) clearTimeout(hoverTimer.current);
       if (closeTimer.current) clearTimeout(closeTimer.current);
+      if (navTimer.current) clearTimeout(navTimer.current);
     };
   }, []);
 
@@ -92,16 +107,35 @@ export default function MovieCard({ movie, aspect = "landscape", variant = "defa
     setImgSrc(LOCAL_MOVIE_IMAGE_FALLBACK);
   };
 
-  const handleMouseEnter = (e: React.MouseEvent) => {
-    if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+  const cancelHoverAndClose = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    setIsHovered(false);
+    setShowPopup(false);
+  };
+
+  const handlePointerEnter = (e: React.PointerEvent<HTMLAnchorElement>) => {
+    if (!canTriggerHoverPopup(e)) {
+      cancelHoverAndClose();
+      return;
+    }
     if (closeTimer.current) clearTimeout(closeTimer.current);
 
     if (isHovered) return;
+
+    // Prefetch detail route on genuine mouse hover intent
+    try {
+      router.prefetch(`/movie/${movie.slug}`);
+    } catch {}
 
     const currentTarget = e.currentTarget;
     
     // Restore 800ms delay to prevent flickering popups during mouse sweeps
     hoverTimer.current = setTimeout(() => {
+      if (!isFineHoverCapability()) {
+        cancelHoverAndClose();
+        return;
+      }
       const rect = currentTarget.getBoundingClientRect();
       const scrollY = window.scrollY || window.pageYOffset;
       const scrollX = window.scrollX || window.pageXOffset;
@@ -126,37 +160,89 @@ export default function MovieCard({ movie, aspect = "landscape", variant = "defa
         left: finalLeft,
         width: scaledWidth
       });
-      // Chỉ mount popup sau khi người dùng thực sự dừng chuột đủ lâu.
-      // Nếu mount ngay lúc mouseenter, popup sẽ gọi API chi tiết cho mọi card
-      // chỉ lướt qua trong lúc cuộn trang.
       setShowPopup(true);
       setIsHovered(true);
-    }, 800); // 800ms delay to prevent flickering popups during mouse sweeps
+    }, 800);
   };
 
-  const handleMouseLeave = () => {
+  const handlePointerLeave = (e: React.PointerEvent<HTMLAnchorElement>) => {
+    if (isTouchOrPenInteraction(e)) {
+      cancelHoverAndClose();
+      return;
+    }
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     closeTimer.current = setTimeout(() => {
       setIsHovered(false);
       setShowPopup(false);
-    }, 200); // 200ms delay to allow mouse transition from original element to hover card
+    }, 200);
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLAnchorElement>) => {
+    if (isTouchOrPenInteraction(e)) {
+      recordTouchInteraction();
+      cancelHoverAndClose();
+    }
+  };
+
+  const handleTouchStart = () => {
+    recordTouchInteraction();
+    cancelHoverAndClose();
+  };
+
+  const handleCardClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
+      return;
+    }
+    if (isNavigating) {
+      e.preventDefault();
+      return;
+    }
+    setIsNavigating(true);
+    if (navTimer.current) clearTimeout(navTimer.current);
+    navTimer.current = setTimeout(() => setIsNavigating(false), 3500);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLAnchorElement>) => {
+    if (e.key === " ") {
+      e.preventDefault();
+      if (!isNavigating) {
+        setIsNavigating(true);
+        if (navTimer.current) clearTimeout(navTimer.current);
+        navTimer.current = setTimeout(() => setIsNavigating(false), 3500);
+        router.push(`/movie/${movie.slug}`);
+      }
+    }
   };
 
   const clearCloseTimer = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
   };
 
-  // Render standard flat card
+  const handlePopupLeave = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    closeTimer.current = setTimeout(() => {
+      setShowPopup(false);
+      setIsHovered(false);
+    }, 200);
+  };
+
   const standardCard = (
-    <div
+    <Link
       ref={cardRef}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      onClick={() => router.push(`/movie/${movie.slug}`)}
-      className="w-full cursor-pointer group/card select-none relative"
+      href={`/movie/${movie.slug}`}
+      data-testid="movie-card"
+      data-movie-slug={movie.slug}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
+      onPointerDown={handlePointerDown}
+      onTouchStart={handleTouchStart}
+      onClick={handleCardClick}
+      onKeyDown={handleKeyDown}
+      aria-label={`Xem thông tin phim ${cleanedName}`}
+      aria-busy={isNavigating}
+      className={`block w-full cursor-pointer group/card select-none relative transition-opacity duration-200 outline-none focus-visible:ring-2 focus-visible:ring-pink-500 rounded-xl ${isNavigating ? "opacity-70" : ""}`}
     >
       <div className="relative overflow-hidden">
-        {/* Poster Image Frame */}
         <div 
           className={`w-full overflow-hidden bg-zinc-900 rounded-xl relative transition-all duration-300 ${
             aspect === "landscape" ? "aspect-[16/10]" : "aspect-[2/3]"
@@ -173,8 +259,6 @@ export default function MovieCard({ movie, aspect = "landscape", variant = "defa
             className="w-full h-full object-cover rounded-xl group-hover/card:scale-105 transition-transform duration-300"
           />
 
-          
-          {/* Badge phụ đề góc trái */}
           {variant === "country-row" ? (
             <MovieLanguageBadges
               lang={movie.lang}
@@ -190,7 +274,6 @@ export default function MovieCard({ movie, aspect = "landscape", variant = "defa
           )}
         </div>
 
-        {/* Text descriptions underneath (Flat Style) */}
         <div className="pt-2.5 space-y-0.5 text-left select-text">
           <h4 className={`truncate font-bold leading-snug text-zinc-100 transition-colors group-hover/card:text-pink-500 ${variant === "country-row" ? "text-[13px] sm:text-sm" : "text-xs md:text-sm"}`}>
             {cleanedName}
@@ -200,7 +283,7 @@ export default function MovieCard({ movie, aspect = "landscape", variant = "defa
           </p>
         </div>
       </div>
-    </div>
+    </Link>
   );
 
   return (
@@ -213,7 +296,7 @@ export default function MovieCard({ movie, aspect = "landscape", variant = "defa
           aspect={aspect}
           isVisible={isHovered}
           onMouseEnter={clearCloseTimer}
-          onMouseLeave={handleMouseLeave}
+          onMouseLeave={handlePopupLeave}
         />
       )}
     </>
