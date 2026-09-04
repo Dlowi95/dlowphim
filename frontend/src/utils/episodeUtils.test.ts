@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { findMatchingEpisodeIndex, normalizeEpisodeKey } from "./episodeUtils.ts";
+import { findMatchingEpisodeIndex, getEpisodeBatchRange, normalizeEpisodeKey } from "./episodeUtils.ts";
 
 test("normalizes common PhimAPI and OPhim episode labels", () => {
   const sameEpisodeTwo = ["Tập 02", "Tập 2", "Episode 002", "ep-02", "02", "2"];
@@ -35,4 +35,22 @@ test("uses a valid fallback when providers genuinely have different episodes", (
   const episodes = [{ name: "Tập 1" }, { name: "Tập 2" }];
   assert.equal(findMatchingEpisodeIndex(episodes, "Tập 99", 1), 1);
   assert.equal(findMatchingEpisodeIndex(episodes, "Tập 99", 10), 0);
+});
+
+test("builds batch labels from actual episode names when a provider omits early episodes", () => {
+  const episodes = Array.from({ length: 1196 }, (_, index) => ({ name: `Tập ${index + 16}` }));
+  assert.deepEqual(getEpisodeBatchRange(episodes, 11, 100), {
+    start: "1116",
+    end: "1211",
+    count: 96,
+  });
+});
+
+test("uses positional batch boundaries when episode names have no number", () => {
+  const episodes = [{ name: "Mở đầu" }, { name: "Kết thúc" }];
+  assert.deepEqual(getEpisodeBatchRange(episodes, 0, 100), {
+    start: "1",
+    end: "2",
+    count: 2,
+  });
 });

@@ -11,6 +11,7 @@ import {
   Image as ImageIcon,
   Info,
   Loader2,
+  ListVideo,
   MessageSquare,
   Play,
   Plus,
@@ -25,7 +26,7 @@ import MovieCard from "@/components/MovieCard";
 import ProgressiveImage from "@/components/ProgressiveImage";
 import HalftoneOverlay from "@/components/HalftoneOverlay";
 import { getImageUrl } from "@/utils/movieUtils";
-import { normalizeEpisodeKey } from "@/utils/episodeUtils";
+import { getEpisodeBatchRange, normalizeEpisodeKey } from "@/utils/episodeUtils";
 import type { MovieDetail, Server } from "./MovieDetailClient";
 import { LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
 
@@ -404,6 +405,7 @@ export default function MobileMovieDetail({
                 const episodes = server.server_data || [];
                 const track = getAudioTrack(server.server_name);
                 const selectedEpisodeBatch = episodeBatches[serverIndex] || 0;
+                const selectedRange = getEpisodeBatchRange(episodes, selectedEpisodeBatch, 50);
                 return (
                   <article key={`${server.server_name}-${serverIndex}`} className="rounded-2xl border border-white/[0.07] bg-[#0d0e13] p-3.5">
                     <div className="flex items-center justify-between gap-3">
@@ -416,15 +418,24 @@ export default function MobileMovieDetail({
                       </button>
                     </div>
                     {episodes.length > 1 && (
-                      <div className="mt-4 border-t border-white/[0.06] pt-4">
+                      <div data-testid={`mobile-episode-picker-${serverIndex}`} className="mt-4 rounded-2xl border border-pink-500/20 bg-gradient-to-br from-pink-500/[0.09] via-[#12131b] to-[#0b0c11] p-3 shadow-[0_12px_30px_rgba(0,0,0,0.22)]">
+                        <div className="mb-3 flex items-center justify-between gap-2">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-pink-500/25 bg-pink-500/10 text-pink-400"><ListVideo size={15} /></span>
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-100">Chọn tập phim</p>
+                              <p className="truncate text-[9px] font-bold text-zinc-500">Nhóm {selectedRange.start}–{selectedRange.end}</p>
+                            </div>
+                          </div>
+                          <span className="shrink-0 rounded-full border border-pink-500/20 bg-pink-500/10 px-2 py-1 text-[9px] font-black text-pink-300">{episodes.length} tập</span>
+                        </div>
                         {episodes.length > 50 && (
                           <div className="mb-3 flex gap-2 overflow-x-auto pb-1 no-scrollbar touch-pan-x">
                             {Array.from({ length: Math.ceil(episodes.length / 50) }).map((_, batch) => {
-                              const start = batch * 50 + 1;
-                              const end = Math.min((batch + 1) * 50, episodes.length);
+                              const range = getEpisodeBatchRange(episodes, batch, 50);
                               return (
-                                <button type="button" key={batch} onClick={() => setEpisodeBatches((current) => ({ ...current, [serverIndex]: batch }))} className={`min-h-9 shrink-0 rounded-xl px-3 text-[10px] font-extrabold ${selectedEpisodeBatch === batch ? "bg-pink-500 text-white" : "bg-zinc-900 text-zinc-400"}`}>
-                                  {start}–{end}
+                                <button type="button" key={batch} onClick={() => setEpisodeBatches((current) => ({ ...current, [serverIndex]: batch }))} className={`min-h-10 shrink-0 rounded-xl border px-3 text-[10px] font-extrabold transition-colors ${selectedEpisodeBatch === batch ? "border-pink-400 bg-pink-500 text-white shadow-md shadow-pink-500/20" : "border-white/[0.06] bg-zinc-900 text-zinc-400"}`}>
+                                  {range.start}–{range.end}
                                 </button>
                               );
                             })}
@@ -438,7 +449,7 @@ export default function MobileMovieDetail({
                                 type="button"
                                 key={`${episode.slug}-${episodeIndex}`}
                                 onClick={() => onWatchEpisode(episode.name)}
-                                className={`min-h-10 truncate rounded-xl px-1 text-[10px] font-extrabold transition-colors ${active ? "border border-pink-400 bg-pink-500/15 text-pink-300" : "border border-transparent bg-[#1a1b24] text-zinc-300 active:bg-pink-500 active:text-white"}`}
+                                className={`min-h-11 truncate rounded-xl px-1 text-[10px] font-extrabold transition-colors ${active ? "border border-pink-400 bg-pink-500/20 text-pink-200 shadow-sm shadow-pink-500/15" : "border border-white/[0.06] bg-[#1a1b24] text-zinc-300 active:border-pink-400 active:bg-pink-500 active:text-white"}`}
                               >
                                 {episode.name.toLowerCase().includes("tập") ? episode.name : `Tập ${episode.name}`}
                               </button>

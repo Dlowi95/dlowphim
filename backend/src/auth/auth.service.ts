@@ -122,7 +122,8 @@ export class AuthService implements OnModuleInit {
         this.logger.error(`SUPER_ADMIN_EMAIL=${configuredEmail} does not match an active account; keeping ${current.email} as owner.`);
       } else {
         const previousTokenVersion = current.tokenVersion || 0;
-        current.role = 'content_admin';
+        // A former owner must not retain implicit admin access after ownership moves.
+        current.role = 'member';
         current.tokenVersion = previousTokenVersion + 1;
         await current.save();
         try {
@@ -154,11 +155,26 @@ export class AuthService implements OnModuleInit {
       }
     }
 
-    // Migrate any remaining legacy 'admin' roles to content_admin
+    // `admin` used to be treated as super_admin by the permission compatibility layer.
+    // Revoke every remaining legacy owner so SUPER_ADMIN_EMAIL stays the sole owner.
     await this.userModel.updateMany(
       { role: 'admin' },
-      { $set: { role: 'content_admin' }, $inc: { tokenVersion: 1 } },
+      { $set: { role: 'member' }, $inc: { tokenVersion: 1 } },
     );
+
+    const revokedAdminEmails = String(this.configService.get<string>('REVOKED_ADMIN_EMAILS') || '')
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter((email) => email && email !== configuredEmail);
+    if (revokedAdminEmails.length > 0) {
+      await this.userModel.updateMany(
+        {
+          email: { $in: [...new Set(revokedAdminEmails)] },
+          role: { $in: ['super_admin', 'content_admin', 'moderator', 'support', 'admin'] },
+        },
+        { $set: { role: 'member' }, $inc: { tokenVersion: 1 } },
+      );
+    }
   }
 
   async signToken(user: any) {

@@ -36,3 +36,30 @@ export function findMatchingEpisodeIndex<T extends { name?: string }>(
   if (matchedIndex >= 0) return matchedIndex;
   return episodes[fallbackIndex] ? fallbackIndex : 0;
 }
+
+function episodeBoundary(name: string | undefined, edge: "start" | "end"): string | null {
+  const tokens = normalizeEpisodeKey(name || "")
+    .split("-")
+    .filter((token) => /^\d+(?:\.\d+)?$/.test(token));
+  if (!tokens.length) return null;
+  return edge === "start" ? tokens[0] : tokens[tokens.length - 1];
+}
+
+export function getEpisodeBatchRange<T extends { name?: string }>(
+  episodes: T[],
+  batchIndex: number,
+  batchSize: number,
+): { start: string; end: string; count: number } {
+  const safeBatchIndex = Math.max(0, Math.floor(batchIndex));
+  const safeBatchSize = Math.max(1, Math.floor(batchSize));
+  const startIndex = safeBatchIndex * safeBatchSize;
+  const batch = episodes.slice(startIndex, startIndex + safeBatchSize);
+  const fallbackStart = startIndex + 1;
+  const fallbackEnd = startIndex + Math.max(batch.length, 1);
+
+  return {
+    start: episodeBoundary(batch[0]?.name, "start") || String(fallbackStart),
+    end: episodeBoundary(batch[batch.length - 1]?.name, "end") || String(fallbackEnd),
+    count: batch.length,
+  };
+}
