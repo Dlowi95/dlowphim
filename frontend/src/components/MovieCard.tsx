@@ -10,6 +10,7 @@ import MovieLanguageBadges from "./MovieLanguageBadges";
 import MovieQualityBadge from "./MovieQualityBadge";
 import { fetchMovieArtwork, LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
 import { canTriggerHoverPopup, isFineHoverCapability, isTouchOrPenInteraction, recordTouchInteraction, subscribeToFineHoverCapability } from "@/utils/hoverCardGuard";
+import { primeMovieNavigationPreview } from "@/utils/movieNavigationPreview";
 
 interface Movie {
   _id: string;
@@ -197,6 +198,7 @@ export default function MovieCard({ movie, aspect = "landscape", variant = "defa
       e.preventDefault();
       return;
     }
+    primeMovieNavigationPreview(movie.slug, movie);
     setIsNavigating(true);
     if (navTimer.current) clearTimeout(navTimer.current);
     navTimer.current = setTimeout(() => setIsNavigating(false), 3500);
@@ -206,6 +208,7 @@ export default function MovieCard({ movie, aspect = "landscape", variant = "defa
     if (e.key === " ") {
       e.preventDefault();
       if (!isNavigating) {
+        primeMovieNavigationPreview(movie.slug, movie);
         setIsNavigating(true);
         if (navTimer.current) clearTimeout(navTimer.current);
         navTimer.current = setTimeout(() => setIsNavigating(false), 3500);

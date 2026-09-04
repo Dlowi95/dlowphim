@@ -15,6 +15,7 @@ import { useResolvedHeroBanners } from "@/hooks/useResolvedHeroBanners";
 import { useIsMobileViewport } from "@/hooks/useIsMobileViewport";
 import ContinueWatchingRow from "@/components/ContinueWatchingRow";
 import { fetchMovieArtwork, LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
+import { primeMovieNavigationPreview } from "@/utils/movieNavigationPreview";
 
 const Top10Row = dynamic(() => import("@/components/Top10Row"), { ssr: false });
 const UpcomingRow = dynamic(() => import("@/components/UpcomingRow"), { ssr: false });
@@ -229,6 +230,7 @@ export default function HomePage() {
 
   const handleHeroDetail = (slug: string) => {
     if (heroNavigating) return;
+    primeMovieNavigationPreview(slug, detailsCache[slug]);
     setHeroNavigating(slug);
     if (heroNavTimer.current) clearTimeout(heroNavTimer.current);
     heroNavTimer.current = setTimeout(() => setHeroNavigating(null), 3500);

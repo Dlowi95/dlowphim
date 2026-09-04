@@ -16,6 +16,7 @@ import { normalizeEpisodeKey } from "@/utils/episodeUtils";
 import { fetchMovieDiscovery } from "@/utils/movieDiscovery";
 import { useIsMobileViewport } from "@/hooks/useIsMobileViewport";
 import type { MobileMovieSection } from "./MobileMovieDetail";
+import { primeMovieNavigationPreview, readMovieNavigationPreview } from "@/utils/movieNavigationPreview";
 
 const MobileMovieDetail = dynamic(() => import("./MobileMovieDetail"), {
   ssr: false,
@@ -151,16 +152,23 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
   const [loadingRelated, setLoadingRelated] = useState(false);
   const [relatedLoaded, setRelatedLoaded] = useState(false);
 
+  // The mobile detail bundle used to start downloading only after every detail
+  // request completed. Start it as soon as the viewport is known instead.
+  useEffect(() => {
+    if (isMobileViewport) void import("./MobileMovieDetail");
+  }, [isMobileViewport]);
+
   // 1. Fetch thông tin phim từ OPhim API hoặc Custom API
   useEffect(() => {
     const controller = new AbortController();
     let cancelled = false;
 
     async function fetchMovieDetail() {
+      const navigationPreview = readMovieNavigationPreview<MovieDetail>(slug);
       try {
-        setLoading(true);
+        setLoading(!navigationPreview);
         setError(null);
-        setMovie(null);
+        setMovie(navigationPreview);
         setTmdbImages(null);
         setTmdbCredits([]);
         setCreditsLoaded(false);
@@ -260,6 +268,7 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
         if (ophimDetail) {
           if (cancelled) return;
           setMovie(ophimDetail);
+          primeMovieNavigationPreview(slug, ophimDetail);
 
           // Ảnh backdrop/poster cần ngay cho hero; credits được tải riêng khi mở tab Diễn viên.
           const tmdbId = ophimDetail.tmdb?.id;
@@ -332,12 +341,21 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
               }
             ]
           };
-          if (!cancelled) setMovie(adaptedMovie);
+          if (!cancelled) {
+            setMovie(adaptedMovie);
+            primeMovieNavigationPreview(slug, adaptedMovie);
+          }
         }
       } catch (err: any) {
         if (err?.name === "AbortError" || cancelled) return;
         console.error("Lỗi lấy chi tiết phim:", err);
-        setError(err.message || "Đã xảy ra lỗi ngoài ý muốn.");
+        const message = err.message || "Đã xảy ra lỗi ngoài ý muốn.";
+        if (message.includes("bản quyền")) {
+          setMovie(null);
+          setError(message);
+        } else if (!navigationPreview) {
+          setError(message);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }

@@ -7,6 +7,7 @@ import { cleanMovieName, cleanSlug, getImageUrl } from "@/utils/movieUtils";
 import { searchMovies } from "@/utils/movieSearch";
 import { searchPeople, type PersonResult } from "@/utils/people";
 import { LOCAL_MOVIE_IMAGE_FALLBACK } from "@/utils/movieArtwork";
+import { primeMovieNavigationPreview } from "@/utils/movieNavigationPreview";
 
 type MobileSearchBoxProps = {
   initialQuery: string;
@@ -99,9 +100,10 @@ export default function MobileSearchBox({ initialQuery }: MobileSearchBoxProps) 
     router.push(`/search?keyword=${encodeURIComponent(normalizedQuery)}`);
   };
 
-  const selectMovie = (slug: string) => {
+  const selectMovie = (movie: any) => {
     setIsOpen(false);
-    router.push(`/movie/${slug}`);
+    primeMovieNavigationPreview(movie.slug, movie);
+    router.push(`/movie/${movie.slug}`);
   };
 
   const selectPerson = (id: string) => {
@@ -173,7 +175,7 @@ export default function MobileSearchBox({ initialQuery }: MobileSearchBoxProps) 
                   <button
                     key={movie._id || movie.slug}
                     type="button"
-                    onClick={() => selectMovie(movie.slug)}
+                    onClick={() => selectMovie(movie)}
                     className="flex min-h-[4.5rem] w-full items-center gap-3 rounded-xl p-2 text-left active:bg-white/[0.06]"
                   >
                     <img
@@ -211,7 +213,7 @@ export default function MobileSearchBox({ initialQuery }: MobileSearchBoxProps) 
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-bold text-zinc-200">{person.name}</span>
-                      <span className="mt-0.5 block truncate text-[11px] text-zinc-500">{person.knownFor.join(" • ") || "Xem phim đã tham gia"}</span>
+                      <span className="mt-0.5 block truncate text-[11px] text-zinc-500">{person.knownFor?.join(" • ") || "Xem phim đã tham gia"}</span>
                     </span>
                   </button>
                 ))}

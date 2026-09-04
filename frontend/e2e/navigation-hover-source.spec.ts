@@ -237,6 +237,8 @@ async function setupDeterministicMocks(page: Page) {
         };
       } else if (url.pathname === "/system-settings/public") {
         body = { websiteName: "DlowPhim", activeMovieSourceId: "phimapi" };
+      } else if (url.pathname.startsWith("/movies/people/search")) {
+        body = { items: [], page: 1, totalPages: 1, totalItems: 0 };
       } else if (url.pathname.startsWith("/movies/discovery")) {
         body = {
           status: true,
@@ -664,6 +666,37 @@ test.describe("DlowPhim Production Navigation, Hover & Touch E2E Suite (Round 4 
     });
   }
 
+  test("Mobile search suggestion primes its movie before opening the detail route", async ({ browser }) => {
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      hasTouch: true,
+    });
+    const page = await context.newPage();
+    const collector = createRuntimeCollector(page);
+    await setupDeterministicMocks(page);
+
+    await page.goto("/search");
+    const searchInput = page.locator('[data-mobile-search-box="true"] input[aria-label="Tìm kiếm phim, diễn viên"]');
+    await expect(searchInput).toBeVisible({ timeout: 8_000 });
+    await searchInput.fill("");
+    await searchInput.fill("suzume");
+
+    const firstMovieSuggestion = page.locator('[data-mobile-search-box="true"] section button').first();
+    await expect(firstMovieSuggestion).toContainText("Mùi Phở", { timeout: 8_000 });
+    await firstMovieSuggestion.tap();
+    await page.waitForURL(/\/movie\/mui-pho/, { timeout: 8_000 });
+
+    const previewSlug = await page.evaluate(() => {
+      const raw = sessionStorage.getItem("dlowphim_movie_navigation_preview");
+      return raw ? JSON.parse(raw).slug : null;
+    });
+    expect(previewSlug, "Search navigation must pass the selected movie to the detail route").toBe("mui-pho");
+    await expect(page.getByText("Xem ngay", { exact: true }).first()).toBeVisible({ timeout: 4_000 });
+
+    collector.finalizeAssertions();
+    await context.close();
+  });
+
   test("Lifecycle, Listener Balance, Autoplay Prefetch & Reloads: 10-cycle open/close, zero autoplay prefetch spam, image naturalWidth check", async ({ browser }) => {
     const context = await browser.newContext({
       viewport: { width: 1440, height: 900 },
@@ -727,14 +760,16 @@ test.describe("DlowPhim Production Navigation, Hover & Touch E2E Suite (Round 4 
         }),
       );
     });
-    const healthyImagesAfterReload = await page.evaluate(() => {
+    await expect.poll(async () => page.evaluate(() => {
       const imgs = Array.from(document.querySelectorAll("img")).filter((img) => {
         const rect = img.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0 && img.src;
       });
       return imgs.length > 0 && imgs.every((img) => img.complete && img.naturalWidth > 0);
-    });
-    expect(healthyImagesAfterReload, "Images must load cleanly with positive naturalWidth after reload").toBe(true);
+    }), {
+      message: "Images must load cleanly with positive naturalWidth after reload",
+      timeout: 5_000,
+    }).toBe(true);
 
     collector.finalizeAssertions();
     await context.close();

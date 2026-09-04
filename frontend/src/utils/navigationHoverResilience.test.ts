@@ -13,6 +13,44 @@ import {
   getMovieMetadata,
   buildMovieMetadata,
 } from "./movieMetadata.ts";
+import {
+  primeMovieNavigationPreview,
+  readMovieNavigationPreview,
+} from "./movieNavigationPreview.ts";
+
+function createMemoryStorage() {
+  const values = new Map<string, string>();
+  return {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); },
+    removeItem: (key: string) => { values.delete(key); },
+  };
+}
+
+test("movie navigation preview is slug-bound, short-lived, and storage-safe", () => {
+  const storage = createMemoryStorage();
+  const movie = { slug: "mui-pho", name: "Mùi Phở", episodes: [] };
+  const savedAt = 1_000_000;
+
+  primeMovieNavigationPreview(movie.slug, movie, storage, savedAt);
+  assert.deepEqual(
+    readMovieNavigationPreview("mui-pho", storage, savedAt + 1_000),
+    movie,
+    "Matching fresh preview must be available during client navigation",
+  );
+  assert.equal(
+    readMovieNavigationPreview("phim-khac", storage, savedAt + 1_000),
+    null,
+    "A preview must never leak into another movie route",
+  );
+
+  primeMovieNavigationPreview(movie.slug, movie, storage, savedAt);
+  assert.equal(
+    readMovieNavigationPreview("mui-pho", storage, savedAt + 120_001),
+    null,
+    "Expired navigation data must be discarded",
+  );
+});
 
 test("canTriggerHoverPopup rejects touch, pen, and coarse-only environments", () => {
   // Save original window matchMedia
@@ -292,4 +330,3 @@ test("subscribeToFineHoverCapability balances listeners and triggers on change",
     global.window = originalWindow;
   }
 });
-

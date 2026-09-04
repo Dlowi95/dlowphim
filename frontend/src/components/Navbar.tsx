@@ -13,6 +13,7 @@ import { searchPeople, type PersonResult } from "@/utils/people";
 import { COUNTRIES, GENRES } from "@/constants/discovery";
 import MobileNavigation from "./MobileNavigation";
 import DesktopNotificationBell from "./notifications/DesktopNotificationBell";
+import { primeMovieNavigationPreview } from "@/utils/movieNavigationPreview";
 
 export default function NavbarComponent() {
   const pathname = usePathname();
@@ -190,10 +191,11 @@ export default function NavbarComponent() {
   };
 
   // 5. Xử lý khi click trực tiếp vào một phim trong danh sách gợi ý
-  const handleSelectMovie = (movieUrl: string) => {
+  const handleSelectMovie = (movie: any) => {
     setShowDropdown(false);
     setSearchQuery("");
-    router.push(`/movie/${movieUrl}`);
+    primeMovieNavigationPreview(movie.slug, movie);
+    router.push(`/movie/${movie.slug}`);
   };
 
   const handleSelectPerson = (personId: string) => {
@@ -295,7 +297,7 @@ export default function NavbarComponent() {
                         return (
                           <div
                             key={movie._id}
-                            onClick={() => handleSelectMovie(movie.slug)}
+                            onClick={() => handleSelectMovie(movie)}
                             className="flex items-center gap-3 p-1.5 rounded-xl hover:bg-zinc-900/80 cursor-pointer transition-all group"
                           >
                             <img
@@ -338,7 +340,7 @@ export default function NavbarComponent() {
                       )}
                       <div className="min-w-0">
                         <h4 className="truncate text-sm font-bold text-zinc-200">{person.name}</h4>
-                        <p className="truncate text-[11px] text-zinc-500">{person.knownFor.join(" • ") || "Xem phim đã tham gia"}</p>
+                        <p className="truncate text-[11px] text-zinc-500">{person.knownFor?.join(" • ") || "Xem phim đã tham gia"}</p>
                       </div>
                     </button>
                   )) : !isSearching && (
