@@ -164,6 +164,13 @@ function createRuntimeCollector(page: Page) {
 }
 
 async function setupDeterministicMocks(page: Page) {
+  await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js?*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/javascript",
+      body: `window.turnstile={render:function(el,options){var box=document.createElement('div');box.setAttribute('data-testid','turnstile-mock-widget');box.textContent='Cloudflare verification ready';el.replaceChildren(box);setTimeout(function(){options.callback('XXXX.DUMMY.TOKEN.XXXX')},0);return 'mock-widget';},remove:function(){}};`,
+    }),
+  );
   await page.route("https://accounts.google.com/gsi/**", (route) =>
     route.fulfill({ status: 200, contentType: "application/javascript", body: "/* deterministic Google Identity mock */" }),
   );
@@ -751,6 +758,36 @@ test.describe("DlowPhim Production Navigation, Hover & Touch E2E Suite (Round 4 
         await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth),
         `${viewport.width}px must not overflow horizontally`,
       ).toBe(true);
+      await context.close();
+    }
+  });
+
+  test("Cloudflare Turnstile mounts once and gates password login across responsive boundaries", async ({ browser }) => {
+    for (const viewport of [
+      { width: 390, height: 844 },
+      { width: 767, height: 1000 },
+      { width: 768, height: 1024 },
+      { width: 1440, height: 900 },
+    ]) {
+      const context = await browser.newContext({ viewport, hasTouch: viewport.width < 768 });
+      const page = await context.newPage();
+      await setupDeterministicMocks(page);
+      await page.goto("/");
+
+      if (viewport.width < 768) {
+        await page.getByRole("button", { name: "Tài khoản", exact: true }).click();
+      } else {
+        await page.getByRole("button", { name: "Thành viên", exact: true }).click();
+      }
+
+      const verification = page.getByLabel("Xác minh bảo mật Cloudflare");
+      await expect(verification).toBeVisible();
+      await expect(verification.getByTestId("turnstile-mock-widget")).toHaveCount(1);
+      await expect(page.getByRole("button", { name: "Đăng nhập", exact: true })).toBeEnabled();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
+
+      await page.getByRole("button", { name: "Đóng" }).click();
+      await expect(verification).toHaveCount(0);
       await context.close();
     }
   });

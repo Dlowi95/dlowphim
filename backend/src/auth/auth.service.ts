@@ -40,6 +40,61 @@ export class AuthService implements OnModuleInit {
   private readonly forgotPasswordAttempts = new Map<string, { count: number; resetAt: number }>();
   private readonly verificationAttempts = new Map<string, { count: number; resetAt: number }>();
 
+  private async verifyTurnstile(token: unknown, expectedAction: 'login' | 'register') {
+    const secret = String(this.configService.get<string>('TURNSTILE_SECRET_KEY') || '').trim();
+    if (!secret) {
+      this.logger.error('TURNSTILE_SECRET_KEY is missing; password authentication is disabled.');
+      throw new HttpException(
+        'Xác minh bảo mật đang được bảo trì. Vui lòng thử lại sau.',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+
+    const responseToken = String(token || '').trim();
+    if (!responseToken || responseToken.length > 2048) {
+      throw new BadRequestException('Vui lòng hoàn tất xác minh bảo mật Cloudflare.');
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5_000);
+    try {
+      const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ secret, response: responseToken }),
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`Turnstile Siteverify returned ${response.status}`);
+
+      const result = await response.json() as {
+        success?: boolean;
+        hostname?: string;
+        action?: string;
+        'error-codes'?: string[];
+      };
+      const allowedHostnames = String(this.configService.get<string>('TURNSTILE_ALLOWED_HOSTNAMES') || '')
+        .split(',')
+        .map((hostname) => hostname.trim().toLowerCase())
+        .filter(Boolean);
+      const hostname = String(result.hostname || '').toLowerCase();
+      const hostnameAllowed = allowedHostnames.length === 0 || allowedHostnames.includes(hostname);
+
+      if (!result.success || result.action !== expectedAction || !hostnameAllowed) {
+        this.logger.warn(`Turnstile rejected ${expectedAction}: ${result['error-codes']?.join(',') || 'invalid-context'}`);
+        throw new BadRequestException('Xác minh bảo mật không hợp lệ hoặc đã hết hạn.');
+      }
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      this.logger.error('Turnstile Siteverify unavailable', error instanceof Error ? error.message : error);
+      throw new HttpException(
+        'Chưa thể kết nối dịch vụ xác minh bảo mật. Vui lòng thử lại.',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(UserNotification.name) private userNotificationModel: Model<UserNotificationDocument>,
@@ -351,6 +406,7 @@ export class AuthService implements OnModuleInit {
   }
 
   async register(registerDto: any) {
+    await this.verifyTurnstile(registerDto?.turnstileToken, 'register');
     const email = String(registerDto?.email || '').trim().toLowerCase();
     const password = String(registerDto?.password || '');
     const displayName = String(registerDto?.displayName || '').trim();
@@ -410,6 +466,7 @@ export class AuthService implements OnModuleInit {
   }
 
   async login(loginDto: any) {
+    await this.verifyTurnstile(loginDto?.turnstileToken, 'login');
     const email = String(loginDto?.email || '').trim().toLowerCase();
     const password = String(loginDto?.password || '');
 

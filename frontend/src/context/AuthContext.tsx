@@ -23,8 +23,8 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  loginManual: (email: string, password: string) => Promise<void>;
-  registerManual: (displayName: string, email: string, password: string) => Promise<{ requiresEmailVerification?: boolean; email?: string; message?: string }>;
+  loginManual: (email: string, password: string, turnstileToken: string) => Promise<void>;
+  registerManual: (displayName: string, email: string, password: string, turnstileToken: string) => Promise<{ requiresEmailVerification?: boolean; email?: string; message?: string }>;
   loginGoogle: (token: string, isAccessToken?: boolean) => Promise<void>;
   logout: () => void;
   showAuthToast: () => void;
@@ -216,14 +216,14 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     }
   };
 
-  const loginManual = async (email: string, password: string) => {
-    const data = await requestAuth("/auth/login", { email, password });
+  const loginManual = async (email: string, password: string, turnstileToken: string) => {
+    const data = await requestAuth("/auth/login", { email, password, turnstileToken });
 
     saveTokenAndUser(data.accessToken, data.user);
   };
 
-  const registerManual = async (displayName: string, email: string, password: string) => {
-    const data = await requestAuth("/auth/register", { displayName, email, password });
+  const registerManual = async (displayName: string, email: string, password: string, turnstileToken: string) => {
+    const data = await requestAuth("/auth/register", { displayName, email, password, turnstileToken });
 
     if (data.accessToken && data.user) saveTokenAndUser(data.accessToken, data.user);
     return data;

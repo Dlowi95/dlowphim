@@ -6,6 +6,7 @@ import { Modal, ModalContent, ModalBody, Input, Button } from "@heroui/react";
 import { X, Play, Eye, EyeOff, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useGoogleLogin } from "@react-oauth/google";
+import CloudflareTurnstile from "@/components/security/CloudflareTurnstile";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -25,8 +26,11 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
 
   const { loginManual, registerManual, loginGoogle, showToast } = useAuth();
   const submitting = submittingAction !== null;
@@ -43,6 +47,8 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
       setShowConfirmPassword(false);
       setNeedsVerification(false);
       setSubmittingAction(null);
+      setTurnstileToken(null);
+      setTurnstileResetKey((value) => value + 1);
     }
   }, [isOpen]);
 
@@ -55,6 +61,14 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
       setError("Vui lòng nhập đầy đủ email và mật khẩu");
       return;
     }
+    if (!turnstileSiteKey) {
+      setError("Xác minh bảo mật Cloudflare chưa được cấu hình.");
+      return;
+    }
+    if (!turnstileToken) {
+      setError("Vui lòng chờ Cloudflare xác minh trước khi tiếp tục.");
+      return;
+    }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
@@ -65,7 +79,7 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
     setSubmittingAction("form");
     try {
       if (isLogin) {
-        await loginManual(email, password);
+        await loginManual(email, password, turnstileToken);
         showToast("Đăng nhập thành công", "success");
         onOpenChange(false);
       } else {
@@ -89,7 +103,7 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
           setSubmittingAction(null);
           return;
         }
-        const result = await registerManual(displayName, email, password);
+        const result = await registerManual(displayName, email, password, turnstileToken);
         showToast(result.message || "Đăng ký thành công. Hãy kiểm tra email để xác minh tài khoản.", "success");
         onOpenChange(false);
       }
@@ -97,6 +111,8 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
       const message = err.message || "Đã xảy ra lỗi trong quá trình xác thực";
       setError(message);
       setNeedsVerification(String(message).toLowerCase().includes("xác minh"));
+      setTurnstileToken(null);
+      setTurnstileResetKey((value) => value + 1);
     } finally {
       setSubmittingAction(null);
     }
@@ -209,6 +225,8 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
                         setError(null);
                         setPassword("");
                         setConfirmPassword("");
+                        setTurnstileToken(null);
+                        setTurnstileResetKey((value) => value + 1);
                       }} 
                       className="text-pink-500 font-bold cursor-pointer hover:underline"
                     >
@@ -318,11 +336,19 @@ export default function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
                   )}
                 </div>
 
+                <CloudflareTurnstile
+                  siteKey={turnstileSiteKey}
+                  action={isLogin ? "login" : "register"}
+                  resetKey={turnstileResetKey}
+                  onToken={setTurnstileToken}
+                  onError={() => setError("Cloudflare chưa thể xác minh trình duyệt. Vui lòng tải lại và thử lại.")}
+                />
+
                 {/* Nút Submit */}
                 <Button 
                   type="submit"
                   isLoading={submittingAction === "form"}
-                  isDisabled={submitting}
+                  isDisabled={submitting || !turnstileToken || !turnstileSiteKey}
                   className="w-full bg-pink-500 hover:bg-pink-600 text-white font-extrabold rounded-xl h-11 text-sm shadow-lg shadow-pink-500/20 transition-all duration-200"
                 >
                   {submittingAction === "form" ? "Đang xác thực..." : isLogin ? "Đăng nhập" : "Đăng ký"}
