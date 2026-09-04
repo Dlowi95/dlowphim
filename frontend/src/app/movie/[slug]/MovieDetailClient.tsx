@@ -1101,7 +1101,6 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
                     const epList = server.server_data || [];
                     const audioTrack = getAudioTrack(server.server_name);
                     const selectedEpisodeBatch = selectedEpisodeBatches[sIdx] || 0;
-                    const selectedRange = getEpisodeBatchRange(epList, selectedEpisodeBatch, 100);
                     return (
                       <div key={`server-${sIdx}`} className="p-4 rounded-xl bg-[#0d0e13]/40 space-y-4 shadow-sm border border-transparent">
                         <div className={`flex items-center justify-between gap-4 flex-wrap pb-2.5 ${epList.length > 1 ? "border-b border-zinc-900/40" : ""}`}>
@@ -1127,41 +1126,37 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
 
                         {/* Danh sách tập */}
                         {epList.length > 1 && (
-                          <div data-testid={`desktop-episode-picker-${sIdx}`} className="space-y-3 rounded-2xl border border-pink-500/20 bg-gradient-to-br from-pink-500/[0.08] via-[#11121a] to-[#0a0b10] p-3.5 shadow-[0_14px_35px_rgba(0,0,0,0.24)]">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div data-testid={`desktop-episode-picker-${sIdx}`} className="space-y-3">
+                            <div data-testid={`desktop-episode-batch-selector-${sIdx}`} className="space-y-3 rounded-2xl border border-pink-500/20 bg-gradient-to-br from-pink-500/[0.08] via-[#11121a] to-[#0a0b10] p-3.5 shadow-[0_14px_35px_rgba(0,0,0,0.24)]">
                               <div className="flex items-center gap-2">
                                 <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-pink-500/25 bg-pink-500/10 text-pink-400">
                                   <ListVideo size={15} />
                                 </span>
-                                <div>
-                                  <span className="block text-[10px] font-black uppercase tracking-widest text-zinc-100">Chọn tập phim</span>
-                                  <span className="text-[9px] font-bold text-zinc-500">Đang xem nhóm {selectedRange.start}–{selectedRange.end}</span>
-                                </div>
+                                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-100">Chọn tập phim</span>
                               </div>
-                              <span className="rounded-full border border-pink-500/20 bg-pink-500/10 px-2.5 py-1 text-[9px] font-black text-pink-300">{epList.length} tập khả dụng</span>
-                            </div>
 
-                            {/* Phân nhóm tập phim nếu số lượng tập > 100 y hệt cobephim */}
-                            {epList.length > 100 && (
-                              <div className="flex flex-wrap gap-1.5 pb-2.5 border-b border-zinc-900/30">
-                                {Array.from({ length: Math.ceil(epList.length / 100) }).map((_, bIdx) => {
-                                  const range = getEpisodeBatchRange(epList, bIdx, 100);
-                                  const isActive = selectedEpisodeBatch === bIdx;
-                                  return (
-                                    <button
-                                      key={`batch-${bIdx}`}
-                                      onClick={() => setSelectedEpisodeBatches((current) => ({ ...current, [sIdx]: bIdx }))}
-                                      className={`px-3 py-2 rounded-xl text-[10px] font-extrabold transition-all cursor-pointer border ${isActive
-                                        ? "border-pink-400 bg-pink-500 text-white shadow-md shadow-pink-500/20"
-                                        : "border-white/[0.06] bg-[#1b1d2a] text-zinc-400 hover:border-pink-500/30 hover:text-white hover:bg-[#23263a]"
-                                        }`}
-                                    >
-                                      Tập {range.start} - {range.end}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
+                              {/* Phân nhóm tập phim nếu số lượng tập > 100 y hệt cobephim */}
+                              {epList.length > 100 && (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {Array.from({ length: Math.ceil(epList.length / 100) }).map((_, bIdx) => {
+                                    const range = getEpisodeBatchRange(epList, bIdx, 100);
+                                    const isActive = selectedEpisodeBatch === bIdx;
+                                    return (
+                                      <button
+                                        key={`batch-${bIdx}`}
+                                        onClick={() => setSelectedEpisodeBatches((current) => ({ ...current, [sIdx]: bIdx }))}
+                                        className={`px-3 py-2 rounded-xl text-[10px] font-extrabold transition-all cursor-pointer border ${isActive
+                                          ? "border-pink-400 bg-pink-500 text-white shadow-md shadow-pink-500/20"
+                                          : "border-white/[0.06] bg-[#1b1d2a] text-zinc-400 hover:border-pink-500/30 hover:text-white hover:bg-[#23263a]"
+                                          }`}
+                                      >
+                                        Tập {range.start} - {range.end}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
 
                             <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2">
                               {epList
@@ -1170,7 +1165,7 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
                                   <button
                                     key={`ep-${eIdx}`}
                                     onClick={() => handleWatchEpisode(ep.name)}
-                                    className="h-10 rounded-xl border border-white/[0.06] font-extrabold text-[11px] flex items-center justify-center bg-[#1b1d2a] text-zinc-300 hover:border-pink-400 hover:bg-pink-500 hover:text-white hover:-translate-y-0.5 transition-all cursor-pointer group"
+                                    className="h-9 rounded-lg border-none font-extrabold text-[11px] flex items-center justify-center bg-[#1b1d2a] text-zinc-300 hover:bg-pink-500 hover:text-white transition-all cursor-pointer group"
                                   >
                                     <Play size={10} className="fill-zinc-300 stroke-none mr-1.5 shrink-0 group-hover:fill-white" />
                                     {ep.name.toLowerCase().includes("tập") ? ep.name : `Tập ${ep.name}`}

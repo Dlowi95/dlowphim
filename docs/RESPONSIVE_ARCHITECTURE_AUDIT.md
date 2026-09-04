@@ -83,6 +83,7 @@ Phạm vi đã tối ưu:
 - Mobile dùng phân trang gọn `Trước – Trang x/y – Sau`, nên số trang lớn không thể đẩy rộng viewport. Desktop giữ nguyên phân trang và bố cục cũ.
 - Có timeout và nút thử lại cho lỗi tải danh sách; tiêu đề danh mục đúng theo `type`; từ khóa dài được ngắt dòng mà không tạo overflow.
 - Popup hover chỉ mount sau 800ms trên thiết bị có chuột fine pointer. Việc lướt chuột/cuộn qua card không còn chủ động mount preview ngay từ `mouseenter`; request preview bị hủy không tạo console error production.
+- Kết quả tìm phim được backend chuẩn hóa không dấu, đối chiếu cả tên Việt lẫn tên gốc, loại mục không khớp trước khi phân trang và xếp theo thứ tự: tên chính xác → bắt đầu bằng cụm từ → chứa cụm từ → đủ các từ → khớp một phần từ. Trang vượt tổng số trang sạch được đưa về trang hợp lệ cuối cùng; nguồn active chỉ có kết quả không liên quan được xem như rỗng để thử nguồn fallback.
 
 Bằng chứng runtime production ghi nhận ngày `2026-08-11`:
 
@@ -95,6 +96,7 @@ Bằng chứng runtime production ghi nhận ngày `2026-08-11`:
 | Ảnh tải mới/reload | Đạt | Cả 8 breakpoint có `brokenImages: []` và `transparentImages: []` ở viewport trước và sau reload. Cuộn hết 24 card tại `390px` và `1440px` có 26/27 ảnh trong DOM, không ảnh vỡ hoặc ảnh đã tải còn opacity `0`. |
 | Overflow | Đạt | `scrollWidth === clientWidth` ở cả 8 breakpoint, khi dropdown đang mở, sau reload, với từ khóa 160 ký tự và ở trang 2. |
 | Phân trang/danh mục | Đạt | Mobile đổi sang `page=2` thành công; `/search`, `phim-chieu-rap`, `phim-sap-chieu` lần lượt hiện đúng tiêu đề và 24/24/12 card trong dữ liệu audit. |
+| Độ liên quan tìm kiếm | Đạt trong kiểm thử cục bộ 2026-09-04 | Dữ liệu công khai `chronicle` của PhimAPI trả 57 mục nhưng chỉ 34 mục khớp tên; bộ lọc còn đúng 2 trang thay vì trang 3 chứa kết quả rác. Backend có test tên chính xác, nhiều từ, bỏ dấu, truy vấn một ký tự, phân trang sau lọc và semantic fallback; Playwright xác nhận URL `page=3` được chuẩn hóa về `page=2` trên `390px` và `1440px`. |
 | Socket/listener | Đạt | Production Search không mở WebSocket. Listener ngoài của ô mobile không tồn tại từ `768px` vì component không mount; listener trong component có cleanup. |
 | Console/runtime | Đạt | Audit chính production ở cả 8 breakpoint có `errors: []` và `sockets: []`. |
 | Kiểm tra mã | Đạt | TypeScript thành công, 7/7 test frontend liên quan thành công và production build hoàn tất sau thay đổi cuối. |
@@ -206,6 +208,7 @@ Phạm vi Phase 1 đã hoàn thành:
 - Credits chỉ tải khi tab Diễn viên được kích hoạt. Request có `AbortController` và cờ request hiện hành, nên đóng/mở lại tab không kẹt spinner, lỗi HTTP kết thúc loading và response của slug cũ không thể ghi diễn viên vào phim mới.
 - Backdrop, poster, gallery và sticky-watch trên mobile có fallback runtime về `/images/movie-placeholder.svg`; ảnh diễn viên lỗi về `/images/avatars/default.png`. Handler chặn vòng lặp khi chính fallback lỗi.
 - Modal playlist mobile khóa cuộn `body`, tự cuộn nội bộ, khôi phục overflow khi đóng/unmount và tự đóng khi slug thay đổi. Cache batch tập cũng được reset theo slug.
+- Khối chọn nhóm tập có viền/nền nhấn riêng, không bọc lưới nút tập; đã bỏ các dòng phụ “Đang xem nhóm”, “Nhóm …” và tổng số tập. Nhãn nhóm vẫn lấy số tập thực từ nguồn nên Conan thiếu các tập đầu vẫn kết thúc đúng ở tập 1211.
 - JSX và class giao diện desktop không thay đổi trong Phase 1.
 
 Bằng chứng runtime ghi nhận ngày `2026-08-14`:
@@ -217,6 +220,7 @@ Bằng chứng runtime ghi nhận ngày `2026-08-14`:
 | Credits lifecycle | Đạt | Hủy rồi mở lại tạo request mới và hiển thị 14 diễn viên; HTTP 500 không kẹt spinner; đổi slug trong lúc request trễ không làm rò diễn viên phim cũ. |
 | Fallback ảnh mobile | Đạt | Backdrop, poster, gallery và sticky poster lỗi đều tải SVG cục bộ (`naturalWidth: 300`); ảnh diễn viên lỗi tải avatar mặc định (`naturalWidth: 120`); tất cả có `complete: true`. |
 | Modal playlist mobile | Đạt | Tại `390x844`, `body.style.overflow` đổi `"" → "hidden" → ""`; cuộn overlay không đổi `window.scrollY`; modal nằm trong viewport; đổi slug đóng modal và trả overflow. |
+| Chọn nhóm tập | Đạt trong kiểm thử cục bộ 2026-09-04 | Playwright qua tại `360`, `390`, `440`, `767`, `768`, `1024`, `1440`, `1920px`: chỉ tiêu đề và các nút nhóm nằm trong khung nhấn; nút tập nằm ngoài khung, không overflow ngang, nhóm cuối và tập 1211 hiển thị đúng. |
 | API/socket | Đạt trong phạm vi Phase 1 | Credits vẫn lazy-load; chỉ một responsive view và một comment section được mount. Crossing `767/768` remount đúng view, không tạo hai owner đồng thời. |
 | Kiểm tra mã | Đạt | `next build` thành công; `/movie/[slug]` có bundle `14.3 kB`; TypeScript thành công; 7/7 test episode/playback qua. |
 

@@ -55,10 +55,14 @@ async function mockMovieDetail(page: Page) {
 
 test("episode ranges use actual provider labels and the picker stays responsive", async ({ browser }) => {
   for (const viewport of [
+    { width: 360, height: 800 },
     { width: 390, height: 844 },
+    { width: 440, height: 956 },
     { width: 767, height: 1000 },
     { width: 768, height: 1024 },
+    { width: 1024, height: 900 },
     { width: 1440, height: 900 },
+    { width: 1920, height: 1080 },
   ]) {
     const context = await browser.newContext({ viewport, hasTouch: viewport.width < 768 });
     const page = await context.newPage();
@@ -67,12 +71,17 @@ test("episode ranges use actual provider labels and the picker stays responsive"
 
     const mobile = viewport.width < 768;
     const picker = page.getByTestId(`${mobile ? "mobile" : "desktop"}-episode-picker-0`);
+    const batchSelector = page.getByTestId(`${mobile ? "mobile" : "desktop"}-episode-batch-selector-0`);
     await expect(picker).toBeVisible();
-    await expect(picker.getByText("Chọn tập phim", { exact: true })).toBeVisible();
+    await expect(batchSelector.getByText("Chọn tập phim", { exact: true })).toBeVisible();
+    await expect(batchSelector).toHaveCSS("border-top-style", "solid");
+    await expect(picker.getByText(/Đang xem nhóm|tập khả dụng/i)).toHaveCount(0);
 
     const lastRange = mobile ? "1166–1211" : "Tập 1116 - 1211";
-    await picker.getByRole("button", { name: lastRange, exact: true }).click();
-    await expect(picker.getByRole("button", { name: "Tập 1211", exact: true })).toBeVisible();
+    await batchSelector.getByRole("button", { name: lastRange, exact: true }).click();
+    const lastEpisode = picker.getByRole("button", { name: "Tập 1211", exact: true });
+    await expect(lastEpisode).toBeVisible();
+    expect(await lastEpisode.evaluate((button, selector) => !button.closest(selector), `[data-testid="${mobile ? "mobile" : "desktop"}-episode-batch-selector-0"]`)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
 
     await context.close();

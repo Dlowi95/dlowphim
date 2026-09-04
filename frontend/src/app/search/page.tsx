@@ -34,6 +34,7 @@ function SearchContent() {
   const page = Math.max(1, Number(params.get("page")) || 1);
   const [movies, setMovies] = useState<any[]>([]);
   const [moviePages, setMoviePages] = useState(1);
+  const [resolvedPage, setResolvedPage] = useState(page);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retryKey, setRetryKey] = useState(0);
@@ -44,6 +45,7 @@ function SearchContent() {
     const load = async () => {
       setLoading(true);
       setError("");
+      setResolvedPage(page);
       setSourceState({ fallback: false, stale: false });
       try {
         if (keyword) {
@@ -62,9 +64,17 @@ function SearchContent() {
             return true;
           }));
           const pagination = movieData?.pagination || movieData?.data?.params?.pagination;
-          setMoviePages(pagination
+          const totalPages = pagination
             ? Math.max(1, Number(pagination.totalPages) || Math.ceil(Number(pagination.totalItems) / Number(pagination.totalItemsPerPage)))
-            : Math.max(1, Number(movieData?.totalPages) || 1));
+            : Math.max(1, Number(movieData?.totalPages) || 1);
+          const currentPage = Math.min(totalPages, Math.max(1, Number(pagination?.currentPage) || page));
+          setMoviePages(totalPages);
+          setResolvedPage(currentPage);
+          if (currentPage !== page) {
+            const next = new URLSearchParams(params.toString());
+            next.set("page", String(currentPage));
+            router.replace(`/search?${next.toString()}`, { scroll: false });
+          }
           setSourceState({
             fallback: Boolean(movieData?.fallback?.used),
             stale: Boolean(movieData?.stale?.used),
@@ -83,6 +93,7 @@ function SearchContent() {
               const data = await response.json();
               setMovies(data.items || []);
               setMoviePages(Math.max(1, Number(data.totalPages) || 1));
+              setResolvedPage(page);
             } finally {
               window.clearTimeout(timeoutId);
               controller.signal.removeEventListener("abort", abortUpcoming);
@@ -94,6 +105,7 @@ function SearchContent() {
             );
             setMovies(data.items || []);
             setMoviePages(Math.max(1, Number(data.pagination?.totalPages) || 1));
+            setResolvedPage(page);
             setSourceState({ fallback: Boolean(data.fallback?.used), stale: Boolean(data.stale?.used), savedAt: data.stale?.savedAt });
           }
         }
@@ -110,7 +122,7 @@ function SearchContent() {
     };
     void load();
     return () => controller.abort();
-  }, [keyword, page, retryKey, type]);
+  }, [keyword, page, params, retryKey, router, type]);
 
   const title = useMemo(() => {
     if (keyword) return `Kết quả cho “${keyword}”`;
@@ -149,7 +161,7 @@ function SearchContent() {
             {movies.length ? <div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7">{movies.map((movie) => <MovieCard key={movie._id || movie.slug} movie={movie} aspect="portrait" />)}</div> : <p className="rounded-2xl border border-zinc-900 bg-zinc-950 p-7 text-sm text-zinc-500">Không tìm thấy phim phù hợp. Bạn thử tên gốc hoặc kiểm tra lại chính tả nhé.</p>}
           </section>
         )}
-        {!loading && !error && <Pagination compactOnMobile currentPage={page} totalPages={moviePages} onPageChange={changePage} />}
+        {!loading && !error && <Pagination compactOnMobile currentPage={resolvedPage} totalPages={moviePages} onPageChange={changePage} />}
       </div>
     </main>
   );

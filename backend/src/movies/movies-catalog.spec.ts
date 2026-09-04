@@ -137,6 +137,115 @@ describe('MoviesService catalog', () => {
     expect(result.cache.ttlSeconds).toBe(60);
   });
 
+  it('ranks exact movie titles first and removes search results unrelated to either title', async () => {
+    const service = createService();
+    const fetchSpy = jest.spyOn(service, 'fetchOphimProxy').mockResolvedValue({
+      status: true,
+      _sourceId: 'phimapi',
+      data: {
+        items: [
+          { slug: 'bridgerton', name: 'Gia Tộc Bridgerton', origin_name: 'Bridgerton' },
+          { slug: 'arthdal', name: 'Biên Niên Sử Arthdal', origin_name: 'Arthdal Chronicles' },
+          { slug: 'chronicle-road', name: 'Chronicle Road', origin_name: 'Con Đường Biên Niên' },
+          { slug: 'chronicle', name: 'Sức Mạnh Vô Hình', origin_name: 'Chronicle' },
+          { slug: 'west-cork', name: 'Sophie: Án mạng tại West Cork', origin_name: 'A Murder in West Cork' },
+        ],
+      },
+    });
+
+    const result = await service.getMovieDiscovery({ kind: 'search', keyword: 'chronicle', page: 1, limit: 24 });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/v1/api/tim-kiem?page=1&limit=64&keyword=chronicle'),
+      'active',
+    );
+    expect(result.items.map((movie: any) => movie.slug)).toEqual([
+      'chronicle',
+      'chronicle-road',
+      'arthdal',
+    ]);
+    expect(result.pagination).toEqual({ currentPage: 1, totalItems: 3, totalItemsPerPage: 24, totalPages: 1 });
+  });
+
+  it('paginates the filtered search ranking instead of trusting provider pages', async () => {
+    const service = createService();
+    const relevant = Array.from({ length: 12 }, (_, index) => ({
+      slug: `chronicle-${index + 1}`,
+      name: `Chronicle ${index + 1}`,
+      origin_name: `Biên Niên ${index + 1}`,
+    }));
+    jest.spyOn(service, 'fetchOphimProxy').mockResolvedValue({
+      status: true,
+      _sourceId: 'phimapi',
+      data: {
+        items: [
+          ...relevant,
+          { slug: 'unrelated-1', name: 'Năm 2067', origin_name: '2067' },
+          { slug: 'unrelated-2', name: 'Gia Tộc Bridgerton', origin_name: 'Bridgerton' },
+        ],
+        params: { pagination: { currentPage: 3, totalItems: 999, totalItemsPerPage: 24, totalPages: 42 } },
+      },
+    });
+
+    const result = await service.getMovieDiscovery({ kind: 'search', keyword: 'chronicle', page: 2, limit: 10 });
+
+    expect(result.items.map((movie: any) => movie.slug)).toEqual(['chronicle-11', 'chronicle-12']);
+    expect(result.pagination).toEqual({ currentPage: 2, totalItems: 12, totalItemsPerPage: 10, totalPages: 2 });
+  });
+
+  it('prioritizes more matching words, ignores accents and treats one-letter queries as whole tokens', async () => {
+    const service = createService();
+    const fetchSpy = jest.spyOn(service, 'fetchOphimProxy').mockResolvedValue({
+      status: true,
+      _sourceId: 'phimapi',
+      data: {
+        items: [
+          { slug: 'mot-tu', name: 'Biên Giới', origin_name: 'Frontier' },
+          { slug: 'du-hai-tu', name: 'Biên Niên Sử Arthdal', origin_name: 'Arthdal Chronicles' },
+        ],
+      },
+    });
+
+    const multiWord = await service.getMovieDiscovery({ kind: 'search', keyword: 'bien nien', page: 1 });
+    expect(multiWord.items.map((movie: any) => movie.slug)).toEqual(['du-hai-tu', 'mot-tu']);
+
+    (service as any).catalogCache.clear();
+    fetchSpy.mockResolvedValue({
+      status: true,
+      _sourceId: 'phimapi',
+      data: {
+        items: [
+          { slug: 'a-hero', name: 'A Hero', origin_name: 'A Hero' },
+          { slug: 'avatar', name: 'Avatar', origin_name: 'Avatar' },
+        ],
+      },
+    });
+    const oneLetter = await service.getMovieDiscovery({ kind: 'search', keyword: 'a', page: 1 });
+    expect(oneLetter.items.map((movie: any) => movie.slug)).toEqual(['a-hero']);
+  });
+
+  it('falls back when the active search source only returns semantically unrelated titles', async () => {
+    const service = createService();
+    const fetchSpy = jest.spyOn(service, 'fetchOphimProxy')
+      .mockResolvedValueOnce({
+        status: true,
+        _sourceId: 'phimapi',
+        data: { items: [{ slug: 'bridgerton', name: 'Gia Tộc Bridgerton', origin_name: 'Bridgerton' }] },
+      })
+      .mockResolvedValueOnce({
+        status: true,
+        _sourceId: 'ophim',
+        items: [{ slug: 'chronicle', name: 'Sức Mạnh Vô Hình', original_name: 'Chronicle' }],
+      });
+
+    const result = await service.getMovieDiscovery({ kind: 'search', keyword: 'chronicle', page: 1 });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(result.source).toBe('ophim');
+    expect(result.fallback).toEqual({ used: true, reason: 'empty-result' });
+    expect(result.items.map((movie: any) => movie.slug)).toEqual(['chronicle']);
+  });
+
   it('reports an unavailable catalog when both sources fail', async () => {
     const service = createService();
     jest.spyOn(service, 'fetchOphimProxy')

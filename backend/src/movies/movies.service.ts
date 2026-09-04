@@ -433,6 +433,61 @@ export class MoviesService {
     return { currentPage, totalItems, totalItemsPerPage, totalPages };
   }
 
+  private normalizeMovieSearchText(value: unknown): string {
+    return String(value || '')
+      .toLocaleLowerCase('vi')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+      .replace(/\s+/g, ' ');
+  }
+
+  private rankMovieSearchItems(items: any[], keyword: string): any[] {
+    const normalizedKeyword = this.normalizeMovieSearchText(keyword);
+    const queryTokens = normalizedKeyword.split(' ').filter(Boolean);
+    if (!queryTokens.length) return [];
+
+    const tokenMatches = (queryToken: string, titleToken: string) => {
+      if (queryToken.length <= 2) return titleToken === queryToken;
+      return titleToken === queryToken || titleToken.startsWith(queryToken);
+    };
+
+    return items
+      .map((movie, providerIndex) => {
+        const fields = [movie?.name || movie?.title, movie?.origin_name || movie?.original_name || movie?.originName]
+          .map((value) => this.normalizeMovieSearchText(value))
+          .filter(Boolean);
+        const fieldTokens = fields.map((field) => field.split(' ').filter(Boolean));
+        const exactTitle = fields.some((field) => field === normalizedKeyword);
+        const startsWithPhrase = fields.some((field) => field.startsWith(`${normalizedKeyword} `));
+        const containsPhrase = fields.some((field) => ` ${field} `.includes(` ${normalizedKeyword} `));
+        const matchedTokenCount = queryTokens.filter((queryToken) =>
+          fieldTokens.some((tokens) => tokens.some((titleToken) => tokenMatches(queryToken, titleToken))),
+        ).length;
+
+        if (matchedTokenCount === 0) return null;
+        const tier = exactTitle
+          ? 0
+          : startsWithPhrase
+            ? 1
+            : containsPhrase
+              ? 2
+              : matchedTokenCount === queryTokens.length
+                ? 3
+                : 4;
+        return { movie, providerIndex, tier, matchedTokenCount };
+      })
+      .filter((entry): entry is { movie: any; providerIndex: number; tier: number; matchedTokenCount: number } => Boolean(entry))
+      .sort((left, right) =>
+        left.tier - right.tier
+        || right.matchedTokenCount - left.matchedTokenCount
+        || left.providerIndex - right.providerIndex,
+      )
+      .map((entry) => entry.movie);
+  }
+
   private getMovieSourceIds(settings: any): { activeId: string; fallbackId: string } {
     const sources = Array.isArray(settings?.movieSources) && settings.movieSources.length > 0
       ? settings.movieSources
@@ -505,7 +560,11 @@ export class MoviesService {
     return { data: JSON.parse(JSON.stringify(entry.data)), savedAt: entry.savedAt };
   }
 
-  private async fetchMovieListWithFallback(path: string, settings: any): Promise<{
+  private async fetchMovieListWithFallback(
+    path: string,
+    settings: any,
+    hasUsableItems?: (payload: any) => boolean,
+  ): Promise<{
     payload: any;
     fallbackUsed: boolean;
     fallbackReason: 'source-error' | 'empty-result' | null;
@@ -534,7 +593,10 @@ export class MoviesService {
           continue;
         }
         this.recordSourceSuccess(attempt.sourceId);
-        if (this.getCatalogItems(candidate).length > 0) {
+        const candidateHasUsableItems = hasUsableItems
+          ? hasUsableItems(candidate)
+          : this.getCatalogItems(candidate).length > 0;
+        if (candidateHasUsableItems) {
           const fallbackUsed = attempt.preference === 'fallback';
           if (fallbackUsed) this.discoveryMetrics.fallbackResponses += 1;
           return {
@@ -686,7 +748,7 @@ export class MoviesService {
       ? (listSlugs.includes(requestedSlug) ? requestedSlug : 'phim-moi-cap-nhat')
       : (/^[a-z0-9-]{1,80}$/.test(requestedSlug) ? requestedSlug : '');
 
-    if (kind === 'search' && keyword.length < 2) {
+    if (kind === 'search' && keyword.length < 1) {
       return {
         status: true,
         availability: 'empty',
@@ -698,7 +760,11 @@ export class MoviesService {
     }
     if (kind !== 'search' && !slug) throw new BadRequestException('Danh mục phim không hợp lệ');
 
-    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    const searchCandidateLimit = 64;
+    const params = new URLSearchParams({
+      page: kind === 'search' ? '1' : String(page),
+      limit: String(kind === 'search' ? searchCandidateLimit : limit),
+    });
     let path = '';
     if (kind === 'search') {
       params.set('keyword', keyword);
@@ -724,7 +790,13 @@ export class MoviesService {
 
     let resolved: Awaited<ReturnType<MoviesService['fetchMovieListWithFallback']>>;
     try {
-      resolved = await this.fetchMovieListWithFallback(path, settings);
+      resolved = await this.fetchMovieListWithFallback(
+        path,
+        settings,
+        kind === 'search'
+          ? (payload) => this.rankMovieSearchItems(this.getCatalogItems(payload), keyword).length > 0
+          : undefined,
+      );
     } catch (error) {
       const stale = this.getDiscoveryLastKnownGood(logicalKey);
       if (stale) {
@@ -740,15 +812,30 @@ export class MoviesService {
 
     const sourceId = resolved.payload?._sourceId || activeId;
     const seen = new Set<string>();
-    const items = this.getCatalogItems(resolved.payload)
+    const normalizedItems = this.getCatalogItems(resolved.payload)
       .map((movie: any) => this.normalizeCatalogMovie(movie, resolved.payload, sourceId))
       .filter((movie: any) => {
         if (!movie?.slug || seen.has(movie.slug)) return false;
         seen.add(movie.slug);
         return true;
       });
-    const pagination = this.normalizeCatalogPagination(resolved.payload, page, limit, items.length);
-    const availability = items.length > 0 ? 'ready' : 'empty';
+    const rankedItems = kind === 'search'
+      ? this.rankMovieSearchItems(normalizedItems, keyword)
+      : normalizedItems;
+    const searchTotalPages = Math.max(1, Math.ceil(rankedItems.length / limit));
+    const searchCurrentPage = Math.min(page, searchTotalPages);
+    const items = kind === 'search'
+      ? rankedItems.slice((searchCurrentPage - 1) * limit, searchCurrentPage * limit)
+      : rankedItems;
+    const pagination = kind === 'search'
+      ? {
+          currentPage: searchCurrentPage,
+          totalItems: rankedItems.length,
+          totalItemsPerPage: limit,
+          totalPages: searchTotalPages,
+        }
+      : this.normalizeCatalogPagination(resolved.payload, page, limit, items.length);
+    const availability = rankedItems.length > 0 ? 'ready' : 'empty';
     const ttlSeconds = availability === 'empty' ? 60 : 600;
     const data = {
       status: true,
