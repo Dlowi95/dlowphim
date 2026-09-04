@@ -30,9 +30,11 @@ export default function NavbarComponent() {
   // Dropdown States for Categories & Countries
   const [isGenreOpen, setIsGenreOpen] = useState(false);
   const [isCountryOpen, setIsCountryOpen] = useState(false);
+  const [isMoreOpen, setIsMoreOpen] = useState(false);
 
   const router = useRouter();
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
   
   const { 
@@ -175,10 +177,20 @@ export default function NavbarComponent() {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setShowDropdown(false);
       }
+      if (moreMenuRef.current && !moreMenuRef.current.contains(event.target as Node)) {
+        setIsMoreOpen(false);
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsMoreOpen(false);
     };
 
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("keydown", handleEscape);
+    };
   }, []);
 
   // 4. Xử lý khi người dùng nhấn Enter hoặc click "Toàn bộ kết quả"
@@ -363,7 +375,7 @@ export default function NavbarComponent() {
         </NavbarContent>
 
         {/* CỤM BÊN PHẢI: LINKS MENU VÀ NÚT THÀNH VIÊN */}
-        <NavbarContent className="hidden md:flex gap-3 lg:gap-8 font-semibold text-sm items-center" justify="end">
+        <NavbarContent className="hidden md:flex gap-3 xl:gap-8 font-semibold text-sm items-center" justify="end">
 
           {/* THỂ LOẠI (Dropdown) */}
           <NavbarItem
@@ -371,6 +383,7 @@ export default function NavbarComponent() {
             onMouseEnter={() => {
               setIsGenreOpen(true);
               setIsCountryOpen(false);
+              setIsMoreOpen(false);
             }}
             onMouseLeave={() => setIsGenreOpen(false)}
           >
@@ -436,6 +449,7 @@ export default function NavbarComponent() {
             onMouseEnter={() => {
               setIsCountryOpen(true);
               setIsGenreOpen(false);
+              setIsMoreOpen(false);
             }}
             onMouseLeave={() => setIsCountryOpen(false)}
           >
@@ -471,6 +485,42 @@ export default function NavbarComponent() {
                     ))}
                   </div>
                 ))}
+              </div>
+            )}
+          </NavbarItem>
+
+          {/* THÊM: chỉ mở khi bấm, không chiếm chỗ bằng các route phụ riêng lẻ. */}
+          <NavbarItem ref={moreMenuRef} className="relative hidden lg:flex">
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={isMoreOpen}
+              onClick={() => {
+                setIsMoreOpen((open) => !open);
+                setIsGenreOpen(false);
+                setIsCountryOpen(false);
+              }}
+              className={`flex min-h-11 items-center gap-1.5 font-bold tracking-wide transition-colors duration-200 ${isMoreOpen ? "text-pink-500" : "text-zinc-300 hover:text-pink-500"}`}
+            >
+              Thêm
+              <span
+                aria-hidden="true"
+                className={`h-0 w-0 border-x-[4px] border-t-[6px] border-x-transparent border-t-current transition-transform duration-200 ${isMoreOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+
+            {isMoreOpen && (
+              <div
+                role="menu"
+                aria-label="Điều hướng thêm"
+                className="absolute right-0 top-[calc(100%+0.25rem)] z-50 w-48 overflow-hidden rounded-2xl border border-zinc-700 bg-[#0b0b0d] p-2 shadow-[0_25px_60px_rgba(0,0,0,0.9)] animate-in fade-in slide-in-from-top-2 duration-200"
+              >
+                <Link href="/watch-together" role="menuitem" onClick={() => setIsMoreOpen(false)} className="block rounded-xl px-4 py-3 text-[13px] font-semibold text-zinc-300 transition-colors hover:bg-zinc-900 hover:text-pink-500 focus-visible:bg-zinc-900 focus-visible:text-pink-500 focus-visible:outline-none">
+                  Xem chung
+                </Link>
+                <Link href="/lich-chieu" role="menuitem" onClick={() => setIsMoreOpen(false)} className="block rounded-xl px-4 py-3 text-[13px] font-semibold text-zinc-300 transition-colors hover:bg-zinc-900 hover:text-pink-500 focus-visible:bg-zinc-900 focus-visible:text-pink-500 focus-visible:outline-none">
+                  Lịch chiếu
+                </Link>
               </div>
             )}
           </NavbarItem>

@@ -209,7 +209,6 @@ async function setupDeterministicMocks(page: Page) {
       url.pathname.startsWith("/playback-health") ||
       url.pathname.startsWith("/ratings") ||
       url.pathname.startsWith("/comments") ||
-      url.pathname.startsWith("/the-loai") ||
       url.pathname.startsWith("/danh-sach"),
     async (route) => {
       if (route.request().method() === "OPTIONS") {
@@ -695,6 +694,65 @@ test.describe("DlowPhim Production Navigation, Hover & Touch E2E Suite (Round 4 
 
     collector.finalizeAssertions();
     await context.close();
+  });
+
+  test("Genre menu route and click-only desktop More menu stay correct across breakpoints", async ({ browser }) => {
+    const breakpoints = [
+      { width: 360, height: 740 },
+      { width: 390, height: 844 },
+      { width: 440, height: 956 },
+      { width: 767, height: 1000 },
+      { width: 768, height: 1024 },
+      { width: 1024, height: 768 },
+      { width: 1440, height: 900 },
+      { width: 1920, height: 1080 },
+    ];
+
+    for (const viewport of breakpoints) {
+      const context = await browser.newContext({
+        viewport,
+        hasTouch: viewport.width < 768,
+      });
+      const page = await context.newPage();
+      await setupDeterministicMocks(page);
+
+      if (viewport.width === 390) {
+        await page.goto("/");
+        const categoryButton = page.getByRole("navigation", { name: "Danh mục nội dung" }).getByRole("button", { name: "Thể loại" });
+        await expect(categoryButton).toBeVisible({ timeout: 8_000 });
+        await categoryButton.tap();
+        await page.waitForURL(/\/the-loai$/);
+      } else {
+        await page.goto("/the-loai");
+      }
+
+      await expect(page.getByTestId("genre-menu-page")).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Khám phá theo thể loại" })).toBeVisible();
+      await expect(page.getByRole("link", { name: "Chính kịch", exact: true })).toHaveAttribute("href", "/the-loai/chinh-kich");
+
+      const extraLinks = page.getByTestId("genre-extra-menu").getByRole("link");
+      await expect(extraLinks).toHaveCount(2);
+      await expect(extraLinks.nth(0)).toHaveAttribute("href", "/watch-together");
+      await expect(extraLinks.nth(1)).toHaveAttribute("href", "/lich-chieu");
+
+      if (viewport.width >= 1024) {
+        const moreButton = page.getByRole("button", { name: "Thêm", exact: true });
+        await expect(moreButton).toBeVisible();
+        await expect(page.getByRole("menu", { name: "Điều hướng thêm" })).toHaveCount(0);
+        await moreButton.click();
+        const moreMenu = page.getByRole("menu", { name: "Điều hướng thêm" });
+        await expect(moreMenu).toBeVisible();
+        await expect(moreMenu.getByRole("menuitem")).toHaveCount(2);
+        await expect(moreMenu.getByRole("menuitem", { name: "Xem chung" })).toHaveAttribute("href", "/watch-together");
+        await expect(moreMenu.getByRole("menuitem", { name: "Lịch chiếu" })).toHaveAttribute("href", "/lich-chieu");
+      }
+
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth),
+        `${viewport.width}px must not overflow horizontally`,
+      ).toBe(true);
+      await context.close();
+    }
   });
 
   test("Lifecycle, Listener Balance, Autoplay Prefetch & Reloads: 10-cycle open/close, zero autoplay prefetch spam, image naturalWidth check", async ({ browser }) => {

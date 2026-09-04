@@ -465,7 +465,10 @@ export default function HomePage() {
               <button className="shrink-0 rounded-full bg-white px-4 py-2 text-xs font-extrabold text-black" onClick={() => router.push("/")}>Đề xuất</button>
               <button className="shrink-0 rounded-full border border-white/25 bg-zinc-900/70 px-4 py-2 text-xs font-bold text-zinc-200 backdrop-blur-md" onClick={() => router.push("/phim-bo")}>Phim bộ</button>
               <button className="shrink-0 rounded-full border border-white/25 bg-zinc-900/70 px-4 py-2 text-xs font-bold text-zinc-200 backdrop-blur-md" onClick={() => router.push("/phim-le")}>Phim lẻ</button>
-              <button className="shrink-0 rounded-full border border-white/25 bg-zinc-900/70 px-4 py-2 text-xs font-bold text-zinc-200 backdrop-blur-md" onClick={() => router.push("/the-loai")}>Thể loại</button>
+              <button className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/25 bg-zinc-900/70 px-4 py-2 text-xs font-bold text-zinc-200 backdrop-blur-md" onClick={() => router.push("/the-loai")}>
+                Thể loại
+                <span aria-hidden="true" className="h-0 w-0 border-x-[4px] border-t-[6px] border-x-transparent border-t-current" />
+              </button>
             </nav>
 
             <div
