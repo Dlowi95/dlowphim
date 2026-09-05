@@ -444,6 +444,60 @@ export class MoviesService {
       .replace(/\s+/g, ' ');
   }
 
+  private readonly sensitiveMovieSearchTokens = new Set([
+    '18plus', 'adult', 'bdsm', 'blowjob', 'chich', 'ecchi', 'erotic', 'erotica',
+    'gangbang', 'gay', 'gays', 'handjob', 'hentai', 'jav', 'les', 'lesbian',
+    'lesbians', 'lgbt', 'ntr', 'nude', 'nudity', 'onlyfans', 'porn', 'porno',
+    'pornography', 'rape', 'sex', 'sexy', 'threesome', 'xxx', 'yaoi', 'yuri',
+  ]);
+
+  private readonly sensitiveMovieSearchPhrases = [
+    '18 plus', 'au dam', 'bach hop', 'cuong hiep', 'dam my', 'giao cau',
+    'hiep dam', 'khieu dam', 'khoa than', 'lam tinh', 'loan luan', 'nhuc duc',
+    'oral sex', 'phim 18', 'phim cap ba', 'phim nguoi lon', 'quan he the xac',
+    'quan he tinh duc', 'sac duc', 'thu dam', 'tinh duc',
+  ];
+
+  private readonly sensitiveMovieSearchRawTokens = new Set(['chịch', 'dâm', 'địt', 'đụ']);
+
+  private isSensitiveMovieSearchText(value: unknown): boolean {
+    const raw = String(value || '')
+      .normalize('NFKC')
+      .toLocaleLowerCase('vi')
+      .replace(/[\u200B-\u200D\uFEFF]/g, ' ');
+    if (!raw.trim()) return false;
+    if (/(^|\D)18\s*\+(?=\D|$)/.test(raw)) return true;
+
+    const rawTokens = raw.match(/[\p{L}\p{N}]+/gu) || [];
+    if (rawTokens.some((token) => this.sensitiveMovieSearchRawTokens.has(token))) return true;
+
+    const folded = raw
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/\$/g, 's')
+      .replace(/@/g, 'a');
+    const words = folded.match(/[a-z0-9]+/g) || [];
+    const decodeLeet = (token: string) => token
+      .replace(/0/g, 'o')
+      .replace(/1/g, 'i')
+      .replace(/3/g, 'e')
+      .replace(/4/g, 'a')
+      .replace(/5/g, 's')
+      .replace(/7/g, 't');
+    if (words.some((word) => this.sensitiveMovieSearchTokens.has(decodeLeet(word)))) return true;
+
+    const normalizedPhrase = ` ${words.join(' ')} `;
+    if (this.sensitiveMovieSearchPhrases.some((phrase) => normalizedPhrase.includes(` ${phrase} `))) return true;
+
+    const decodedText = decodeLeet(folded);
+    return Array.from(this.sensitiveMovieSearchTokens).some((term) => {
+      if (term.length < 3 || term.length > 8) return false;
+      const separatedLetters = term.split('').join('[^a-z0-9]*');
+      return new RegExp(`(^|[^a-z0-9])${separatedLetters}(?=[^a-z0-9]|$)`).test(decodedText);
+    });
+  }
+
   private rankMovieSearchItems(items: any[], keyword: string): any[] {
     const normalizedKeyword = this.normalizeMovieSearchText(keyword);
     const queryTokens = normalizedKeyword.split(' ').filter(Boolean);
@@ -456,7 +510,9 @@ export class MoviesService {
 
     return items
       .map((movie, providerIndex) => {
-        const fields = [movie?.name || movie?.title, movie?.origin_name || movie?.original_name || movie?.originName]
+        const rawFields = [movie?.name || movie?.title, movie?.origin_name || movie?.original_name || movie?.originName];
+        if (rawFields.some((field) => this.isSensitiveMovieSearchText(field))) return null;
+        const fields = rawFields
           .map((value) => this.normalizeMovieSearchText(value))
           .filter(Boolean);
         const fieldTokens = fields.map((field) => field.split(' ').filter(Boolean));
@@ -756,6 +812,18 @@ export class MoviesService {
         pagination: { currentPage: 1, totalItems: 0, totalItemsPerPage: limit, totalPages: 1 },
         fallback: { used: false, reason: null },
         stale: { used: false, savedAt: null },
+        moderation: { blocked: false, reason: null },
+      };
+    }
+    if (kind === 'search' && this.isSensitiveMovieSearchText(keyword)) {
+      return {
+        status: true,
+        availability: 'empty',
+        items: [],
+        pagination: { currentPage: 1, totalItems: 0, totalItemsPerPage: limit, totalPages: 1 },
+        fallback: { used: false, reason: null },
+        stale: { used: false, savedAt: null },
+        moderation: { blocked: true, reason: 'sensitive-keyword' },
       };
     }
     if (kind !== 'search' && !slug) throw new BadRequestException('Danh mục phim không hợp lệ');
@@ -847,6 +915,7 @@ export class MoviesService {
       query: { kind, slug, keyword, page, limit },
       fallback: { used: resolved.fallbackUsed, reason: resolved.fallbackReason },
       stale: { used: false, savedAt: null },
+      moderation: { blocked: false, reason: null },
       cache: { hit: false, ttlSeconds },
     };
     this.setCatalogCache(cacheKey, data, ttlSeconds * 1000);

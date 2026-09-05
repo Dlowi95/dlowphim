@@ -9,6 +9,7 @@ export interface MovieSearchResult {
   data: any | null;
   source: "phimapi" | "ophim" | null;
   items: any[];
+  blocked: boolean;
 }
 
 /**
@@ -21,7 +22,7 @@ export async function searchMovies(
   options: MovieSearchOptions = {},
 ): Promise<MovieSearchResult> {
   const normalizedKeyword = keyword.trim();
-  if (!normalizedKeyword) return { data: null, source: null, items: [] };
+  if (!normalizedKeyword) return { data: null, source: null, items: [], blocked: false };
 
   const data = await fetchMovieDiscovery(
     { kind: "search", keyword: normalizedKeyword, page, limit: 24 },
@@ -31,5 +32,6 @@ export async function searchMovies(
     data,
     source: data.source === "phimapi" || data.source === "ophim" ? data.source : null,
     items: data.items || [],
+    blocked: Boolean(data.moderation?.blocked),
   };
 }

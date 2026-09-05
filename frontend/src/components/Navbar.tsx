@@ -24,6 +24,7 @@ export default function NavbarComponent() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [personSuggestions, setPersonSuggestions] = useState<PersonResult[]>([]);
+  const [searchBlocked, setSearchBlocked] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
 
@@ -129,6 +130,7 @@ export default function NavbarComponent() {
     if (!searchQuery.trim()) {
       setSuggestions([]);
       setPersonSuggestions([]);
+      setSearchBlocked(false);
       setIsSearching(false);
       return;
     }
@@ -136,6 +138,7 @@ export default function NavbarComponent() {
     setIsSearching(true);
     setSuggestions([]);
     setPersonSuggestions([]);
+    setSearchBlocked(false);
 
     const controller = new AbortController();
     const delayDebounce = setTimeout(async () => {
@@ -144,7 +147,8 @@ export default function NavbarComponent() {
           searchMovies(searchQuery.trim(), 1, { signal: controller.signal, timeoutMs: 3500 }),
           searchPeople(searchQuery.trim(), 1, { signal: controller.signal, timeoutMs: 3500 }),
         ]);
-        const items = movieResult.status === "fulfilled" ? movieResult.value.items : [];
+        const blocked = movieResult.status === "fulfilled" && movieResult.value.blocked;
+        const items = movieResult.status === "fulfilled" && !blocked ? movieResult.value.items : [];
         const seen = new Set<string>();
         const uniqueItems = items.filter((item: any) => {
           const baseSlug = cleanSlug(item.slug);
@@ -153,7 +157,8 @@ export default function NavbarComponent() {
           return true;
         });
         setSuggestions(uniqueItems.slice(0, 4));
-        setPersonSuggestions(peopleResult.status === "fulfilled" ? peopleResult.value.items.slice(0, 3) : []);
+        setPersonSuggestions(!blocked && peopleResult.status === "fulfilled" ? peopleResult.value.items.slice(0, 3) : []);
+        setSearchBlocked(blocked);
       } catch (error) {
         if (!controller.signal.aborted) {
           console.error("Lỗi lấy gợi ý nhanh:", error);
@@ -293,6 +298,12 @@ export default function NavbarComponent() {
             {showDropdown && searchQuery.trim() && (
               <div className="absolute top-full left-0 mt-2 w-full min-w-[340px] bg-[#0b0b0d] rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col">
 
+                {searchBlocked ? (
+                  <div role="status" className="px-5 py-7 text-center">
+                    <p className="text-sm font-black text-zinc-200">Từ khóa này không được hỗ trợ</p>
+                    <p className="mt-1 text-xs text-zinc-500">DlowPhim không hiển thị nội dung nhạy cảm.</p>
+                  </div>
+                ) : <>
                 {/* PHẦN 1: DANH SÁCH PHIM */}
                 <div className="p-4 pb-2">
                   <p className="text-zinc-500 text-[11px] font-bold uppercase tracking-wider mb-3">
@@ -368,6 +379,7 @@ export default function NavbarComponent() {
                 >
                   Toàn bộ kết quả
                 </button>
+                </>}
 
               </div>
             )}

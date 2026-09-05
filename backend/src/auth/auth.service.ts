@@ -110,8 +110,26 @@ export class AuthService implements OnModuleInit {
     await this.ensureSingleSuperAdmin();
   }
 
+  private getConfiguredSuperAdminEmail(): string {
+    return String(this.configService.get<string>('SUPER_ADMIN_EMAIL') || '').trim().toLowerCase();
+  }
+
+  private getRevokedAdminEmails(configuredEmail = this.getConfiguredSuperAdminEmail()): string[] {
+    return [...new Set(
+      String(this.configService.get<string>('REVOKED_ADMIN_EMAILS') || '')
+        .split(',')
+        .map((email) => email.trim().toLowerCase())
+        .filter(Boolean),
+    )].filter((email) => email !== configuredEmail);
+  }
+
+  private isConfiguredSuperAdminAccount(user: { email?: string } | null | undefined): boolean {
+    const configuredEmail = this.getConfiguredSuperAdminEmail();
+    return Boolean(configuredEmail && String(user?.email || '').trim().toLowerCase() === configuredEmail);
+  }
+
   private async ensureSingleSuperAdmin() {
-    const configuredEmail = String(this.configService.get<string>('SUPER_ADMIN_EMAIL') || '').trim().toLowerCase();
+    const configuredEmail = this.getConfiguredSuperAdminEmail();
     const current = await this.userModel.findOne({ role: 'super_admin', isDeleted: { $ne: true } }).sort({ createdAt: 1 });
 
     // SUPER_ADMIN_EMAIL is the only supported ownership-transfer mechanism.
@@ -140,10 +158,8 @@ export class AuthService implements OnModuleInit {
           throw error;
         }
       }
-    } else if (!current) {
-      const candidate = configuredEmail
-        ? await this.userModel.findOne({ email: configuredEmail, isDeleted: { $ne: true } })
-        : await this.userModel.findOne({ role: 'admin', isDeleted: { $ne: true } }).sort({ createdAt: 1 });
+    } else if (!current && configuredEmail) {
+      const candidate = await this.userModel.findOne({ email: configuredEmail, isDeleted: { $ne: true } });
       if (candidate) {
         candidate.role = 'super_admin';
         candidate.isActive = true;
@@ -151,8 +167,12 @@ export class AuthService implements OnModuleInit {
         await candidate.save();
         this.logger.log(`Super Admin owner initialized: ${candidate.email}`);
       } else {
-        this.logger.warn('No Super Admin owner found. Set SUPER_ADMIN_EMAIL or keep one legacy admin account.');
+        this.logger.warn(`No Super Admin owner found because SUPER_ADMIN_EMAIL=${configuredEmail} does not match an active account.`);
       }
+    } else if (!current) {
+      // Never promote a legacy `admin` implicitly. A stale test account must not
+      // become owner just because the process restarted without configuration.
+      this.logger.error('No Super Admin owner found. Set SUPER_ADMIN_EMAIL before assigning an owner.');
     }
 
     // `admin` used to be treated as super_admin by the permission compatibility layer.
@@ -162,10 +182,7 @@ export class AuthService implements OnModuleInit {
       { $set: { role: 'member' }, $inc: { tokenVersion: 1 } },
     );
 
-    const revokedAdminEmails = String(this.configService.get<string>('REVOKED_ADMIN_EMAILS') || '')
-      .split(',')
-      .map((email) => email.trim().toLowerCase())
-      .filter((email) => email && email !== configuredEmail);
+    const revokedAdminEmails = this.getRevokedAdminEmails(configuredEmail);
     if (revokedAdminEmails.length > 0) {
       await this.userModel.updateMany(
         {
@@ -178,6 +195,16 @@ export class AuthService implements OnModuleInit {
   }
 
   async signToken(user: any) {
+    // Bootstrap runs on process start, but an old deployment or a manual DB edit
+    // can still change the role afterwards. Reconcile the configured owner again
+    // at login and reload it before issuing the new session.
+    if (this.isConfiguredSuperAdminAccount(user) && user.role !== 'super_admin') {
+      await this.ensureSingleSuperAdmin();
+      user = await this.userModel.findById(user._id);
+      if (!user || user.role !== 'super_admin') {
+        throw new ForbiddenException('Không thể khôi phục quyền Super Admin từ cấu hình máy chủ');
+      }
+    }
     const payload = {
       sub: user._id,
       email: user.email,
@@ -1233,7 +1260,7 @@ export class AuthService implements OnModuleInit {
     if (!user) {
       throw new BadRequestException('Không tìm thấy người dùng');
     }
-    if (user.role === 'super_admin') {
+    if (user.role === 'super_admin' || this.isConfiguredSuperAdminAccount(user)) {
       throw new ForbiddenException('Không thể thay đổi vai trò của chủ sở hữu Super Admin');
     }
     user.role = newRole;
@@ -1254,6 +1281,9 @@ export class AuthService implements OnModuleInit {
     const user = await this.userModel.findById(userId);
     if (!user) {
       throw new BadRequestException('Không tìm thấy người dùng');
+    }
+    if (this.isConfiguredSuperAdminAccount(user)) {
+      throw new ForbiddenException('Không thể khóa tài khoản chủ sở hữu Super Admin');
     }
     await this.assertCanManageTarget(adminId, user);
     const normalizedReason = String(reason || '').trim().slice(0, 200);
@@ -1277,6 +1307,9 @@ export class AuthService implements OnModuleInit {
     const user = await this.userModel.findById(userId);
     if (!user) {
       throw new BadRequestException('Không tìm thấy người dùng');
+    }
+    if (this.isConfiguredSuperAdminAccount(user)) {
+      throw new ForbiddenException('Không thể xóa tài khoản chủ sở hữu Super Admin');
     }
     await this.assertCanManageTarget(adminId, user);
     if (user.isActive !== false) {

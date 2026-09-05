@@ -20,6 +20,7 @@ export default function MobileSearchBox({ initialQuery }: MobileSearchBoxProps) 
   const [query, setQuery] = useState(initialQuery);
   const [movies, setMovies] = useState<any[]>([]);
   const [people, setPeople] = useState<PersonResult[]>([]);
+  const [searchBlocked, setSearchBlocked] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
@@ -34,6 +35,7 @@ export default function MobileSearchBox({ initialQuery }: MobileSearchBoxProps) 
     if (!normalizedQuery) {
       setMovies([]);
       setPeople([]);
+      setSearchBlocked(false);
       setIsSearching(false);
       return;
     }
@@ -41,6 +43,7 @@ export default function MobileSearchBox({ initialQuery }: MobileSearchBoxProps) 
     setIsSearching(true);
     setMovies([]);
     setPeople([]);
+    setSearchBlocked(false);
 
     const controller = new AbortController();
     const debounce = window.setTimeout(async () => {
@@ -51,8 +54,9 @@ export default function MobileSearchBox({ initialQuery }: MobileSearchBoxProps) 
         ]);
         if (controller.signal.aborted) return;
 
+        const blocked = movieResult.status === "fulfilled" && movieResult.value.blocked;
         const seen = new Set<string>();
-        const uniqueMovies = movieResult.status === "fulfilled"
+        const uniqueMovies = movieResult.status === "fulfilled" && !blocked
           ? movieResult.value.items.filter((movie: any) => {
               const slug = cleanSlug(movie.slug);
               if (!slug || seen.has(slug)) return false;
@@ -62,7 +66,8 @@ export default function MobileSearchBox({ initialQuery }: MobileSearchBoxProps) 
           : [];
 
         setMovies(uniqueMovies.slice(0, 4));
-        setPeople(peopleResult.status === "fulfilled" ? peopleResult.value.items.slice(0, 3) : []);
+        setPeople(!blocked && peopleResult.status === "fulfilled" ? peopleResult.value.items.slice(0, 3) : []);
+        setSearchBlocked(blocked);
       } finally {
         if (!controller.signal.aborted) setIsSearching(false);
       }
@@ -154,6 +159,7 @@ export default function MobileSearchBox({ initialQuery }: MobileSearchBoxProps) 
               setQuery("");
               setMovies([]);
               setPeople([]);
+              setSearchBlocked(false);
               inputRef.current?.focus();
             }}
             className="absolute inset-y-0 right-2 flex w-10 items-center justify-center rounded-full text-zinc-500 active:text-white"
@@ -165,6 +171,12 @@ export default function MobileSearchBox({ initialQuery }: MobileSearchBoxProps) 
 
       {showSuggestions && (
         <section aria-busy={isSearching} aria-label="Gợi ý tìm kiếm" className="absolute inset-x-0 top-full z-50 mt-2 max-h-[min(64dvh,34rem)] overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-[#0b0b0f] shadow-[0_24px_70px_rgba(0,0,0,0.8)]">
+          {searchBlocked ? (
+            <div role="status" className="px-5 py-8 text-center">
+              <p className="text-sm font-black text-zinc-200">Từ khóa này không được hỗ trợ</p>
+              <p className="mt-1 text-xs text-zinc-500">DlowPhim không hiển thị nội dung nhạy cảm.</p>
+            </div>
+          ) : <>
           <div className="p-3.5 pb-2">
             <p className="mb-2 px-1 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-500">Danh sách phim</p>
             {!isSearching && movies.length === 0 ? (
@@ -224,6 +236,7 @@ export default function MobileSearchBox({ initialQuery }: MobileSearchBoxProps) 
           <button type="button" onClick={submitSearch} className="sticky bottom-0 min-h-12 w-full border-t border-zinc-800 bg-[#15151c] px-4 text-center text-xs font-black text-pink-400 active:bg-pink-500/10">
             Xem toàn bộ kết quả
           </button>
+          </>}
         </section>
       )}
     </div>

@@ -59,18 +59,43 @@ describe('Super Admin bootstrap', () => {
     expect(userModel.updateMany).toHaveBeenCalled();
   });
 
-  it('promotes the first legacy admin when no owner is configured', async () => {
-    const legacy = { email: 'admin@example.com', role: 'admin', isActive: true, tokenVersion: 0, save: jest.fn().mockResolvedValue(undefined) };
-    const findOne = jest.fn()
-      .mockReturnValueOnce({ sort: jest.fn().mockResolvedValue(null) })
-      .mockReturnValueOnce({ sort: jest.fn().mockResolvedValue(legacy) });
+  it('does not promote a legacy admin when no owner is configured', async () => {
+    const findOne = jest.fn().mockReturnValueOnce({ sort: jest.fn().mockResolvedValue(null) });
     const userModel = { findOne, updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }) };
 
     await createService(userModel).onModuleInit();
 
-    expect(legacy.role).toBe('super_admin');
-    expect(legacy.tokenVersion).toBe(1);
-    expect(legacy.save).toHaveBeenCalled();
+    expect(findOne).toHaveBeenCalledTimes(1);
+    expect(userModel.updateMany).toHaveBeenCalledWith(
+      { role: 'admin' },
+      { $set: { role: 'member' }, $inc: { tokenVersion: 1 } },
+    );
+  });
+
+  it('restores the configured owner before issuing a new login session', async () => {
+    const configured = {
+      _id: 'configured-id',
+      email: 'dailoivo23@gmail.com',
+      role: 'content_admin',
+      isActive: true,
+      tokenVersion: 2,
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+    const findOne = jest.fn()
+      .mockReturnValueOnce({ sort: jest.fn().mockResolvedValue(null) })
+      .mockResolvedValueOnce(configured);
+    const userModel = {
+      findOne,
+      findById: jest.fn().mockResolvedValue(configured),
+      updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
+    };
+    const service = createService(userModel, 'dailoivo23@gmail.com');
+
+    const result = await service.signToken(configured);
+
+    expect(configured.role).toBe('super_admin');
+    expect(result.user.role).toBe('super_admin');
+    expect(userModel.findById).toHaveBeenCalledWith('configured-id');
   });
 
   it('revokes remaining legacy admin roles because they imply super admin access', async () => {

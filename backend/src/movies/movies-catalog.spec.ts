@@ -246,6 +246,48 @@ describe('MoviesService catalog', () => {
     expect(result.items.map((movie: any) => movie.slug)).toEqual(['chronicle']);
   });
 
+  it.each(['sex', 's.e.x', '18+', 'chịch', 'chich', 'g4y', 'l.e.s', 'phim người lớn', 'hentai'])(
+    'blocks the sensitive search keyword %s before calling a movie provider',
+    async (keyword) => {
+      const service = createService();
+      const fetchSpy = jest.spyOn(service, 'fetchOphimProxy');
+
+      const result = await service.getMovieDiscovery({ kind: 'search', keyword, page: 1 });
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(result.items).toEqual([]);
+      expect(result.moderation).toEqual({ blocked: true, reason: 'sensitive-keyword' });
+    },
+  );
+
+  it('removes sensitive movie titles from a benign search without substring false positives', async () => {
+    const service = createService();
+    const fetchSpy = jest.spyOn(service, 'fetchOphimProxy').mockResolvedValue({
+      status: true,
+      _sourceId: 'phimapi',
+      data: {
+        items: [
+          { slug: 'safe-love', name: 'Love Actually', origin_name: 'Love Actually' },
+          { slug: 'adult-love', name: 'Sexy Love', origin_name: 'Sexy Love' },
+        ],
+      },
+    });
+
+    const result = await service.getMovieDiscovery({ kind: 'search', keyword: 'love', page: 1 });
+
+    expect(result.items.map((movie: any) => movie.slug)).toEqual(['safe-love']);
+
+    (service as any).catalogCache.clear();
+    fetchSpy.mockResolvedValue({
+      status: true,
+      _sourceId: 'phimapi',
+      data: { items: [{ slug: 'essex', name: 'Essex Boys', origin_name: 'Essex Boys' }] },
+    });
+    const essex = await service.getMovieDiscovery({ kind: 'search', keyword: 'essex', page: 1 });
+    expect(essex.items.map((movie: any) => movie.slug)).toEqual(['essex']);
+    expect(essex.moderation).toEqual({ blocked: false, reason: null });
+  });
+
   it('reports an unavailable catalog when both sources fail', async () => {
     const service = createService();
     jest.spyOn(service, 'fetchOphimProxy')

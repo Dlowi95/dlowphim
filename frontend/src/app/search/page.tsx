@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { Film, Loader2, Search } from "lucide-react";
+import { Film, Loader2, Search, ShieldAlert } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MovieCard from "@/components/MovieCard";
 import Pagination from "@/components/Pagination";
@@ -37,6 +37,7 @@ function SearchContent() {
   const [resolvedPage, setResolvedPage] = useState(page);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [searchBlocked, setSearchBlocked] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const [sourceState, setSourceState] = useState<{ fallback: boolean; stale: boolean; savedAt?: string | null }>({ fallback: false, stale: false });
 
@@ -45,6 +46,7 @@ function SearchContent() {
     const load = async () => {
       setLoading(true);
       setError("");
+      setSearchBlocked(false);
       setResolvedPage(page);
       setSourceState({ fallback: false, stale: false });
       try {
@@ -56,6 +58,7 @@ function SearchContent() {
           if (controller.signal.aborted) return;
           const rawMovies = movieResult.items;
           const movieData = movieResult.data;
+          setSearchBlocked(movieResult.blocked);
           const seen = new Set<string>();
           setMovies(rawMovies.filter((movie: any) => {
             const key = cleanSlug(movie.slug);
@@ -125,9 +128,10 @@ function SearchContent() {
   }, [keyword, page, params, retryKey, router, type]);
 
   const title = useMemo(() => {
+    if (searchBlocked) return "Không thể tìm kiếm từ khóa này";
     if (keyword) return `Kết quả cho “${keyword}”`;
     return SEARCH_TYPE_TITLES[type] || "Khám phá phim";
-  }, [keyword, type]);
+  }, [keyword, searchBlocked, type]);
 
   const changePage = (nextPage: number) => {
     const next = new URLSearchParams(params.toString());
@@ -143,7 +147,7 @@ function SearchContent() {
         <header className="mb-5 border-b border-zinc-900 pb-5 md:mb-7">
           <p className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-[0.22em] text-pink-500"><Search size={14} /> Tìm kiếm DlowPhim</p>
           <h1 className="break-words text-2xl font-black md:text-4xl">{title}</h1>
-          {!loading && keyword && <p className="mt-2 text-sm text-zinc-500">Tìm thấy {movies.length} phim trên trang này</p>}
+          {!loading && keyword && !searchBlocked && <p className="mt-2 text-sm text-zinc-500">Tìm thấy {movies.length} phim trên trang này</p>}
         </header>
 
         {loading ? (
@@ -154,6 +158,12 @@ function SearchContent() {
             <p className="mt-2 text-sm text-zinc-500">Bạn thử lại sau một chút nhé.</p>
             <button type="button" onClick={() => setRetryKey((value) => value + 1)} className="mt-5 min-h-11 rounded-xl bg-pink-500 px-5 text-sm font-black text-white transition hover:bg-pink-400 active:scale-[0.98]">Thử lại</button>
           </div>
+        ) : searchBlocked ? (
+          <section role="status" className="rounded-3xl border border-pink-500/20 bg-pink-500/[0.06] px-5 py-16 text-center">
+            <ShieldAlert className="mx-auto text-pink-400" size={38} />
+            <p className="mt-4 font-black">Từ khóa này không được hỗ trợ</p>
+            <p className="mx-auto mt-2 max-w-md text-sm text-zinc-500">DlowPhim không hiển thị nội dung nhạy cảm trong kết quả tìm kiếm.</p>
+          </section>
         ) : (
           <section>
             <DiscoverySourceNotice fallbackUsed={sourceState.fallback} staleUsed={sourceState.stale} savedAt={sourceState.savedAt} />
@@ -161,7 +171,7 @@ function SearchContent() {
             {movies.length ? <div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7">{movies.map((movie) => <MovieCard key={movie._id || movie.slug} movie={movie} aspect="portrait" />)}</div> : <p className="rounded-2xl border border-zinc-900 bg-zinc-950 p-7 text-sm text-zinc-500">Không tìm thấy phim phù hợp. Bạn thử tên gốc hoặc kiểm tra lại chính tả nhé.</p>}
           </section>
         )}
-        {!loading && !error && <Pagination compactOnMobile currentPage={resolvedPage} totalPages={moviePages} onPageChange={changePage} />}
+        {!loading && !error && !searchBlocked && <Pagination compactOnMobile currentPage={resolvedPage} totalPages={moviePages} onPageChange={changePage} />}
       </div>
     </main>
   );

@@ -69,3 +69,36 @@ test("search clamps stale provider pages and only renders the ranked result page
     await context.close();
   }
 });
+
+test("sensitive searches render one safe empty state on mobile and desktop", async ({ browser }) => {
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 1440, height: 900 },
+  ]) {
+    const context = await browser.newContext({ viewport, hasTouch: viewport.width < 768 });
+    const page = await context.newPage();
+    await mockSearch(page);
+    await page.route("**/movies/discovery?**", (route) => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        status: true,
+        availability: "empty",
+        items: [],
+        pagination: { currentPage: 1, totalItems: 0, totalItemsPerPage: 24, totalPages: 1 },
+        fallback: { used: false, reason: null },
+        stale: { used: false, savedAt: null },
+        moderation: { blocked: true, reason: "sensitive-keyword" },
+      }),
+    }));
+
+    await page.goto("/search?keyword=s.e.x");
+
+    await expect(page.getByRole("heading", { name: "Không thể tìm kiếm từ khóa này" })).toBeVisible();
+    await expect(page.getByText("Từ khóa này không được hỗ trợ", { exact: true })).toBeVisible();
+    await expect(page.locator("[data-movie-slug]")).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
+
+    await context.close();
+  }
+});

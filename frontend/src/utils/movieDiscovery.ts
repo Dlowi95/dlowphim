@@ -19,6 +19,7 @@ export interface MovieDiscoveryResult {
   };
   fallback?: { used: boolean; reason?: "source-error" | "empty-result" | null };
   stale?: { used: boolean; savedAt?: string | null };
+  moderation?: { blocked: boolean; reason?: "sensitive-keyword" | null };
 }
 
 export async function fetchMovieDiscovery(
