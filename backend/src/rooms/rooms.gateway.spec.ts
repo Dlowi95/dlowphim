@@ -334,7 +334,11 @@ describe('RoomsGateway socket safety', () => {
       expect(body).toEqual(
         expect.objectContaining({
           model: '@cf/zai-org/glm-4.7-flash',
-          reasoning_effort: 'low',
+          reasoning_effort: null,
+          chat_template_kwargs: {
+            enable_thinking: false,
+            clear_thinking: true,
+          },
           max_completion_tokens: 220,
         }),
       );
@@ -362,6 +366,20 @@ describe('RoomsGateway socket safety', () => {
         process.env.CLOUDFLARE_AI_MODEL = previousAiModel;
       }
     }
+  });
+
+  it('extracts only text blocks from a Cloudflare structured reply', () => {
+    const { gateway } = createGateway();
+
+    expect(
+      (gateway as any).normalizeCloudflareAiReply([
+        { type: 'thinking', thinking: 'Không đưa phần này cho người dùng' },
+        { type: 'text', text: 'Phim này cuốn ' },
+        { type: 'text', text: 'thiệt đó nha 🎬' },
+      ]),
+    ).toBe('Phim này cuốn thiệt đó nha 🎬');
+
+    gateway.onModuleDestroy();
   });
 
   it('accepts video controls only from the joined host', () => {

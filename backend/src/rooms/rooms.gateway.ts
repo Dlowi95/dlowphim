@@ -882,6 +882,30 @@ export class RoomsGateway
     return normalized.slice(0, 600);
   }
 
+  private normalizeCloudflareAiReply(value: unknown): string | null {
+    if (typeof value === 'string') {
+      return this.normalizeAiReply(value);
+    }
+    if (!Array.isArray(value)) return null;
+
+    const text = value
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (
+          part &&
+          typeof part === 'object' &&
+          (part as { type?: unknown }).type === 'text' &&
+          typeof (part as { text?: unknown }).text === 'string'
+        ) {
+          return (part as { text: string }).text;
+        }
+        return '';
+      })
+      .join('');
+
+    return this.normalizeAiReply(text);
+  }
+
   private buildAiConversation(
     history: AiConversationMessage[],
     currentBatch: string,
@@ -959,7 +983,11 @@ QUY TẮC:
               ...conversation,
             ],
             temperature: 0.8,
-            reasoning_effort: 'low',
+            reasoning_effort: null,
+            chat_template_kwargs: {
+              enable_thinking: false,
+              clear_thinking: true,
+            },
             max_completion_tokens: 220,
           }),
         },
@@ -975,8 +1003,9 @@ QUY TẮC:
       }
 
       const resData: any = await response.json();
-      const textReply = this.normalizeAiReply(
-        resData.choices?.[0]?.message?.content,
+      const choice = resData.choices?.[0];
+      const textReply = this.normalizeCloudflareAiReply(
+        choice?.message?.content,
       );
       if (textReply) {
         console.log(
@@ -986,7 +1015,7 @@ QUY TẮC:
       }
 
       console.warn(
-        `[Cloudflare Workers AI] Model ${cloudflareAiModel} returned an empty response.`,
+        `[Cloudflare Workers AI] Model ${cloudflareAiModel} returned an empty response (finish_reason=${choice?.finish_reason || 'unknown'}, reasoning_content=${Boolean(choice?.message?.reasoning_content)}, completion_tokens=${resData.usage?.completion_tokens ?? 'unknown'}).`,
       );
     } catch (err) {
       if (err?.name === 'AbortError') throw err;
