@@ -292,6 +292,78 @@ describe('RoomsGateway socket safety', () => {
     gateway.onModuleDestroy();
   });
 
+  it('falls back to another Groq model when the preferred model is forbidden', async () => {
+    const { gateway } = createGateway();
+    const previousGroqKey = process.env.GROQ_API_KEY;
+    const previousGroqModel = process.env.GROQ_MODEL;
+    const previousGeminiKey = process.env.GEMINI_API_KEY;
+    const previousFetch = global.fetch;
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: jest.fn().mockResolvedValue('{"error":{"message":"Forbidden"}}'),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({
+          choices: [{ message: { content: 'Fallback hoạt động rồi nha' } }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({
+          choices: [{ message: { content: 'Không thử lại model bị chặn' } }],
+        }),
+      });
+
+    try {
+      process.env.GROQ_API_KEY = 'test-groq-key';
+      delete process.env.GROQ_MODEL;
+      delete process.env.GEMINI_API_KEY;
+      global.fetch = fetchMock as any;
+
+      const reply = await (gateway as any).requestAiReply(
+        'Phim đang xem',
+        'Tin nhắn mới',
+        [],
+        new AbortController().signal,
+      );
+
+      expect(reply).toBe('Fallback hoạt động rồi nha');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe(
+        'openai/gpt-oss-20b',
+      );
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body).model).toBe(
+        'qwen/qwen3.6-27b',
+      );
+
+      const nextReply = await (gateway as any).requestAiReply(
+        'Phim đang xem',
+        'Tin nhắn tiếp theo',
+        [],
+        new AbortController().signal,
+      );
+      expect(nextReply).toBe('Không thử lại model bị chặn');
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(JSON.parse(fetchMock.mock.calls[2][1].body).model).toBe(
+        'qwen/qwen3.6-27b',
+      );
+    } finally {
+      global.fetch = previousFetch;
+      if (previousGroqKey === undefined) delete process.env.GROQ_API_KEY;
+      else process.env.GROQ_API_KEY = previousGroqKey;
+      if (previousGroqModel === undefined) delete process.env.GROQ_MODEL;
+      else process.env.GROQ_MODEL = previousGroqModel;
+      if (previousGeminiKey === undefined) delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY = previousGeminiKey;
+    }
+  });
+
   it('accepts video controls only from the joined host', () => {
     const { gateway } = createGateway();
     const broadcast = jest.fn();

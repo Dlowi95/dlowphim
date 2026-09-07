@@ -66,6 +66,8 @@ export class RoomsGateway
   private readonly aiMaxPendingMessages = 24;
   private readonly aiMaxHistoryMessages = 6;
   private readonly aiSkipToken = '[DLOWAI_SKIP]';
+  private readonly groqModelBlockedUntil = new Map<string, number>();
+  private readonly groqModelBlockCacheMs = 10 * 60 * 1000;
 
   // Snapshot trạng thái video của từng phòng (để đồng bộ cho member mới join / F5)
   private roomVideoStates = new Map<
@@ -100,6 +102,7 @@ export class RoomsGateway
     for (const roomId of this.aiRoomRuntimes.keys()) {
       this.clearAiRuntime(roomId);
     }
+    this.groqModelBlockedUntil.clear();
   }
 
   private async processScheduledRooms() {
@@ -909,6 +912,7 @@ export class RoomsGateway
     signal: AbortSignal,
   ): Promise<string | null> {
     const groqKey = process.env.GROQ_API_KEY;
+    const configuredGroqModel = process.env.GROQ_MODEL?.trim();
     const geminiKey = process.env.GEMINI_API_KEY;
 
     if (!groqKey && !geminiKey) {
@@ -933,47 +937,83 @@ QUY TẮC:
 
     // 1. Dùng Groq API nếu có cấu hình (Phản hồi siêu tốc)
     if (groqKey) {
-      try {
-        console.log('[Groq API] Sending DlowAI request to openai/gpt-oss-20b...');
-        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          signal,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${groqKey}`,
-          },
-          body: JSON.stringify({
-            model: 'openai/gpt-oss-20b',
-            messages: [
-              {
-                role: 'system',
-                content: systemPrompt,
-              },
-              ...conversation,
-            ],
-            temperature: 0.8,
-            reasoning_effort: 'low',
-            max_completion_tokens: 350,
-          }),
-        });
+      const groqModels = Array.from(new Set([
+        ...(configuredGroqModel ? [configuredGroqModel] : []),
+        'openai/gpt-oss-20b',
+        'qwen/qwen3.6-27b',
+      ]));
 
-        if (response.ok) {
-          const resData: any = await response.json();
-          const textReply = this.normalizeAiReply(
-            resData.choices?.[0]?.message?.content,
-          );
-          if (textReply) {
-            console.log('[Groq API] DlowAI responded successfully.');
-            return textReply;
+      for (const model of groqModels) {
+        const blockedUntil = this.groqModelBlockedUntil.get(model) || 0;
+        if (blockedUntil > Date.now()) continue;
+        if (blockedUntil) this.groqModelBlockedUntil.delete(model);
+
+        try {
+          console.log(`[Groq API] Sending DlowAI request to ${model}...`);
+          const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            signal,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${groqKey}`,
+            },
+            body: JSON.stringify({
+              model,
+              messages: [
+                {
+                  role: 'system',
+                  content: systemPrompt,
+                },
+                ...conversation,
+              ],
+              temperature: 0.8,
+              reasoning_effort: model.startsWith('openai/gpt-oss')
+                ? 'low'
+                : 'none',
+              max_completion_tokens: 350,
+            }),
+          });
+
+          if (response.ok) {
+            const resData: any = await response.json();
+            const textReply = this.normalizeAiReply(
+              resData.choices?.[0]?.message?.content,
+            );
+            if (textReply) {
+              this.groqModelBlockedUntil.delete(model);
+              console.log(`[Groq API] DlowAI responded successfully via ${model}.`);
+              return textReply;
+            }
+          } else {
+            const errText = (await response.text()).slice(0, 1000);
+            console.warn(
+              `[Groq API] Model ${model} failed with status ${response.status}. Details:`,
+              errText,
+            );
+
+            if (response.status === 403 || response.status === 404) {
+              this.groqModelBlockedUntil.set(
+                model,
+                Date.now() + this.groqModelBlockCacheMs,
+              );
+            }
+
+            // 401 là key không hợp lệ nên thử model khác cũng không giúp được.
+            if (response.status === 401) break;
           }
-        } else {
-          const errText = await response.text();
-          console.warn(`[Groq API] Failed with status: ${response.status}. Details:`, errText);
+        } catch (err) {
+          if (err?.name === 'AbortError') throw err;
+          console.warn(
+            `[Groq API] Connection to ${model} failed. Error:`,
+            err?.message || err,
+          );
+          break;
         }
-      } catch (err) {
-        if (err?.name === 'AbortError') throw err;
-        console.warn('[Groq API] Connection failed. Error:', err?.message || err);
       }
+
+      console.warn(
+        '[Groq API] No permitted Groq model succeeded; continuing to Gemini fallback.',
+      );
     }
 
     // 2. Fallback sang Google Gemini nếu Groq không có hoặc lỗi
