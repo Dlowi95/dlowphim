@@ -292,38 +292,24 @@ describe('RoomsGateway socket safety', () => {
     gateway.onModuleDestroy();
   });
 
-  it('falls back to another Groq model when the preferred model is forbidden', async () => {
+  it('sends DlowAI chat through the configured Cloudflare Workers AI account', async () => {
     const { gateway } = createGateway();
-    const previousGroqKey = process.env.GROQ_API_KEY;
-    const previousGroqModel = process.env.GROQ_MODEL;
-    const previousGeminiKey = process.env.GEMINI_API_KEY;
+    const previousAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+    const previousAiToken = process.env.CLOUDFLARE_AI_TOKEN;
+    const previousAiModel = process.env.CLOUDFLARE_AI_MODEL;
     const previousFetch = global.fetch;
-    const fetchMock = jest
-      .fn()
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 403,
-        text: jest.fn().mockResolvedValue('{"error":{"message":"Forbidden"}}'),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: jest.fn().mockResolvedValue({
-          choices: [{ message: { content: 'Fallback hoạt động rồi nha' } }],
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: jest.fn().mockResolvedValue({
-          choices: [{ message: { content: 'Không thử lại model bị chặn' } }],
-        }),
-      });
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: jest.fn().mockResolvedValue({
+        choices: [{ message: { content: 'Cloudflare hoạt động rồi nha' } }],
+      }),
+    });
 
     try {
-      process.env.GROQ_API_KEY = 'test-groq-key';
-      delete process.env.GROQ_MODEL;
-      delete process.env.GEMINI_API_KEY;
+      process.env.CLOUDFLARE_ACCOUNT_ID = 'account-123';
+      process.env.CLOUDFLARE_AI_TOKEN = 'secret-token';
+      process.env.CLOUDFLARE_AI_MODEL = '@cf/zai-org/glm-4.7-flash';
       global.fetch = fetchMock as any;
 
       const reply = await (gateway as any).requestAiReply(
@@ -333,34 +319,48 @@ describe('RoomsGateway socket safety', () => {
         new AbortController().signal,
       );
 
-      expect(reply).toBe('Fallback hoạt động rồi nha');
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-      expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe(
-        'openai/gpt-oss-20b',
+      expect(reply).toBe('Cloudflare hoạt động rồi nha');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://api.cloudflare.com/client/v4/accounts/account-123/ai/v1/chat/completions',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            Authorization: 'Bearer secret-token',
+          }),
+        }),
       );
-      expect(JSON.parse(fetchMock.mock.calls[1][1].body).model).toBe(
-        'qwen/qwen3.6-27b',
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+      expect(body).toEqual(
+        expect.objectContaining({
+          model: '@cf/zai-org/glm-4.7-flash',
+          reasoning_effort: 'low',
+          max_completion_tokens: 220,
+        }),
       );
-
-      const nextReply = await (gateway as any).requestAiReply(
-        'Phim đang xem',
-        'Tin nhắn tiếp theo',
-        [],
-        new AbortController().signal,
-      );
-      expect(nextReply).toBe('Không thử lại model bị chặn');
-      expect(fetchMock).toHaveBeenCalledTimes(3);
-      expect(JSON.parse(fetchMock.mock.calls[2][1].body).model).toBe(
-        'qwen/qwen3.6-27b',
+      expect(body.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ role: 'system' }),
+          expect.objectContaining({ role: 'user', content: 'Tin nhắn mới' }),
+        ]),
       );
     } finally {
       global.fetch = previousFetch;
-      if (previousGroqKey === undefined) delete process.env.GROQ_API_KEY;
-      else process.env.GROQ_API_KEY = previousGroqKey;
-      if (previousGroqModel === undefined) delete process.env.GROQ_MODEL;
-      else process.env.GROQ_MODEL = previousGroqModel;
-      if (previousGeminiKey === undefined) delete process.env.GEMINI_API_KEY;
-      else process.env.GEMINI_API_KEY = previousGeminiKey;
+      if (previousAccountId === undefined) {
+        delete process.env.CLOUDFLARE_ACCOUNT_ID;
+      } else {
+        process.env.CLOUDFLARE_ACCOUNT_ID = previousAccountId;
+      }
+      if (previousAiToken === undefined) {
+        delete process.env.CLOUDFLARE_AI_TOKEN;
+      } else {
+        process.env.CLOUDFLARE_AI_TOKEN = previousAiToken;
+      }
+      if (previousAiModel === undefined) {
+        delete process.env.CLOUDFLARE_AI_MODEL;
+      } else {
+        process.env.CLOUDFLARE_AI_MODEL = previousAiModel;
+      }
     }
   });
 
