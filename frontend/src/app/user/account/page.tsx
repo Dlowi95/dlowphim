@@ -12,7 +12,7 @@ const MobileAccountView = dynamic(() => import("@/components/user/mobile/MobileA
 });
 
 const AVAILABLE_AVATARS = Array.from(
-  { length: 26 },
+  { length: 28 },
   (_, i) => `/images/avatars/hoathinh/${i + 1}.webp`
 );
 
